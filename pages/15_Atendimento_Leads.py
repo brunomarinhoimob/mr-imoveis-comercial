@@ -41,24 +41,55 @@ df = df_leads.copy()
 # NORMALIZAÇÃO DE COLUNAS
 # ---------------------------------------------------------
 
+# Mapa auxiliar para localizar colunas de forma case-insensitive
+lower_cols = {c.lower(): c for c in df.columns}
+
+def get_col(possiveis_nomes):
+    """
+    Recebe uma lista de nomes (em minúsculo) e devolve
+    o nome real da coluna no DF (preservando maiúsculas/minúsculas).
+    """
+    for nome in possiveis_nomes:
+        if nome in lower_cols:
+            return lower_cols[nome]
+    return None
+
 # Nome do lead
-col_nome = None
-for c in ["nome", "nome_lead", "nome_cliente"]:
-    if c in df.columns:
-        col_nome = c
-        break
+col_nome = get_col(
+    [
+        "nome_pessoa",
+        "nome",
+        "nome_lead",
+        "nome_cliente",
+        "cliente",
+        "pessoa",
+        "nome do cliente",
+    ]
+)
 
 if col_nome is None:
     df["NOME_LEAD"] = "SEM NOME"
 else:
-    df["NOME_LEAD"] = df[col_nome].fillna("SEM NOME").astype(str).str.strip()
+    df["NOME_LEAD"] = (
+        df[col_nome]
+        .fillna("SEM NOME")
+        .astype(str)
+        .str.strip()
+        .replace("", "SEM NOME")
+    )
 
 # Telefone
-col_tel = None
-for c in ["telefone", "telefone1", "telefone_principal", "celular"]:
-    if c in df.columns:
-        col_tel = c
-        break
+col_tel = get_col(
+    [
+        "telefone",
+        "telefone1",
+        "telefone_principal",
+        "celular",
+        "whatsapp",
+        "whats_app",
+        "fone",
+    ]
+)
 
 if col_tel is None:
     df["TELEFONE_LEAD"] = ""
@@ -66,11 +97,15 @@ else:
     df["TELEFONE_LEAD"] = df[col_tel].fillna("").astype(str).str.strip()
 
 # Corretor
-col_corretor = None
-for c in ["nome_corretor_norm", "nome_corretor"]:
-    if c in df.columns:
-        col_corretor = c
-        break
+col_corretor = get_col(
+    [
+        "nome_corretor_norm",
+        "nome_corretor",
+        "corretor",
+        "responsavel",
+        "responsável",
+    ]
+)
 
 if col_corretor is None:
     df["CORRETOR_EXIBICAO"] = "SEM CORRETOR"
@@ -84,25 +119,30 @@ else:
     )
 
 # Situação / etapa
-col_situacao = "nome_situacao" if "nome_situacao" in df.columns else None
-col_etapa = "nome_etapa" if "nome_etapa" in df.columns else None
+col_situacao = get_col(["nome_situacao", "situacao", "situação"])
+col_etapa = get_col(["nome_etapa", "etapa"])
 
 # Datas principais
-if "data_captura" in df.columns:
-    df["DATA_CAPTURA_DT"] = pd.to_datetime(df["data_captura"], errors="coerce")
+col_data_captura = get_col(["data_captura", "data do lead", "data_lead"])
+if col_data_captura:
+    df["DATA_CAPTURA_DT"] = pd.to_datetime(df[col_data_captura], errors="coerce")
 else:
     df["DATA_CAPTURA_DT"] = pd.NaT
 
-if "data_com_corretor" in df.columns:
+col_data_com_corretor = get_col(["data_com_corretor", "data_primeiro_atendimento"])
+if col_data_com_corretor:
     df["DATA_COM_CORRETOR_DT"] = pd.to_datetime(
-        df["data_com_corretor"], errors="coerce"
+        df[col_data_com_corretor], errors="coerce"
     )
 else:
     df["DATA_COM_CORRETOR_DT"] = pd.NaT
 
-if "data_ultima_interacao" in df.columns:
+col_data_ult_interacao = get_col(
+    ["data_ultima_interacao", "data_última_interacao", "data_ultima_atividade"]
+)
+if col_data_ult_interacao:
     df["DATA_ULT_INTERACAO_DT"] = pd.to_datetime(
-        df["data_ultima_interacao"], errors="coerce"
+        df[col_data_ult_interacao], errors="coerce"
     )
 else:
     df["DATA_ULT_INTERACAO_DT"] = pd.NaT
@@ -114,7 +154,8 @@ if col_situacao:
     df.loc[
         situ_norm.str.contains("PERD", na=False)
         | situ_norm.str.contains("DESCART", na=False)
-        | situ_norm.str.contains("NÃO TEM INTERESSE", na=False),
+        | situ_norm.str.contains("NÃO TEM INTERESSE", na=False)
+        | situ_norm.str.contains("NAO TEM INTERESSE", na=False),
         "PERDIDO",
     ] = True
 
