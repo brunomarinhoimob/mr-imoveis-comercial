@@ -386,25 +386,27 @@ df_cor["SLA_INTERACOES_MIN"] = np.where(
 df_resumo_corretor = df_cor.groupby("CORRETOR_EXIBICAO", dropna=False).agg(
     LEADS=("NOME_LEAD", "count"),
     ATENDIDOS=("ATENDIDO", "sum"),
-    SLA_MEDIO=("SLA_INICIAL_MIN", "mean"),
-    SLA_INTERACOES_MEDIO=("SLA_INTERACOES_MIN", "mean"),
+    SLA_MEDIO_MIN=("SLA_INICIAL_MIN", "mean"),
+    SLA_INTERACOES_MIN=("SLA_INTERACOES_MIN", "mean"),
 ).reset_index()
 
 # Ranking de SLA (menor = melhor)
-df_resumo_corretor["Rank SLA"] = df_resumo_corretor["SLA_MEDIO"].rank(
+df_resumo_corretor["RANK_SLA"] = df_resumo_corretor["SLA_MEDIO_MIN"].rank(
     method="min", ascending=True
 )
 
-# Renomeia colunas para exibição
-df_resumo_corretor = df_resumo_corretor.rename(
+# DataFrame para exibição
+df_display = df_resumo_corretor.copy().rename(
     columns={
         "CORRETOR_EXIBICAO": "Corretor",
         "LEADS": "Leads",
         "ATENDIDOS": "Leads atendidos",
-        "SLA_MEDIO": "SLA inicial médio (min)",
-        "SLA_INTERACOES_MEDIO": "SLA interações médio (min)",
+        "SLA_MEDIO_MIN": "SLA inicial médio (min)",
+        "SLA_INTERACOES_MIN": "SLA interações médio (min)",
+        "RANK_SLA": "Ranking SLA",
     }
-).sort_values(["Rank SLA", "Corretor"])
+).sort_values(["Ranking SLA", "Corretor"])
+
 
 # Função para colorir SLA estourado
 def color_sla(val):
@@ -414,9 +416,9 @@ def color_sla(val):
         return "color: #ff4d4f; font-weight: bold;"
     return ""
 
-# Styler para exibir minutos formatados + cor no SLA inicial
+
 styler_resumo = (
-    df_resumo_corretor.style.format(
+    df_display.style.format(
         {
             "SLA inicial médio (min)": format_minutes,
             "SLA interações médio (min)": format_minutes,
@@ -430,19 +432,19 @@ st.dataframe(styler_resumo, hide_index=True, use_container_width=True)
 
 # -------- Download Excel da visão por corretor --------
 buffer = BytesIO()
-df_resumo_export = df_resumo_corretor.copy()
-# Nas colunas de SLA, salva os valores em minutos (numérico) em vez da string formatada
-df_resumo_export["SLA inicial médio (min)"] = df_cor.groupby("CORRETOR_EXIBICAO")[
-    "SLA_INICIAL_MIN"
-].mean().values
-df_resumo_export["SLA interações médio (min)"] = df_cor.groupby("CORRETOR_EXIBICAO")[
-    "SLA_INTERACOES_MIN"
-].mean().values
+df_export = df_resumo_corretor.copy().rename(
+    columns={
+        "CORRETOR_EXIBICAO": "Corretor",
+        "LEADS": "Leads",
+        "ATENDIDOS": "Leads atendidos",
+        "SLA_MEDIO_MIN": "SLA inicial médio (min)",
+        "SLA_INTERACOES_MIN": "SLA interações médio (min)",
+        "RANK_SLA": "Ranking SLA",
+    }
+)
 
-with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-    df_resumo_export.to_excel(
-        writer, index=False, sheet_name="Resumo_Atendimento_Corretor"
-    )
+with pd.ExcelWriter(buffer) as writer:
+    df_export.to_excel(writer, index=False, sheet_name="Resumo_Atendimento_Corretor")
 
 st.download_button(
     "⬇️ Baixar resumo por corretor (Excel)",
