@@ -12,6 +12,12 @@ st.set_page_config(
     layout="wide",
 )
 
+# Logo MR Imóveis na lateral
+try:
+    st.sidebar.image("logo_mr.png", use_container_width=True)
+except Exception:
+    pass
+
 st.title("📞 Controle de Atendimento de Leads")
 st.caption(
     "Visão simples e operacional do atendimento: leads atendidos, não atendidos, SLA e leads sem retorno."
@@ -34,9 +40,10 @@ df = df_leads.copy()
 # ---------------------------------------------------------
 # NORMALIZAÇÃO DE COLUNAS
 # ---------------------------------------------------------
+
 # Nome do lead
 col_nome = None
-for c in ["nome_pessoa", "nome", "nome_cliente"]:
+for c in ["nome", "nome_lead", "nome_cliente"]:
     if c in df.columns:
         col_nome = c
         break
@@ -44,17 +51,11 @@ for c in ["nome_pessoa", "nome", "nome_cliente"]:
 if col_nome is None:
     df["NOME_LEAD"] = "SEM NOME"
 else:
-    df["NOME_LEAD"] = (
-        df[col_nome]
-        .fillna("SEM NOME")
-        .astype(str)
-        .str.strip()
-        .replace("", "SEM NOME")
-    )
+    df["NOME_LEAD"] = df[col_nome].fillna("SEM NOME").astype(str).str.strip()
 
 # Telefone
 col_tel = None
-for c in ["telefone_pessoa", "telefone", "phone"]:
+for c in ["telefone", "telefone1", "telefone_principal", "celular"]:
     if c in df.columns:
         col_tel = c
         break
@@ -97,38 +98,51 @@ if "data_com_corretor" in df.columns:
 else:
     df["DATA_COM_CORRETOR_DT"] = pd.NaT
 
-if "data_ultimo_atendimento" in df.columns:
+if "data_ultima_interacao" in df.columns:
     df["DATA_ULT_INTERACAO_DT"] = pd.to_datetime(
-        df["data_ultimo_atendimento"], errors="coerce"
+        df["data_ultima_interacao"], errors="coerce"
     )
 else:
     df["DATA_ULT_INTERACAO_DT"] = pd.NaT
 
-if "data_vendendo" in df.columns:
-    df["DATA_VENDENDO_DT"] = pd.to_datetime(df["data_vendendo"], errors="coerce")
-else:
-    df["DATA_VENDENDO_DT"] = pd.NaT
+# Leads perdidos (por situação/etapa que indique perda, se disponível)
+df["PERDIDO"] = False
+if col_situacao:
+    situ_norm = df[col_situacao].fillna("").astype(str).str.upper()
+    df.loc[
+        situ_norm.str.contains("PERD", na=False)
+        | situ_norm.str.contains("DESCART", na=False)
+        | situ_norm.str.contains("NÃO TEM INTERESSE", na=False),
+        "PERDIDO",
+    ] = True
 
-if "data_vendido_perdido" in df.columns:
-    df["DATA_VENDIDO_PERDIDO_DT"] = pd.to_datetime(df["data_vendido_perdido"], errors="coerce")
-else:
-    df["DATA_VENDIDO_PERDIDO_DT"] = pd.NaT
+if col_etapa:
+    etapa_norm = df[col_etapa].fillna("").astype(str).str.upper()
+    df.loc[
+        etapa_norm.str.contains("PERD", na=False)
+        | etapa_norm.str.contains("DESCART", na=False),
+        "PERDIDO",
+    ] = True
 
-# remove linhas sem captura
-df = df[df["DATA_CAPTURA_DT"].notna()].copy()
-if df.empty:
-    st.error("Não há leads com data de captura válida.")
-    st.stop()
+# ATENDIDO = já teve contato com corretor
+df["ATENDIDO"] = df["DATA_COM_CORRETOR_DT"].notna()
 
-# ---------------------------------------------------------
-# AUXILIARES
-# ---------------------------------------------------------
+# SLA EM MINUTOS – tempo entre captura e primeiro contato
+df["SLA_MINUTOS"] = np.where(
+    df["DATA_COM_CORRETOR_DT"].notna(),
+    (df["DATA_COM_CORRETOR_DT"] - df["DATA_CAPTURA_DT"]).dt.total_seconds() / 60,
+    np.nan,
+)
+
+# Função utilitária para formatar minutos como "Xh YYmin"
 def format_minutes(total_min):
     if pd.isna(total_min):
         return "-"
     total_min = int(total_min)
     horas = total_min // 60
     minutos = total_min % 60
+    if horas == 0:
+        return f"{minutos} min"
     return f"{horas}h {minutos:02d} min"
 
 
@@ -161,18 +175,12 @@ else:
     data_ini = periodo
     data_fim = periodo
 
-if data_ini > data_fim:
-    data_ini, data_fim = data_fim, data_ini
-
-# Filtro por corretor
-lista_corretor = sorted(df["CORRETOR_EXIBICAO"].dropna().unique())
-corretor_sel = st.sidebar.selectbox(
-    "Filtrar por corretor (opcional)",
-    ["Todos"] + lista_corretor,
-)
+# Filtro de corretor
+lista_corretores = sorted(df["CORRETOR_EXIBICAO"].unique())
+corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretores)
 
 # ---------------------------------------------------------
-# APLICAÇÃO DOS FILTROS NA BASE
+# APLICA FILTROS
 # ---------------------------------------------------------
 mask_periodo = (df["DATA_CAPTURA_DT"].dt.date >= data_ini) & (
     df["DATA_CAPTURA_DT"].dt.date <= data_fim
@@ -182,41 +190,19 @@ df_periodo = df[mask_periodo].copy()
 if corretor_sel != "Todos":
     df_periodo = df_periodo[df_periodo["CORRETOR_EXIBICAO"] == corretor_sel]
 
-if df_periodo.empty:
+qtde_leads_periodo = len(df_periodo)
+
+if qtde_leads_periodo == 0:
     st.warning("Nenhum lead encontrado para os filtros selecionados.")
     st.stop()
 
-# lead atendido = tem DATA_COM_CORRETOR_DT
-df_periodo["ATENDIDO"] = df_periodo["DATA_COM_CORRETOR_DT"].notna()
-
-# SLA = tempo entre CAPTURA e DATA_COM_CORRETOR_DT (apenas atendidos)
-mask_sla = df_periodo["ATENDIDO"] & df_periodo["DATA_COM_CORRETOR_DT"].notna()
-df_sla = df_periodo[mask_sla].copy()
-df_sla["SLA_MIN"] = (
-    (df_sla["DATA_COM_CORRETOR_DT"] - df_sla["DATA_CAPTURA_DT"])
-    .dt.total_seconds()
-    .div(60)
-)
-
-sla_medio_min = df_sla["SLA_MIN"].mean() if not df_sla.empty else np.nan
-
-# Leads com perda
-mask_perdido = df["DATA_VENDIDO_PERDIDO_DT"].notna()
-df_perdidos = df[mask_perdido].copy()
-
-qtde_leads_periodo = len(df_periodo)
-
-# mesma lógica para perdidos (para usar no card)
-qtde_leads_perdidos_periodo = 0
-if not df_perdidos.empty:
-    mask_perdido_periodo = (df_perdidos["DATA_CAPTURA_DT"].dt.date >= data_ini) & (
-        df_perdidos["DATA_CAPTURA_DT"].dt.date <= data_fim
-    )
-    df_perdidos_periodo = df_perdidos[mask_perdido_periodo].copy()
-    if corretor_sel != "Todos":
-        df_perdidos_periodo = df_perdidos_periodo[
-            df_perdidos_periodo["CORRETOR_EXIBICAO"] == corretor_sel
-        ]
+# Leads perdidos no período (antes de filtrar por corretor, para visão geral)
+df_perdidos_periodo = df[mask_periodo & df["PERDIDO"]].copy()
+qtde_leads_perdidos_periodo = len(df_perdidos_periodo)
+if corretor_sel != "Todos":
+    df_perdidos_periodo = df_perdidos_periodo[
+        df_perdidos_periodo["CORRETOR_EXIBICAO"] == corretor_sel
+    ]
     qtde_leads_perdidos_periodo = len(df_perdidos_periodo)
 
 st.caption(
@@ -239,6 +225,12 @@ mask_leads_novos = (
     & df_periodo["DATA_COM_CORRETOR_DT"].isna()
 )
 qtde_leads_novos = int(mask_leads_novos.sum())
+
+# SLA médio apenas dos atendidos
+sla_medio_min = df_periodo.loc[df_periodo["ATENDIDO"], "SLA_MINUTOS"].mean()
+
+# Leads perdidos no período (já calculado acima)
+qtde_leads_perdidos_periodo = int(qtde_leads_perdidos_periodo)
 
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 with c1:
@@ -295,6 +287,55 @@ if qtde_leads_novos > 0:
         st.dataframe(df_novos_tab, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
+# VISÃO POR CORRETOR – Qtd. de leads e SLAs
+# ---------------------------------------------------------
+st.markdown("---")
+st.markdown("## 👥 Desempenho por corretor")
+
+df_cor = df_periodo.copy()
+
+# SLA inicial: tempo entre captura do lead e primeiro atendimento do corretor
+df_cor["SLA_INICIAL_MIN"] = np.where(
+    df_cor["DATA_COM_CORRETOR_DT"].notna(),
+    (df_cor["DATA_COM_CORRETOR_DT"] - df_cor["DATA_CAPTURA_DT"])
+    .dt.total_seconds() / 60,
+    np.nan,
+)
+
+# SLA entre interações: tempo entre o primeiro atendimento e a última interação registrada
+df_cor["SLA_INTERACOES_MIN"] = np.where(
+    df_cor["DATA_COM_CORRETOR_DT"].notna() & df_cor["DATA_ULT_INTERACAO_DT"].notna(),
+    (df_cor["DATA_ULT_INTERACAO_DT"] - df_cor["DATA_COM_CORRETOR_DT"])
+    .dt.total_seconds() / 60,
+    np.nan,
+)
+
+df_resumo_corretor = df_cor.groupby("CORRETOR_EXIBICAO").agg(
+    LEADS=("NOME_LEAD", "count"),
+    ATENDIDOS=("ATENDIDO", "sum"),
+    SLA_MEDIO=("SLA_INICIAL_MIN", "mean"),
+    SLA_INTERACOES_MEDIO=("SLA_INTERACOES_MIN", "mean"),
+).reset_index()
+
+# Formata SLAs em horas e minutos
+df_resumo_corretor["SLA_MEDIO"] = df_resumo_corretor["SLA_MEDIO"].apply(format_minutes)
+df_resumo_corretor["SLA_INTERACOES_MEDIO"] = df_resumo_corretor[
+    "SLA_INTERACOES_MEDIO"
+].apply(format_minutes)
+
+df_resumo_corretor = df_resumo_corretor.rename(
+    columns={
+        "CORRETOR_EXIBICAO": "Corretor",
+        "LEADS": "Leads",
+        "ATENDIDOS": "Leads atendidos",
+        "SLA_MEDIO": "SLA inicial médio",
+        "SLA_INTERACOES_MEDIO": "SLA entre interações (médio)",
+    }
+).sort_values("Leads", ascending=False)
+
+st.dataframe(df_resumo_corretor, hide_index=True, use_container_width=True)
+
+# ---------------------------------------------------------
 # BUSCAR LEAD ESPECÍFICO
 # ---------------------------------------------------------
 st.markdown("---")
@@ -325,23 +366,21 @@ if not df_busca.empty:
         + ([col_etapa] if col_etapa else [])
     ].copy()
 
-    df_busca_tab["DATA_CAPTURA_DT"] = df_busca_tab["DATA_CAPTURA_DT"].dt.strftime(
-        "%d/%m/%Y %H:%M"
+    df_busca_tab["DATA_CAPTURA_DT"] = df_busca_tab["DATA_CAPTURA_DT"].apply(fmt_dt)
+    df_busca_tab["DATA_COM_CORRETOR_DT"] = df_busca_tab["DATA_COM_CORRETOR_DT"].apply(
+        fmt_dt
     )
-    df_busca_tab["DATA_COM_CORRETOR_DT"] = df_busca_tab[
-        "DATA_COM_CORRETOR_DT"
-    ].dt.strftime("%d/%m/%Y %H:%M")
     df_busca_tab["DATA_ULT_INTERACAO_DT"] = df_busca_tab[
         "DATA_ULT_INTERACAO_DT"
-    ].dt.strftime("%d/%m/%Y %H:%M")
+    ].apply(fmt_dt)
 
     df_busca_tab = df_busca_tab.rename(
         columns={
             "NOME_LEAD": "Lead",
             "TELEFONE_LEAD": "Telefone",
             "CORRETOR_EXIBICAO": "Corretor",
-            "DATA_CAPTURA_DT": "Data captura",
-            "DATA_COM_CORRETOR_DT": "Data com corretor",
+            "DATA_CAPTURA_DT": "Data de captura",
+            "DATA_COM_CORRETOR_DT": "1º contato com corretor",
             "DATA_ULT_INTERACAO_DT": "Última interação",
             col_situacao: "Situação" if col_situacao else col_situacao,
             col_etapa: "Etapa" if col_etapa else col_etapa,
@@ -351,21 +390,18 @@ if not df_busca.empty:
     st.dataframe(df_busca_tab, use_container_width=True, hide_index=True)
 else:
     if nome_busca.strip():
-        st.info("Nenhum lead encontrado com esse nome no período filtrado.")
+        st.info("Nenhum lead encontrado com esse nome nos filtros selecionados.")
 
 # ---------------------------------------------------------
-# VISÃO DETALHADA POR STATUS DE ATENDIMENTO
+# TABELAS DETALHADAS – ATENDIDOS X NÃO ATENDIDOS
 # ---------------------------------------------------------
 st.markdown("---")
-st.markdown("## 📊 Detalhamento do atendimento")
+st.markdown("## 📋 Detalhamento dos leads do período")
 
 aba1, aba2, aba3 = st.tabs(
-    ["Leads atendidos", "Leads não atendidos", "Leads sem retorno"]
+    ["✅ Atendidos", "⏳ Não atendidos", "📞 Apenas 1 contato"]
 )
 
-# ------------------------------------
-# 1) LEADS ATENDIDOS
-# ------------------------------------
 with aba1:
     st.subheader("✅ Leads atendidos no período")
 
@@ -401,8 +437,8 @@ with aba1:
                 "NOME_LEAD": "Lead",
                 "TELEFONE_LEAD": "Telefone",
                 "CORRETOR_EXIBICAO": "Corretor",
-                "DATA_CAPTURA_DT": "Data captura",
-                "DATA_COM_CORRETOR_DT": "Data com corretor",
+                "DATA_CAPTURA_DT": "Data de captura",
+                "DATA_COM_CORRETOR_DT": "1º contato com corretor",
                 "DATA_ULT_INTERACAO_DT": "Última interação",
                 col_situacao: "Situação" if col_situacao else col_situacao,
                 col_etapa: "Etapa" if col_etapa else col_etapa,
@@ -411,69 +447,64 @@ with aba1:
 
         st.dataframe(df_atendidos_tab, use_container_width=True, hide_index=True)
 
-# ------------------------------------
-# 2) LEADS NÃO ATENDIDOS
-# ------------------------------------
 with aba2:
-    st.subheader("⏱️ Leads não atendidos")
+    st.subheader("⏳ Leads não atendidos no período")
 
     df_nao_atendidos = df_periodo[~df_periodo["ATENDIDO"]].copy()
     if df_nao_atendidos.empty:
-        st.info("Nenhum lead não atendido no período.")
+        st.info("Todos os leads do período foram atendidos pelo menos uma vez. 🎉")
     else:
-        df_nao_tab = df_nao_atendidos[
+        df_nao_atendidos_tab = df_nao_atendidos[
             [
                 "NOME_LEAD",
                 "TELEFONE_LEAD",
                 "CORRETOR_EXIBICAO",
                 "DATA_CAPTURA_DT",
-                "DATA_ULT_INTERACAO_DT",
             ]
             + ([col_situacao] if col_situacao else [])
             + ([col_etapa] if col_etapa else [])
         ].copy()
 
-        df_nao_tab["DATA_CAPTURA_DT"] = df_nao_tab["DATA_CAPTURA_DT"].dt.strftime(
-            "%d/%m/%Y %H:%M"
-        )
-        df_nao_tab["DATA_ULT_INTERACAO_DT"] = df_nao_tab[
-            "DATA_ULT_INTERACAO_DT"
+        df_nao_atendidos_tab["DATA_CAPTURA_DT"] = df_nao_atendidos_tab[
+            "DATA_CAPTURA_DT"
         ].dt.strftime("%d/%m/%Y %H:%M")
 
-        df_nao_tab = df_nao_tab.rename(
+        df_nao_atendidos_tab = df_nao_atendidos_tab.rename(
             columns={
                 "NOME_LEAD": "Lead",
                 "TELEFONE_LEAD": "Telefone",
                 "CORRETOR_EXIBICAO": "Corretor",
-                "DATA_CAPTURA_DT": "Data captura",
-                "DATA_ULT_INTERACAO_DT": "Última interação",
+                "DATA_CAPTURA_DT": "Data de captura",
                 col_situacao: "Situação" if col_situacao else col_situacao,
                 col_etapa: "Etapa" if col_etapa else col_etapa,
             }
         )
 
-        st.dataframe(df_nao_tab, use_container_width=True, hide_index=True)
+        st.dataframe(df_nao_atendidos_tab, use_container_width=True, hide_index=True)
 
-# ------------------------------------
-# 3) LEADS SEM RETORNO (APENAS 1 CONTATO)
-# ------------------------------------
 with aba3:
-    st.subheader("🔁 Leads sem retorno (apenas 1 contato)")
+    st.subheader("📞 Leads com apenas 1 contato")
 
-    # Se não tem DATA_COM_CORRETOR_DT -> 0 contatos
-    # Se tem DATA_COM_CORRETOR_DT mas não tem DATA_ULT_INTERACAO_DT -> 1 contato
-    df_1c = df_periodo.copy()
-    cond_sem_atendimento = df_1c["DATA_COM_CORRETOR_DT"].isna()
-    cond_um_contato = df_1c["DATA_COM_CORRETOR_DT"].notna() & df_1c[
-        "DATA_ULT_INTERACAO_DT"
-    ].isna()
+    df_1_contato = df_periodo[
+        df_periodo["ATENDIDO"]
+        & df_periodo["DATA_COM_CORRETOR_DT"].notna()
+        & (
+            df_periodo["DATA_ULT_INTERACAO_DT"].isna()
+            | (
+                df_periodo["DATA_COM_CORRETOR_DT"].notna()
+                & df_periodo["DATA_ULT_INTERACAO_DT"].notna()
+                & (
+                    df_periodo["DATA_COM_CORRETOR_DT"]
+                    == df_periodo["DATA_ULT_INTERACAO_DT"]
+                )
+            )
+        )
+    ].copy()
 
-    df_1c = df_1c[cond_um_contato].copy()
-
-    if df_1c.empty:
-        st.info("Nenhum lead com apenas 1 contato no período.")
+    if df_1_contato.empty:
+        st.info("Nenhum lead ficou com apenas um contato no período. 👏")
     else:
-        df_tab_1c = df_1c[
+        df_tab_1c = df_1_contato[
             [
                 "NOME_LEAD",
                 "TELEFONE_LEAD",
