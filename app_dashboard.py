@@ -6,100 +6,6 @@ from datetime import timedelta, datetime
 from utils.supremo_config import TOKEN_SUPREMO
 
 # ---------------------------------------------------------
-# USUÁRIOS DO DASHBOARD (LOGIN SIMPLES)
-# ---------------------------------------------------------
-USERS = {
-    "DIEGO": {
-        "nome": "Diego Pinheiro",
-        "senha": "mr2025!",
-        "perfil": "GESTAO",
-    },
-    "LEANDRO": {
-        "nome": "Leandro Rodrigues",
-        "senha": "mr2025!",
-        "perfil": "GESTAO",
-    },
-    "MAGDA": {
-        "nome": "Magda Rayanne",
-        "senha": "mr2025!",
-        "perfil": "ADM",
-    },
-    "DJACIR": {
-        "nome": "Djacir Silva",
-        "senha": "mr2025!",
-        "perfil": "ADM",
-    },
-    "NICOLAS": {
-        "nome": "Nicolas Araujo",
-        "senha": "mr2025!",
-        "perfil": "ADM",
-    },
-    "BRUNO": {
-        "nome": "Bruno Marinho",
-        "senha": "mr2025!",
-        "perfil": "GESTAO",
-    },
-}
-
-
-def login_screen():
-    """
-    Tela de login estilo SaaS / CRM / Startup:
-    - fundo degradê
-    - card central
-    - título, subtítulo
-    - campos de usuário e senha
-    """
-    st.markdown(
-        """
-        <div class="login-page">
-          <div class="login-card">
-            <div class="login-header">
-              <div class="login-logo-circle">
-                <span>MR</span>
-              </div>
-              <div>
-                <h2>Dashboard MR Imóveis</h2>
-                <p>Acesso restrito para Gestão e Administrativo.</p>
-              </div>
-            </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    col_user, col_pwd = st.columns(1)
-    with col_user:
-        usuario = st.text_input("Usuário", key="login_user").upper().strip()
-    with col_pwd:
-        senha = st.text_input("Senha", type="password", key="login_pwd")
-
-    col_btn, col_spacer = st.columns([1, 3])
-    with col_btn:
-        entrar = st.button("Entrar", use_container_width=True)
-
-    if entrar:
-        if usuario in USERS and senha == USERS[usuario]["senha"]:
-            st.session_state["logado"] = True
-            st.session_state["usuario"] = usuario
-            st.session_state["nome_usuario"] = USERS[usuario]["nome"]
-            st.session_state["perfil"] = USERS[usuario]["perfil"]
-            st.success(f"Bem-vindo, {USERS[usuario]['nome']}!")
-        else:
-            st.error("Usuário ou senha inválidos.")
-
-    st.markdown(
-        """
-          <div class="login-footer">
-            <span>MR Imóveis • Painel interno</span>
-          </div>
-        </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
 # ---------------------------------------------------------
 st.set_page_config(
@@ -109,7 +15,7 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# ESTILO (CSS) – TEMA MIDNIGHT BLUE MR + LOGIN SAAS
+# ESTILO (CSS) – TEMA MIDNIGHT BLUE MR
 # ---------------------------------------------------------
 st.markdown(
     """
@@ -251,85 +157,13 @@ st.markdown(
 
     /* rodapé padrão do Streamlit escondido */
     footer {visibility: hidden;}
-
-    /* ==========================
-       LOGIN – ESTILO SAAS / CRM
-       ========================== */
-    .login-page {
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 2rem 1rem;
-    }
-
-    .login-card {
-        width: 100%;
-        max-width: 420px;
-        background: radial-gradient(circle at top left, #020617 0%, #020617 45%, #020617 100%);
-        border-radius: 20px;
-        padding: 1.8rem 1.6rem;
-        box-shadow: 0 22px 45px rgba(0,0,0,0.65);
-        border: 1px solid rgba(148,163,184,0.35);
-    }
-
-    .login-header {
-        display: flex;
-        align-items: center;
-        gap: 0.9rem;
-        margin-bottom: 1.4rem;
-    }
-
-    .login-logo-circle {
-        width: 44px;
-        height: 44px;
-        border-radius: 999px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: radial-gradient(circle at 20% 0%, #38bdf8 0%, #0ea5e9 35%, #1d4ed8 85%);
-        box-shadow: 0 10px 25px rgba(37,99,235,0.65);
-    }
-    .login-logo-circle span {
-        font-weight: 800;
-        letter-spacing: 0.08em;
-        color: white;
-        font-size: 0.8rem;
-    }
-
-    .login-header h2 {
-        margin: 0;
-        padding: 0;
-        font-size: 1.2rem;
-        color: #e5e7eb;
-    }
-    .login-header p {
-        margin: 0;
-        padding: 0;
-        font-size: 0.85rem;
-        color: #9ca3af;
-    }
-
-    .login-footer {
-        margin-top: 1.5rem;
-        text-align: center;
-        font-size: 0.75rem;
-        color: #6b7280;
-    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 # ---------------------------------------------------------
-# SE NÃO ESTIVER LOGADO, MOSTRA LOGIN E PARA
-# ---------------------------------------------------------
-if not st.session_state.get("logado", False):
-    login_screen()
-    st.stop()
-
-# ---------------------------------------------------------
-# LOGO (SIDEBAR) – APÓS LOGIN
+# LOGO
 # ---------------------------------------------------------
 LOGO_PATH = "logo_mr.png"
 try:
@@ -544,7 +378,6 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
         df_all["equipe_lead_norm"] = "NÃO INFORMADO"
 
     return df_all.head(limit)
-
 
 # ---------------------------------------------------------
 # SIDEBAR – FILTROS
