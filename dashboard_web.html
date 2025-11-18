@@ -1,0 +1,523 @@
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<title>Dashboard Imobiliária</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f5f7fb;
+    }
+    h1, h2, h3 {
+        color: #0b2e4e;
+    }
+    .kpis {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        margin-bottom: 25px;
+    }
+    .card {
+        background: #ffffff;
+        padding: 12px 16px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        min-width: 160px;
+    }
+    .card .label {
+        font-size: 12px;
+        color: #666;
+    }
+    .card .value {
+        font-size: 20px;
+        font-weight: bold;
+        color: #0b2e4e;
+    }
+    .card .sub {
+        font-size: 11px;
+        color: #888;
+    }
+    .section {
+        margin-top: 30px;
+        margin-bottom: 10px;
+    }
+    .tabela {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 12px;
+        background: #ffffff;
+    }
+    .tabela th, .tabela td {
+        border: 1px solid #ddd;
+        padding: 6px 8px;
+        text-align: left;
+    }
+    .tabela th {
+        background-color: #0b2e4e;
+        color: #fff;
+    }
+    img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        background: #fff;
+    }
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 20px;
+        align-items: start;
+    }
+</style>
+</head>
+<body>
+    <h1>📊 Dashboard Imobiliária – Versão Web (HTML)</h1>
+    <p>Arquivo base: <strong>dados_imobiliaria.csv</strong></p>
+
+    <div class="kpis">
+        <div class="card">
+            <div class="label">Em análise</div>
+            <div class="value">844</div>
+        </div>
+        <div class="card">
+            <div class="label">Reanálise</div>
+            <div class="value">2</div>
+        </div>
+        <div class="card">
+            <div class="label">Aprovações (total)</div>
+            <div class="value">332</div>
+            <div class="sub">Aprovação: 299 | Bacen: 33</div>
+        </div>
+        <div class="card">
+            <div class="label">Reprovações</div>
+            <div class="value">70</div>
+        </div>
+        <div class="card">
+            <div class="label">Vendas totais</div>
+            <div class="value">29</div>
+            <div class="sub">Gerada: 26 | Informada: 3</div>
+        </div>
+        <div class="card">
+            <div class="label">Aprovações / Em análise</div>
+            <div class="value">39.3%</div>
+        </div>
+        <div class="card">
+            <div class="label">Vendas / Em análise</div>
+            <div class="value">3.4%</div>
+        </div>
+        <div class="card">
+            <div class="label">Vendas / Aprovações</div>
+            <div class="value">8.7%</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Funil de conversão</h2>
+        <p>Em análise → Reanálise → Aprovações → Vendas</p>
+        <img src="funil_conversao_4_etapas.png" alt="Funil de conversão">
+    </div>
+
+    <div class="section">
+        <h2>Equipes – Análises x Vendas</h2>
+        <div class="grid">
+            <div>
+                <h3>Gráfico</h3>
+                <img src="equipes_analises_vendas.png" alt="Equipes - Análises x Vendas">
+            </div>
+            <div>
+                <h3>Tabela</h3>
+                <table class="dataframe tabela">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>analises_total</th>
+      <th>vendas_total</th>
+    </tr>
+    <tr>
+      <th>EQUIPE</th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Equipe Gladiadores</th>
+      <td>267</td>
+      <td>8</td>
+    </tr>
+    <tr>
+      <th>Equipe Sinergia</th>
+      <td>86</td>
+      <td>8</td>
+    </tr>
+    <tr>
+      <th>Equipe Tribo de Juda</th>
+      <td>493</td>
+      <td>13</td>
+    </tr>
+  </tbody>
+</table>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Top 20 Corretores por Vendas</h2>
+        <div class="grid">
+            <div>
+                <h3>Gráfico (Top 10)</h3>
+                <img src="top10_corretores_vendas.png" alt="Top 10 corretores por vendas">
+            </div>
+            <div>
+                <h3>Tabela (Top 20)</h3>
+                <table class="dataframe tabela">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>em_analise</th>
+      <th>reanalise</th>
+      <th>aprovacoes</th>
+      <th>vendas_total</th>
+      <th>analises_total</th>
+    </tr>
+    <tr>
+      <th>CORRETOR</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>MIKAELY LIMA</th>
+      <td>105</td>
+      <td>0</td>
+      <td>40</td>
+      <td>5</td>
+      <td>105</td>
+    </tr>
+    <tr>
+      <th>IVAN JUNIOR</th>
+      <td>19</td>
+      <td>0</td>
+      <td>11</td>
+      <td>3</td>
+      <td>19</td>
+    </tr>
+    <tr>
+      <th>JANICE ALCANTARA</th>
+      <td>33</td>
+      <td>0</td>
+      <td>16</td>
+      <td>3</td>
+      <td>33</td>
+    </tr>
+    <tr>
+      <th>MARCELLO BARBOSA</th>
+      <td>8</td>
+      <td>0</td>
+      <td>6</td>
+      <td>2</td>
+      <td>8</td>
+    </tr>
+    <tr>
+      <th>TAINA VIANA</th>
+      <td>36</td>
+      <td>0</td>
+      <td>20</td>
+      <td>2</td>
+      <td>36</td>
+    </tr>
+    <tr>
+      <th>MIKAEL DOUGLAS</th>
+      <td>7</td>
+      <td>0</td>
+      <td>3</td>
+      <td>2</td>
+      <td>7</td>
+    </tr>
+    <tr>
+      <th>SAMUEL SOUTO</th>
+      <td>18</td>
+      <td>0</td>
+      <td>7</td>
+      <td>2</td>
+      <td>18</td>
+    </tr>
+    <tr>
+      <th>DANIEL SOUZA</th>
+      <td>31</td>
+      <td>0</td>
+      <td>11</td>
+      <td>1</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>ADRIAN FERREIRA</th>
+      <td>3</td>
+      <td>0</td>
+      <td>0</td>
+      <td>1</td>
+      <td>3</td>
+    </tr>
+    <tr>
+      <th>DIEGO PINHEIRO</th>
+      <td>15</td>
+      <td>0</td>
+      <td>7</td>
+      <td>1</td>
+      <td>15</td>
+    </tr>
+    <tr>
+      <th>ANA RITA</th>
+      <td>41</td>
+      <td>0</td>
+      <td>13</td>
+      <td>1</td>
+      <td>41</td>
+    </tr>
+    <tr>
+      <th>MARCIA MATOS</th>
+      <td>71</td>
+      <td>0</td>
+      <td>27</td>
+      <td>1</td>
+      <td>71</td>
+    </tr>
+    <tr>
+      <th>PATRICIA SALES</th>
+      <td>23</td>
+      <td>0</td>
+      <td>10</td>
+      <td>1</td>
+      <td>23</td>
+    </tr>
+    <tr>
+      <th>RYAN FERRARI</th>
+      <td>11</td>
+      <td>0</td>
+      <td>5</td>
+      <td>1</td>
+      <td>11</td>
+    </tr>
+    <tr>
+      <th>LUANA BRAGA</th>
+      <td>5</td>
+      <td>0</td>
+      <td>3</td>
+      <td>1</td>
+      <td>5</td>
+    </tr>
+    <tr>
+      <th>REBEKA GONÇALVES</th>
+      <td>13</td>
+      <td>1</td>
+      <td>6</td>
+      <td>1</td>
+      <td>14</td>
+    </tr>
+    <tr>
+      <th>GABRIEL BEZERRA</th>
+      <td>23</td>
+      <td>0</td>
+      <td>8</td>
+      <td>1</td>
+      <td>23</td>
+    </tr>
+    <tr>
+      <th>ADRIAN</th>
+      <td>4</td>
+      <td>0</td>
+      <td>2</td>
+      <td>0</td>
+      <td>4</td>
+    </tr>
+    <tr>
+      <th>ALEXANDRE RODRIGUES</th>
+      <td>2</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>2</td>
+    </tr>
+    <tr>
+      <th>BRUNO MARINHO</th>
+      <td>5</td>
+      <td>0</td>
+      <td>1</td>
+      <td>0</td>
+      <td>5</td>
+    </tr>
+  </tbody>
+</table>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Top Construtoras por Vendas</h2>
+        <table class="dataframe tabela">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>vendas_total</th>
+    </tr>
+    <tr>
+      <th>CONSTRUTORA</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>CANOPUS</th>
+      <td>6</td>
+    </tr>
+    <tr>
+      <th>VICTA</th>
+      <td>4</td>
+    </tr>
+    <tr>
+      <th>DIRECIONAL</th>
+      <td>3</td>
+    </tr>
+    <tr>
+      <th>AVULSO</th>
+      <td>3</td>
+    </tr>
+    <tr>
+      <th>TM</th>
+      <td>2</td>
+    </tr>
+    <tr>
+      <th>TENDA</th>
+      <td>2</td>
+    </tr>
+    <tr>
+      <th>GRAN ROYAL</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>RIVA</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>ENGEPLAN</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>FAN</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>SUMARÉ</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>VITORIA MARACANAU</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>RNI</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>SR</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>VIVA VIDA MARACANAU</th>
+      <td>1</td>
+    </tr>
+  </tbody>
+</table>
+    </div>
+
+    <div class="section">
+        <h2>Top Empreendimentos por Vendas</h2>
+        <table class="dataframe tabela">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>vendas_total</th>
+    </tr>
+    <tr>
+      <th>EMPREENDIMENTO</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>AVULSO</th>
+      <td>3</td>
+    </tr>
+    <tr>
+      <th>VITORIA MARACANAÚ</th>
+      <td>2</td>
+    </tr>
+    <tr>
+      <th>GV EUSÉBIO</th>
+      <td>2</td>
+    </tr>
+    <tr>
+      <th>GV MARACANAU</th>
+      <td>2</td>
+    </tr>
+    <tr>
+      <th>DIRECIONAL</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>AMERICA DO NORTE</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>ATLANTICO CONDOMINIO</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>AMERICA DO SUL</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>GRAN VITORIA 3</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>MORADAS DA SERRA</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>GV CAUCAIA</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>GV MARACANAÚ</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>GRAN ROYAL</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>FANTASTIQUE PRIME</th>
+      <td>1</td>
+    </tr>
+    <tr>
+      <th>ECOSUM</th>
+      <td>1</td>
+    </tr>
+  </tbody>
+</table>
+    </div>
+
+    <hr>
+    <p style="font-size: 11px; color: #777;">
+        Página gerada automaticamente em Python a partir de <strong>dados_imobiliaria.csv</strong>.
+    </p>
+</body>
+</html>
