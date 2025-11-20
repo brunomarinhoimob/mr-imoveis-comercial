@@ -12,6 +12,15 @@ st.set_page_config(
     layout="wide",
 )
 
+# ---------------------------------------------------------
+# LOGO MR IMÓVEIS (coloque logo_mr.png na raiz do app)
+# ---------------------------------------------------------
+LOGO_PATH = "logo_mr.png"
+try:
+    st.sidebar.image(LOGO_PATH, use_container_width=True)
+except Exception:
+    st.sidebar.write("MR Imóveis")
+
 st.title("🧑‍💼 Página de Clientes – MR Imóveis")
 st.caption(
     "Busque clientes pelo nome (parcial) ou CPF e veja o histórico de análises, "
@@ -87,7 +96,7 @@ def carregar_dados():
         df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
 
-        # 🔹 Situação ORIGINAL – exatamente como na célula (só padronizado em maiúsculo e sem espaços extras)
+        # Situação ORIGINAL – exatamente como na célula
         df["SITUACAO_ORIGINAL"] = (
             df[col_situacao].fillna("").astype(str).str.upper().str.strip()
         )
@@ -205,6 +214,9 @@ else:
         + df_resultado["CPF_CLIENTE_BASE"].fillna("")
     )
 
+    # Ordena por cliente + data para que o "último" seja o mais recente
+    df_resultado = df_resultado.sort_values(["CHAVE_CLIENTE", "DIA"])
+
     # Funções auxiliares
     def conta_analises(s):
         return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
@@ -225,9 +237,10 @@ else:
             APROVACOES=("STATUS_BASE", conta_aprovacoes),
             VENDAS=("STATUS_BASE", conta_vendas),
             VGV=("VGV", "sum"),
-            # 🔹 Situação atual agora vem da coluna ORIGINAL, não do STATUS_BASE
             ULT_STATUS=("SITUACAO_ORIGINAL", lambda x: x.iloc[-1] if len(x) > 0 else ""),
             ULT_DATA=("DIA", lambda x: x.max()),
+            # 🔹 Corretor responsável = corretor do último registro do cliente
+            ULT_CORRETOR=("CORRETOR", lambda x: x.iloc[-1] if len(x) > 0 else "NÃO INFORMADO"),
         )
         .reset_index()
     )
@@ -239,7 +252,19 @@ else:
     # Tabela geral
     st.markdown("#### 📋 Visão geral")
     st.dataframe(
-        resumo[["NOME", "CPF", "ULT_STATUS", "ULT_DATA", "ANALISES", "APROVACOES", "VENDAS", "VGV"]]
+        resumo[
+            [
+                "NOME",
+                "CPF",
+                "ULT_CORRETOR",
+                "ULT_STATUS",
+                "ULT_DATA",
+                "ANALISES",
+                "APROVACOES",
+                "VENDAS",
+                "VGV",
+            ]
+        ]
         .sort_values(["VENDAS", "VGV"], ascending=False)
         .style.format({"VGV": "R$ {:,.2f}".format}),
         use_container_width=True,
@@ -259,7 +284,6 @@ else:
             .replace(",", "")
             .replace(" ", "")
         )
-        # se sobrar só dígito, consideramos número
         return t.isdigit()
 
     # Cards para cada cliente
@@ -272,7 +296,8 @@ else:
 
         # Pega somente observações não numéricas
         obs_validas = [
-            obs for obs in df_cli["OBSERVACOES_RAW"].fillna("")
+            obs
+            for obs in df_cli["OBSERVACOES_RAW"].fillna("")
             if obs and not observacao_e_numero(obs)
         ]
 
@@ -288,12 +313,23 @@ else:
                     st.write(f"**CPF:** `{cpf_fmt}`")
                 else:
                     st.write("**CPF:** não informado")
-                st.write(f"**Situação atual:** `{row['ULT_STATUS'] or 'NÃO INFORMADO'}`")
+
+                st.write(
+                    f"**Corretor responsável (último registro):** "
+                    f"`{row['ULT_CORRETOR'] or 'NÃO INFORMADO'}`"
+                )
+
+                st.write(
+                    f"**Situação atual:** `{row['ULT_STATUS'] or 'NÃO INFORMADO'}`"
+                )
                 if ultima_obs:
                     st.write(f"**Última observação:** {ultima_obs}")
             with col_top2:
                 if pd.notna(row["ULT_DATA"]):
-                    st.write(f"**Última movimentação:** {row['ULT_DATA'].strftime('%d/%m/%Y')}")
+                    st.write(
+                        f"**Última movimentação:** "
+                        f"{row['ULT_DATA'].strftime('%d/%m/%Y')}"
+                    )
                 else:
                     st.write("**Última movimentação:** não informada")
 
@@ -307,5 +343,7 @@ else:
             with c4:
                 st.metric(
                     "VGV total",
-                    f"R$ {row['VGV']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    f"R$ {row['VGV']:,.2f}".replace(",", "X")
+                    .replace(".", ",")
+                    .replace("X", "."),
                 )
