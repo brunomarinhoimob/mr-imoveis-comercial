@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import requests
 import difflib
-from datetime import date
+from datetime import date, timedelta  # <- acrescentei timedelta
 
 from utils.supremo_config import TOKEN_SUPREMO  # <- precisa ter esse arquivo com TOKEN_SUPREMO
 
@@ -228,12 +228,15 @@ if not dias_validos.empty:
     data_max = dias_validos.max()
 else:
     hoje = date.today()
-    data_min = hoje
     data_max = hoje
+    data_min = hoje - timedelta(days=30)
+
+# 🎯 janela padrão: últimos 30 dias até a última data da base
+data_ini_default = max(data_min, data_max - timedelta(days=30))
 
 periodo = st.sidebar.date_input(
     "Período",
-    value=(data_min, data_max),
+    value=(data_ini_default, data_max),
     min_value=data_min,
     max_value=data_max,
 )
@@ -241,7 +244,7 @@ periodo = st.sidebar.date_input(
 if isinstance(periodo, tuple):
     data_ini, data_fim = periodo
 else:
-    data_ini, data_fim = data_min, data_max
+    data_ini, data_fim = data_ini_default, data_max
 
 # Filtro de equipe
 lista_equipes = sorted(df["EQUIPE"].dropna().unique())
