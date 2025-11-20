@@ -196,7 +196,7 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# BARRA LATERAL – BUSCA
+# BARRA LATERAL – BUSCA + FILTROS
 # ---------------------------------------------------------
 st.sidebar.title("Busca de clientes 🔎")
 
@@ -213,6 +213,37 @@ termo = st.sidebar.text_input(
 st.sidebar.caption(
     "• Nome: pode digitar só uma parte (ex: 'SILVA')\n"
     "• CPF: digite só números (não precisa de ponto ou traço)"
+)
+
+# ---------- NOVOS FILTROS: DATA + SITUAÇÃO ----------
+st.sidebar.markdown("---")
+st.sidebar.subheader("Filtros adicionais")
+
+dias_validos = pd.Series(df["DIA"].dropna())
+if not dias_validos.empty:
+    data_min = dias_validos.min()
+    data_max = dias_validos.max()
+else:
+    hoje = date.today()
+    data_min = hoje
+    data_max = hoje
+
+periodo = st.sidebar.date_input(
+    "Período das movimentações",
+    value=(data_min, data_max),
+    min_value=data_min,
+    max_value=data_max,
+)
+
+if isinstance(periodo, tuple):
+    data_ini, data_fim = periodo
+else:
+    data_ini, data_fim = data_min, data_max
+
+lista_situacoes = sorted(df["SITUACAO_ORIGINAL"].dropna().unique())
+situacao_sel = st.sidebar.selectbox(
+    "Situação (opcional)",
+    ["Todas"] + lista_situacoes,
 )
 
 # ---------------------------------------------------------
@@ -233,13 +264,25 @@ if termo.strip():
             df["CPF_CLIENTE_BASE"].str.contains(termo_cpf, na=False)
         ].copy()
 
+    # Aplica período
+    if not df_resultado.empty:
+        df_resultado = df_resultado[
+            (df_resultado["DIA"] >= data_ini) & (df_resultado["DIA"] <= data_fim)
+        ]
+
+        # Aplica filtro de situação, se selecionado
+        if situacao_sel != "Todas":
+            df_resultado = df_resultado[
+                df_resultado["SITUACAO_ORIGINAL"].str.contains(situacao_sel, na=False)
+            ]
+
 # ---------------------------------------------------------
 # EXIBIÇÃO DOS RESULTADOS
 # ---------------------------------------------------------
 if not termo.strip():
     st.info("Digite um nome ou CPF na lateral para iniciar a busca.")
 elif df_resultado.empty:
-    st.warning("Nenhum cliente encontrado com esse critério de busca.")
+    st.warning("Nenhum cliente encontrado com esse critério de busca/filtros.")
 else:
     # Chave única por cliente
     df_resultado["CHAVE_CLIENTE"] = (
@@ -258,7 +301,7 @@ else:
     def conta_vendas(s):
         return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
 
-    # Resumo por cliente
+    # Resumo por cliente (considerando data + situação já filtradas)
     resumo = (
         df_resultado.groupby("CHAVE_CLIENTE")
         .agg(
@@ -276,6 +319,10 @@ else:
 
     st.markdown(
         f"### 🔎 Resultado da busca – {len(resumo)} cliente(s) encontrado(s)"
+    )
+    st.caption(
+        f"Período: **{data_ini.strftime('%d/%m/%Y')}** até **{data_fim.strftime('%d/%m/%Y')}** "
+        f"• Situação: **{situacao_sel if situacao_sel != 'Todas' else 'Todas'}**"
     )
 
     # Tabela geral
@@ -310,7 +357,7 @@ else:
         chave = row["CHAVE_CLIENTE"]
         df_cli = df_resultado[df_resultado["CHAVE_CLIENTE"] == chave].copy()
 
-        # Ordena por data para pegar a última linha (última movimentação)
+        # Ordena por data para pegar a última linha (última movimentação) dentro do filtro
         df_cli = df_cli.sort_values("DIA")
         ultima_linha = df_cli.iloc[-1]
 
