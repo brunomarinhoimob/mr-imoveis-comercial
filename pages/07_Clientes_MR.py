@@ -336,23 +336,40 @@ else:
             st.markdown(f"##### 👤 {row['NOME']}")
 
             col_top1, col_top2 = st.columns(2)
+
+            # ------- LADO ESQUERDO: CAMPOS DESTACADOS -------
             with col_top1:
-                cpf_fmt = row["CPF"]
-                if cpf_fmt:
-                    st.write(f"**CPF:** {cpf_fmt}")
-                else:
-                    st.write("**CPF:** não informado")
-                st.write(f"**Situação atual:** {row['ULT_STATUS'] or 'NÃO INFORMADO'}")
-                st.write(f"**Corretor responsável (última movimentação):** {ult_corretor}")
-                st.write(f"**Construtora (última movimentação):** {ult_constr}")
-                st.write(f"**Empreendimento (última movimentação):** {ult_empr}")
-                if ultima_obs:
-                    st.write(f"**Última observação:** {ultima_obs}")
+                cpf_fmt = row["CPF"] if row["CPF"] else "NÃO INFORMADO"
+                situacao_fmt = row["ULT_STATUS"] or "NÃO INFORMADO"
+
+                st.markdown(
+                    f"""
+                    **CPF:** <span style="color:#93c5fd; font-weight:700;">{cpf_fmt}</span>  
+                    **Situação atual:** <span style="color:#86efac; font-weight:700;">{situacao_fmt}</span>  
+                    **Corretor responsável (última movimentação):** <span style="color:#f9a8d4; font-weight:700;">{ult_corretor}</span>  
+                    **Construtora (última movimentação):** <span style="color:#fca5a5; font-weight:700;">{ult_constr}</span>  
+                    **Empreendimento (última movimentação):** <span style="color:#fde68a; font-weight:700;">{ult_empr}</span>  
+                    {"**Última observação:** <span style='color:#e5e7eb; font-weight:700;'>" + ultima_obs + "</span>" if ultima_obs else ""}
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            # ------- LADO DIREITO: ÚLTIMA MOVIMENTAÇÃO DESTACADA -------
             with col_top2:
                 if pd.notna(row["ULT_DATA"]):
-                    st.write(f"**Última movimentação:** {row['ULT_DATA'].strftime('%d/%m/%Y')}")
+                    data_fmt = row["ULT_DATA"].strftime("%d/%m/%Y")
                 else:
-                    st.write("**Última movimentação:** não informada")
+                    data_fmt = "NÃO INFORMADA"
+
+                st.markdown(
+                    f"""
+                    **Última movimentação:**  
+                    <span style="font-size:1.2rem; font-weight:800; color:#fbbf24;">
+                        {data_fmt}
+                    </span>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
             # Métricas separando análise / reanálise
             m1, m2, m3 = st.columns(3)
