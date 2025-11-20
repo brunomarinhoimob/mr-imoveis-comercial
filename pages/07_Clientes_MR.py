@@ -13,6 +13,114 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
+# ESTILO GLOBAL (DARK PREMIUM)
+# ---------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #050814;
+        color: #f9fafb;
+    }
+
+    /* Tabela */
+    .dataframe tbody tr:hover {
+        background-color: #111827 !important;
+    }
+
+    /* Card do cliente */
+    .cliente-card {
+        border-radius: 18px;
+        padding: 18px 20px;
+        margin-bottom: 18px;
+        background: radial-gradient(circle at top left, #111827 0, #020617 45%, #020617 100%);
+        border: 1px solid #1f2937;
+        box-shadow: 0 18px 40px rgba(0,0,0,0.55);
+    }
+
+    .cliente-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 10px;
+    }
+
+    .cliente-nome {
+        font-size: 1.1rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+    }
+
+    .cliente-label {
+        font-size: 0.78rem;
+        color: #9ca3af;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    .valor-destaque {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #e5e7eb;
+    }
+
+    .valor-data {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #fbbf24;
+    }
+
+    .badges-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 18px;
+        margin-top: 6px;
+    }
+
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border: 1px solid transparent;
+        white-space: nowrap;
+    }
+
+    .badge-status {
+        background: rgba(22, 163, 74, 0.18);
+        border-color: #16a34a;
+        color: #bbf7d0;
+    }
+
+    .badge-corretor {
+        background: rgba(59, 130, 246, 0.12);
+        border-color: #3b82f6;
+        color: #bfdbfe;
+    }
+
+    .badge-construtora {
+        background: rgba(148, 163, 184, 0.10);
+        border-color: #4b5563;
+        color: #e5e7eb;
+    }
+
+    .ultima-obs {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px dashed #374151;
+        font-size: 0.9rem;
+        color: #e5e7eb;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ---------------------------------------------------------
 # LOGO MR IMÓVEIS
 # ---------------------------------------------------------
 LOGO_PATH = "logo_mr.png"
@@ -131,7 +239,6 @@ def carregar_dados():
         df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
 
-        # Situação ORIGINAL – exatamente como na célula (só em maiúsculo e sem espaços extras)
         df["SITUACAO_ORIGINAL"] = (
             df[col_situacao].fillna("").astype(str).str.upper().str.strip()
         )
@@ -331,47 +438,56 @@ else:
         reanalises = (df_cli["STATUS_BASE"] == "REANÁLISE").sum()
         analises_total = analises_em + reanalises
 
+        # Dados formatados
+        cpf_fmt = row["CPF"] if row["CPF"] else "NÃO INFORMADO"
+        situacao_fmt = row["ULT_STATUS"] or "NÃO INFORMADO"
+        if pd.notna(row["ULT_DATA"]):
+            data_fmt = row["ULT_DATA"].strftime("%d/%m/%Y")
+        else:
+            data_fmt = "NÃO INFORMADA"
+
         with st.container():
-            st.markdown("---")
-            st.markdown(f"##### 👤 {row['NOME']}")
+            # CARD PREMIUM
+            st.markdown(
+                f"""
+                <div class="cliente-card">
+                    <div class="cliente-header">
+                        <div>
+                            <div class="cliente-label">Cliente</div>
+                            <div class="cliente-nome">{row['NOME']}</div>
+                            <div class="cliente-label" style="margin-top:6px;">CPF</div>
+                            <div class="valor-destaque">{cpf_fmt}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div class="cliente-label">Última movimentação</div>
+                            <div class="valor-data">{data_fmt}</div>
+                            <div class="cliente-label" style="margin-top:8px;">Situação atual</div>
+                            <span class="badge badge-status">{situacao_fmt}</span>
+                        </div>
+                    </div>
 
-            col_top1, col_top2 = st.columns(2)
+                    <div class="badges-row">
+                        <div>
+                            <div class="cliente-label">Corretor responsável</div>
+                            <span class="badge badge-corretor">{ult_corretor}</span>
+                        </div>
+                        <div>
+                            <div class="cliente-label">Construtora</div>
+                            <span class="badge badge-construtora">{ult_constr}</span>
+                        </div>
+                        <div>
+                            <div class="cliente-label">Empreendimento</div>
+                            <span class="badge badge-construtora">{ult_empr}</span>
+                        </div>
+                    </div>
 
-            # ------- LADO ESQUERDO: CAMPOS DESTACADOS -------
-            with col_top1:
-                cpf_fmt = row["CPF"] if row["CPF"] else "NÃO INFORMADO"
-                situacao_fmt = row["ULT_STATUS"] or "NÃO INFORMADO"
+                    {"<div class='ultima-obs'><span class='cliente-label'>Última observação</span><br>" + ultima_obs + "</div>" if ultima_obs else ""}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-                st.markdown(
-                    f"""
-                    **CPF:** <span style="color:#93c5fd; font-weight:700;">{cpf_fmt}</span>  
-                    **Situação atual:** <span style="color:#86efac; font-weight:700;">{situacao_fmt}</span>  
-                    **Corretor responsável (última movimentação):** <span style="color:#f9a8d4; font-weight:700;">{ult_corretor}</span>  
-                    **Construtora (última movimentação):** <span style="color:#fca5a5; font-weight:700;">{ult_constr}</span>  
-                    **Empreendimento (última movimentação):** <span style="color:#fde68a; font-weight:700;">{ult_empr}</span>  
-                    {"**Última observação:** <span style='color:#e5e7eb; font-weight:700;'>" + ultima_obs + "</span>" if ultima_obs else ""}
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            # ------- LADO DIREITO: ÚLTIMA MOVIMENTAÇÃO DESTACADA -------
-            with col_top2:
-                if pd.notna(row["ULT_DATA"]):
-                    data_fmt = row["ULT_DATA"].strftime("%d/%m/%Y")
-                else:
-                    data_fmt = "NÃO INFORMADA"
-
-                st.markdown(
-                    f"""
-                    **Última movimentação:**  
-                    <span style="font-size:1.2rem; font-weight:800; color:#fbbf24;">
-                        {data_fmt}
-                    </span>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            # Métricas separando análise / reanálise
+            # Métricas separando análise / reanálise (fora do HTML, usando componentes nativos)
             m1, m2, m3 = st.columns(3)
             with m1:
                 st.metric("Análises (só EM)", int(analises_em))
