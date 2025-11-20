@@ -206,16 +206,17 @@ tipo_busca = st.sidebar.radio(
 )
 
 termo = st.sidebar.text_input(
-    "Digite o nome ou CPF do cliente",
+    "Digite o nome ou CPF do cliente (opcional)",
     placeholder="Ex: MARIA / 12345678901",
 )
 
 st.sidebar.caption(
     "• Nome: pode digitar só uma parte (ex: 'SILVA')\n"
-    "• CPF: digite só números (não precisa de ponto ou traço)"
+    "• CPF: digite só números (não precisa de ponto ou traço)\n"
+    "• Se deixar em branco, traz TODOS os clientes do período/situação."
 )
 
-# ---------- NOVOS FILTROS: DATA + SITUAÇÃO ----------
+# ---------- FILTROS: DATA + SITUAÇÃO ----------
 st.sidebar.markdown("---")
 st.sidebar.subheader("Filtros adicionais")
 
@@ -247,42 +248,41 @@ situacao_sel = st.sidebar.selectbox(
 )
 
 # ---------------------------------------------------------
-# FILTRO POR BUSCA
+# MONTA BASE PELO PERÍODO + SITUAÇÃO
 # ---------------------------------------------------------
-df_resultado = pd.DataFrame()
+df_filtrado_base = df[
+    (df["DIA"] >= data_ini) & (df["DIA"] <= data_fim)
+].copy()
 
+if situacao_sel != "Todas":
+    df_filtrado_base = df_filtrado_base[
+        df_filtrado_base["SITUACAO_ORIGINAL"].str.contains(situacao_sel, na=False)
+    ]
+
+# ---------------------------------------------------------
+# APLICA BUSCA (NOME/CPF) EM CIMA DESSA BASE
+# ---------------------------------------------------------
 if termo.strip():
     termo_limpo = termo.strip().upper()
 
     if tipo_busca.startswith("Nome"):
-        df_resultado = df[
-            df["NOME_CLIENTE_BASE"].str.contains(termo_limpo, na=False)
+        df_resultado = df_filtrado_base[
+            df_filtrado_base["NOME_CLIENTE_BASE"].str.contains(termo_limpo, na=False)
         ].copy()
     else:
         termo_cpf = "".join(ch for ch in termo if ch.isdigit())
-        df_resultado = df[
-            df["CPF_CLIENTE_BASE"].str.contains(termo_cpf, na=False)
+        df_resultado = df_filtrado_base[
+            df_filtrado_base["CPF_CLIENTE_BASE"].str.contains(termo_cpf, na=False)
         ].copy()
-
-    # Aplica período
-    if not df_resultado.empty:
-        df_resultado = df_resultado[
-            (df_resultado["DIA"] >= data_ini) & (df_resultado["DIA"] <= data_fim)
-        ]
-
-        # Aplica filtro de situação, se selecionado
-        if situacao_sel != "Todas":
-            df_resultado = df_resultado[
-                df_resultado["SITUACAO_ORIGINAL"].str.contains(situacao_sel, na=False)
-            ]
+else:
+    # sem termo → traz TODOS os clientes do período/situação
+    df_resultado = df_filtrado_base.copy()
 
 # ---------------------------------------------------------
 # EXIBIÇÃO DOS RESULTADOS
 # ---------------------------------------------------------
-if not termo.strip():
-    st.info("Digite um nome ou CPF na lateral para iniciar a busca.")
-elif df_resultado.empty:
-    st.warning("Nenhum cliente encontrado com esse critério de busca/filtros.")
+if df_resultado.empty:
+    st.warning("Nenhum cliente encontrado com esses filtros.")
 else:
     # Chave única por cliente
     df_resultado["CHAVE_CLIENTE"] = (
@@ -318,7 +318,7 @@ else:
     )
 
     st.markdown(
-        f"### 🔎 Resultado da busca – {len(resumo)} cliente(s) encontrado(s)"
+        f"### 🔎 Resultado – {len(resumo)} cliente(s) no período/situação selecionados"
     )
     st.caption(
         f"Período: **{data_ini.strftime('%d/%m/%Y')}** até **{data_fim.strftime('%d/%m/%Y')}** "
