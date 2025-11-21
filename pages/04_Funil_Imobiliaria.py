@@ -3,6 +3,10 @@ import pandas as pd
 import numpy as np
 import altair as alt
 from datetime import date
+import requests
+import io
+
+from utils.supremo_config import TOKEN_SUPREMO  # usa o mesmo token do dashboard
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -28,14 +32,21 @@ GID_ANALISES = "1574157905"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
 
 # ---------------------------------------------------------
+# CONFIG: API LEADS SUPREMO (CSV)
+# ---------------------------------------------------------
+BASE_URL_LEADS_CSV = "https://api.supremocrm.com.br/v1/leads/export"
+
+
+# ---------------------------------------------------------
 # FUNÇÃO AUXILIAR PARA LIMPAR DATA
 # ---------------------------------------------------------
 def limpar_para_data(serie):
     dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
     return dt.dt.date
 
+
 # ---------------------------------------------------------
-# CARREGAR E PREPARAR DADOS
+# CARREGAR E PREPARAR DADOS DA PLANILHA
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -99,7 +110,54 @@ def carregar_dados():
     return df
 
 
+# ---------------------------------------------------------
+# CARREGAR LEADS VIA CSV DO SUPREMO
+# ---------------------------------------------------------
+@st.cache_data(ttl=300)
+def carregar_leads_csv():
+    """
+    Busca leads via endpoint de exportação CSV do Supremo.
+    Retorna DataFrame com coluna DATA_LEAD (date) para filtro.
+    """
+    headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
+    params = {"tipo": "csv"}
+
+    try:
+        resp = requests.get(BASE_URL_LEADS_CSV, headers=headers, params=params, timeout=60)
+    except Exception as e:
+        st.warning(f"Não foi possível conectar à API de leads: {e}")
+        return pd.DataFrame()
+
+    if resp.status_code != 200:
+        st.warning(f"Erro ao buscar leads (CSV): {resp.status_code} - {resp.text}")
+        return pd.DataFrame()
+
+    try:
+        content = resp.content.decode("utf-8", errors="ignore")
+        df_leads = pd.read_csv(io.StringIO(content))
+    except Exception as e:
+        st.warning(f"Erro ao ler CSV de leads: {e}")
+        return pd.DataFrame()
+
+    # Normaliza coluna de data da captura
+    possible_date_cols = ["data_captura", "data_cadastro", "data", "DATA_CAPTURA", "DATA_CADASTRO"]
+    col_date = None
+    for c in possible_date_cols:
+        if c in df_leads.columns:
+            col_date = c
+            break
+
+    if col_date:
+        df_leads[col_date] = pd.to_datetime(df_leads[col_date], errors="coerce")
+        df_leads["DATA_LEAD"] = df_leads[col_date].dt.date
+    else:
+        df_leads["DATA_LEAD"] = pd.NaT
+
+    return df_leads
+
+
 df = carregar_dados()
+df_leads = carregar_leads_csv()
 
 if df.empty:
     st.error("Não foi possível carregar dados da planilha. Verifique o link/gid.")
@@ -160,25 +218,41 @@ if df_periodo.empty:
     st.stop()
 
 # ---------------------------------------------------------
+# LEADS NO PERÍODO (IMOBILIÁRIA)
+# ---------------------------------------------------------
+leads_periodo = 0
+if not df_leads.empty and "DATA_LEAD" in df_leads.columns:
+    mask_leads = (
+        (df_leads["DATA_LEAD"] >= data_ini)
+        & (df_leads["DATA_LEAD"] <= data_fim)
+    )
+    leads_periodo = mask_leads.sum()
+
+# ---------------------------------------------------------
 # FUNÇÕES AUXILIARES DO FUNIL
 # ---------------------------------------------------------
 def conta_analises(s):
     """Análises totais (EM + RE) – volume."""
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
 
+
 def conta_analises_base(s):
     """Análises para base de conversão – SOMENTE EM ANÁLISE."""
     return (s == "EM ANÁLISE").sum()
+
 
 def conta_reanalises(s):
     """Quantidade de REANÁLISE."""
     return (s == "REANÁLISE").sum()
 
+
 def conta_aprovacoes(s):
     return (s == "APROVADO").sum()
 
+
 def conta_vendas(s):
     return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
+
 
 # ---------------------------------------------------------
 # FUNIL GERAL DA IMOBILIÁRIA
@@ -203,8 +277,10 @@ taxa_venda_aprov = (
     vendas_total / aprov_total * 100 if aprov_total > 0 else 0
 )
 
-# Cards principais – separando ANÁLISE x REANÁLISE
-col1, col2, col3, col4, col5 = st.columns(5)
+# Cards principais – agora com LEADS
+col_leads, col1, col2, col3, col4, col5 = st.columns(6)
+with col_leads:
+    st.metric("Leads recebidos", leads_periodo)
 with col1:
     st.metric("Análises (só EM)", analises_em)
 with col2:
