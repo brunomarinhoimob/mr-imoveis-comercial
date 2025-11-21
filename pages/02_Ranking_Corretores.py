@@ -41,8 +41,10 @@ def limpar_para_data(serie):
 def carregar_dados():
     df = pd.read_csv(CSV_URL)
 
+    # Padroniza nomes de colunas
     df.columns = [c.strip().upper() for c in df.columns]
 
+    # Data
     if "DATA" in df.columns:
         df["DIA"] = limpar_para_data(df["DATA"])
     elif "DIA" in df.columns:
@@ -50,6 +52,7 @@ def carregar_dados():
     else:
         df["DIA"] = pd.NaT
 
+    # Equipe / Corretor
     for col in ["EQUIPE", "CORRETOR"]:
         if col in df.columns:
             df[col] = (
@@ -62,8 +65,13 @@ def carregar_dados():
         else:
             df[col] = "NÃO INFORMADO"
 
+    # Situação / Status
     possiveis_cols_situacao = [
-        "SITUAÇÃO", "SITUAÇÃO ATUAL", "STATUS", "SITUACAO", "SITUACAO ATUAL"
+        "SITUAÇÃO",
+        "SITUAÇÃO ATUAL",
+        "STATUS",
+        "SITUACAO",
+        "SITUACAO ATUAL",
     ]
     col_situacao = None
     for c in possiveis_cols_situacao:
@@ -81,6 +89,7 @@ def carregar_dados():
         df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
 
+    # VGV
     if "OBSERVAÇÕES" in df.columns:
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0.0)
     else:
@@ -100,23 +109,18 @@ if df.empty:
 st.sidebar.title("Filtros 🔎")
 
 dias_validos = pd.Series(df["DIA"].dropna())
-
 if not dias_validos.empty:
     data_max = dias_validos.max()
 else:
     data_max = date.today()
 
-# -------------------------------------------
-# 🔥 NOVO FILTRO AUTOMÁTICO = MÊS ATUAL
-# -------------------------------------------
+# Período padrão = mês atual
 primeiro_dia_mes = date(date.today().year, date.today().month, 1)
 ultimo_dia = date.today()
 
-# Guarda na sessão
 if "periodo_filtro" not in st.session_state:
     st.session_state["periodo_filtro"] = (primeiro_dia_mes, ultimo_dia)
 
-# Campo de seleção usando o padrão automático
 periodo = st.sidebar.date_input(
     "Período (padrão = mês atual)",
     value=st.session_state["periodo_filtro"],
@@ -124,10 +128,8 @@ periodo = st.sidebar.date_input(
     max_value=ultimo_dia,
 )
 
-# Atualiza sessão
 st.session_state["periodo_filtro"] = periodo
 
-# Converte tupla → datas
 if isinstance(periodo, tuple):
     data_ini, data_fim = periodo
 else:
@@ -162,7 +164,7 @@ if df_periodo.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# RANKING
+# RANKING POR CORRETOR
 # ---------------------------------------------------------
 def conta_analises(s):
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
@@ -184,6 +186,7 @@ rank_cor = (
     .reset_index()
 )
 
+# Remove corretores zerados
 rank_cor = rank_cor[
     (rank_cor["ANALISES"] > 0)
     | (rank_cor["APROVACOES"] > 0)
@@ -191,6 +194,7 @@ rank_cor = rank_cor[
     | (rank_cor["VGV"] > 0)
 ]
 
+# Taxas
 rank_cor["TAXA_APROV_ANALISES"] = np.where(
     rank_cor["ANALISES"] > 0,
     rank_cor["APROVACOES"] / rank_cor["ANALISES"] * 100,
@@ -203,25 +207,118 @@ rank_cor["TAXA_VENDAS_ANALISES"] = np.where(
     0,
 )
 
-rank_cor = rank_cor.sort_values(["VENDAS", "VGV"], ascending=False)
+# Ordena e gera POSIÇÃO
+rank_cor = rank_cor.sort_values(["VENDAS", "VGV"], ascending=False).reset_index(drop=True)
+
+# Coluna de posição numérica
+rank_cor.insert(0, "POSIÇÃO_NUM", rank_cor.index + 1)
+
+# Coluna de posição formatada com medalhas
+def format_posicao(pos):
+    if pos == 1:
+        return "🥇 1º"
+    elif pos == 2:
+        return "🥈 2º"
+    elif pos == 3:
+        return "🥉 3º"
+    else:
+        return f"{pos}º"
+
+rank_cor["POSIÇÃO"] = rank_cor["POSIÇÃO_NUM"].apply(format_posicao)
+
+# Reorganiza colunas (POSIÇÃO visível, POSIÇÃO_NUM só para lógica se quiser)
+colunas_ordem = [
+    "POSIÇÃO",
+    "CORRETOR",
+    "ANALISES",
+    "APROVACOES",
+    "VENDAS",
+    "VGV",
+    "TAXA_APROV_ANALISES",
+    "TAXA_VENDAS_ANALISES",
+]
+rank_cor = rank_cor[colunas_ordem + ["POSIÇÃO_NUM"]]
 
 # ---------------------------------------------------------
-# EXIBIÇÃO — TABELA EM CIMA, GRÁFICO EMBAIXO
+# ESTILO DA TABELA (1, 2 e 3 que você pediu)
 # ---------------------------------------------------------
 st.markdown("#### 📋 Tabela detalhada do ranking por corretor")
-st.dataframe(
-    rank_cor.style.format(
+
+def zebra_rows(row):
+    """Zebra nas linhas."""
+    base_color_even = "#020617"  # bem escuro
+    base_color_odd = "#0b1120"   # um pouco mais claro
+    color = base_color_even if row.name % 2 == 0 else base_color_odd
+    return [f"background-color: {color}"] * len(row)
+
+def highlight_top3(row):
+    """Destaque para os TOP 3."""
+    if row.name == 0:  # 1º lugar
+        return ["background-color: rgba(250, 204, 21, 0.18); font-weight: bold;"] * len(row)
+    elif row.name == 1:  # 2º lugar
+        return ["background-color: rgba(148, 163, 184, 0.25); font-weight: bold;"] * len(row)
+    elif row.name == 2:  # 3º lugar
+        return ["background-color: rgba(248, 250, 252, 0.06); font-weight: bold;"] * len(row)
+    else:
+        return [""] * len(row)
+
+# Estilos de header e células
+table_styles = [
+    {
+        "selector": "th",
+        "props": [
+            ("background-color", "#0f172a"),  # azul bem escuro
+            ("color", "#e5e7eb"),             # cinza claro
+            ("font-weight", "bold"),
+            ("text-align", "center"),
+            ("padding", "6px 8px"),
+        ],
+    },
+    {
+        "selector": "tbody td",
+        "props": [
+            ("border", "0px solid transparent"),
+            ("padding", "4px 8px"),
+            ("font-size", "0.9rem"),
+        ],
+    },
+]
+
+# Cria Styler
+styled_rank = (
+    rank_cor.drop(columns=["POSIÇÃO_NUM"])  # não mostra POSIÇÃO_NUM
+    .style
+    .format(
         {
             "VGV": "R$ {:,.2f}".format,
             "TAXA_APROV_ANALISES": "{:.1f}%".format,
             "TAXA_VENDAS_ANALISES": "{:.1f}%".format,
         }
-    ),
+    )
+    .set_table_styles(table_styles)
+    .apply(zebra_rows, axis=1)
+    .apply(highlight_top3, axis=1)
+    .set_properties(
+        subset=["POSIÇÃO", "ANALISES", "APROVACOES", "VENDAS"],
+        **{"text-align": "center"}
+    )
+    .set_properties(
+        subset=["VGV", "TAXA_APROV_ANALISES", "TAXA_VENDAS_ANALISES"],
+        **{"text-align": "right"}
+    )
+)
+
+st.dataframe(
+    styled_rank,
     use_container_width=True,
     hide_index=True,
 )
 
+# ---------------------------------------------------------
+# GRÁFICO – VGV POR CORRETOR
+# ---------------------------------------------------------
 st.markdown("#### 💰 VGV por corretor (período filtrado)")
+
 chart_vgv = (
     alt.Chart(rank_cor)
     .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
