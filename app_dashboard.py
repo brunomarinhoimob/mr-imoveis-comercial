@@ -167,14 +167,14 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# API LEADS – SUPREMO
+# API LEADS – SUPREMO (COM CACHE .PKL EM DISCO)
 # ---------------------------------------------------------
 BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
 
 # Caminho do cache em disco
 CACHE_DIR = "cache"
 CACHE_FILE = os.path.join(CACHE_DIR, "leads_cache.pkl")
-CACHE_TTL_MINUTES = 30  # tempo de vida do cache
+CACHE_TTL_MINUTES = 30  # tempo de vida do cache em minutos
 
 
 def get_leads_page(pagina=1):
@@ -188,11 +188,13 @@ def get_leads_page(pagina=1):
         return pd.DataFrame()
 
     if resp.status_code != 200:
+        st.warning(f"Resposta da API de leads com status {resp.status_code}")
         return pd.DataFrame()
 
     try:
         data = resp.json()
     except Exception:
+        st.warning("Não foi possível decodificar o JSON de leads.")
         return pd.DataFrame()
 
     if isinstance(data, dict) and "data" in data:
@@ -212,7 +214,8 @@ def carregar_leads_from_cache():
     try:
         with open(CACHE_FILE, "rb") as f:
             cache_data = pickle.load(f)
-    except Exception:
+    except Exception as e:
+        st.warning(f"Erro ao ler cache de leads: {e}")
         return None
 
     ts = cache_data.get("timestamp")
@@ -223,6 +226,7 @@ def carregar_leads_from_cache():
 
     # Verifica se passou do TTL
     if datetime.now() - ts > timedelta(minutes=CACHE_TTL_MINUTES):
+        # Cache expirado
         return None
 
     return df_cached
@@ -248,10 +252,11 @@ def carregar_leads(limit=1000, max_pages=100):
     Carrega leads usando cache em disco.
     Se o cache for recente (< 30min), usa o cache.
     Senão, chama a API, atualiza o cache e devolve.
+    SEMPRE tenta criar o arquivo .pkl (mesmo se vier vazio).
     """
     # 1) tenta cache
     df_cache = carregar_leads_from_cache()
-    if df_cache is not None and not df_cache.empty:
+    if df_cache is not None:
         return df_cache
 
     # 2) senão, busca na API normalmente
@@ -267,20 +272,21 @@ def carregar_leads(limit=1000, max_pages=100):
         total += len(df_page)
         pagina += 1
 
-    if not dfs:
-        return pd.DataFrame()
+    if dfs:
+        df_all = pd.concat(dfs, ignore_index=True)
 
-    df_all = pd.concat(dfs, ignore_index=True)
+        if "id" in df_all.columns:
+            df_all = df_all.drop_duplicates(subset="id")
 
-    if "id" in df_all.columns:
-        df_all = df_all.drop_duplicates(subset="id")
+        df_all = df_all.head(limit)
 
-    df_all = df_all.head(limit)
+        if "data_captura" in df_all.columns:
+            df_all["data_captura"] = pd.to_datetime(df_all["data_captura"], errors="coerce")
+    else:
+        # Mesmo sem leads, cria um DataFrame vazio e salva no cache
+        df_all = pd.DataFrame()
 
-    if "data_captura" in df_all.columns:
-        df_all["data_captura"] = pd.to_datetime(df_all["data_captura"], errors="coerce")
-
-    # salva no cache
+    # salva no cache (sempre)
     salvar_leads_no_cache(df_all)
 
     return df_all
@@ -471,14 +477,4 @@ c12.metric(
     "Ticket Médio",
     f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 )
-c13.metric(
-    "Maior VGV",
-    f"R$ {maior_vgv:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-)
-
-st.markdown(
-    "<hr><p style='text-align:center; color:#6b7280;'>"
-    "Dashboard MR Imóveis integrado ao Google Sheets + Supremo CRM"
-    "</p>",
-    unsafe_allow_html=True,
-)
+c13.metric
