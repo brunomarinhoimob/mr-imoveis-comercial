@@ -229,6 +229,15 @@ taxa_venda_aprov = (
     vendas_total / aprov_total * 100 if aprov_total > 0 else 0
 )
 
+# 🔢 Média de leads por análise (imobiliária inteira)
+media_leads_por_analise = None
+if (
+    total_leads_periodo is not None
+    and total_leads_periodo > 0
+    and analises_em > 0
+):
+    media_leads_por_analise = total_leads_periodo / analises_em
+
 # Cards principais – agora com LEADS (CRM)
 col_leads_card, col1, col2, col3, col4, col5 = st.columns(6)
 
@@ -249,6 +258,7 @@ with col4:
 with col5:
     st.metric("Vendas (Total)", vendas_total)
 
+# Segunda linha de cards: VGV, taxas e média leads/análise
 col_vgv, col_t1, col_t2, col_t3 = st.columns(4)
 with col_vgv:
     st.metric(
@@ -260,6 +270,14 @@ with col_t1:
 with col_t2:
     st.metric("Taxa Vendas/Análises (só EM)", f"{taxa_venda_analise:.1f}%")
 with col_t3:
+    if media_leads_por_analise is not None:
+        st.metric("Média leads por análise", f"{media_leads_por_analise:.1f}")
+    else:
+        st.metric("Média leads por análise", "—")
+
+# Terceira linha: taxa vendas/aprovações
+col_tx_va, = st.columns(1)
+with col_tx_va:
     st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
 
 # Tabela resumindo o funil geral (base de conversão só EM)
