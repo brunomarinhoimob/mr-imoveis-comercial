@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import requests
 import difflib
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime  # <<< acrescentei datetime
 
 from utils.supremo_config import TOKEN_SUPREMO
 
@@ -116,9 +116,7 @@ def carregar_dados():
     else:
         df["VGV"] = 0
 
-    # -----------------------------------------------------
     # NOME / CPF BASE – para chave de cliente
-    # -----------------------------------------------------
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
@@ -197,8 +195,7 @@ def get_leads_page(pagina=1):
     return pd.DataFrame()
 
 
-# 🔁 CACHE DE 30 MINUTOS PARA LEADS (1800 segundos)
-@st.cache_data(ttl=1800)
+# >>> FUNÇÃO SIMPLES (SEM cache_data) – vamos controlar o tempo na mão
 def carregar_leads(limit=1000, max_pages=100):
     dfs = []
     total = 0
@@ -228,10 +225,30 @@ def carregar_leads(limit=1000, max_pages=100):
     return df_all
 
 
-df_leads = carregar_leads()
+# >>> CONTROLE DE 30 MINUTOS COM session_state
+AGORA = datetime.now()
+REFRESH_MINUTES = 30
 
-if "df_leads" not in st.session_state:
+if "df_leads" not in st.session_state or "leads_last_fetch" not in st.session_state:
+    # Primeira vez: carrega da API e grava horário
+    df_leads = carregar_leads()
     st.session_state["df_leads"] = df_leads
+    st.session_state["leads_last_fetch"] = AGORA
+else:
+    ultima = st.session_state["leads_last_fetch"]
+    if ultima is None or (AGORA - ultima).total_seconds() > REFRESH_MINUTES * 60:
+        # Passou de 30 minutos: atualiza da API
+        df_leads = carregar_leads()
+        st.session_state["df_leads"] = df_leads
+        st.session_state["leads_last_fetch"] = AGORA
+    else:
+        # Ainda dentro da janela: usa cache em memória
+        df_leads = st.session_state["df_leads"]
+
+# (Opcional) mostra info de última atualização no sidebar
+st.sidebar.caption(
+    f"Leads atualizados em: {st.session_state['leads_last_fetch'].strftime('%d/%m %H:%M')}"
+)
 
 # ---------------------------------------------------------
 # SIDEBAR
