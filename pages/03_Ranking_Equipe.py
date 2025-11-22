@@ -16,8 +16,8 @@ st.set_page_config(
 st.title("👥 Ranking por Equipe – MR Imóveis")
 
 st.caption(
-    "Filtre o período para ver o ranking das equipes "
-    "em análises, aprovações, vendas e VGV."
+    "Filtre o período para ver o ranking das equipes em análises, aprovações, "
+    "vendas e VGV (contando apenas 1 venda por cliente, pela última movimentação)."
 )
 
 # ---------------------------------------------------------
@@ -65,12 +65,18 @@ def carregar_dados():
             df[col] = "NÃO INFORMADO"
 
     # STATUS
-    possiveis_cols_situacao = ["SITUAÇÃO", "SITUAÇÃO ATUAL", "STATUS", "SITUACAO", "SITUACAO ATUAL"]
+    possiveis_cols_situacao = [
+        "SITUAÇÃO",
+        "SITUAÇÃO ATUAL",
+        "STATUS",
+        "SITUACAO",
+        "SITUACAO ATUAL",
+    ]
     col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
     df["STATUS_BASE"] = ""
     if col_situacao:
-        status = df[col_situacao].fillna("").str.upper()
+        status = df[col_situacao].fillna("").astype(str).str.upper()
         df.loc[status.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
         df.loc[status.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
         df.loc[status.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
@@ -84,6 +90,47 @@ def carregar_dados():
     else:
         df["VGV"] = 0.0
 
+    # -----------------------------
+    # NOME / CPF / CHAVE CLIENTE
+    # -----------------------------
+    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
+
+    col_nome = None
+    for c in possiveis_nome:
+        if c in df.columns:
+            col_nome = c
+            break
+
+    col_cpf = None
+    for c in possiveis_cpf:
+        if c in df.columns:
+            col_cpf = c
+            break
+
+    if col_nome is None:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+    else:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        )
+
+    if col_cpf is None:
+        df["CPF_CLIENTE_BASE"] = ""
+    else:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
+
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("")
+    )
+
     return df
 
 
@@ -96,7 +143,6 @@ if df.empty:
 # ---------------------------------------------------------
 # FILTRO DE PERÍODO (ULTIMOS 30 DIAS EDITÁVEIS)
 # ---------------------------------------------------------
-
 st.sidebar.title("Filtros 🔎")
 
 dias_validos = pd.Series(df["DIA"].dropna())
@@ -133,9 +179,7 @@ st.session_state["rank_eq_periodo"] = (data_ini, data_fim)
 # ---------------------------------------------------------
 # APLICA FILTRO DE DATA
 # ---------------------------------------------------------
-df_periodo = df[
-    (df["DIA"] >= data_ini) & (df["DIA"] <= data_fim)
-]
+df_periodo = df[(df["DIA"] >= data_ini) & (df["DIA"] <= data_fim)]
 
 registros_filtrados = len(df_periodo)
 
@@ -151,20 +195,52 @@ if df_periodo.empty:
 # ---------------------------------------------------------
 # AGRUPAMENTO POR EQUIPE
 # ---------------------------------------------------------
-def conta_analises(s): return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
-def conta_vendas(s): return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
-def conta_aprovacoes(s): return (s == "APROVADO").sum()
+def conta_analises(s):
+    return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
 
-rank_eq = (
+def conta_aprovacoes(s):
+    return (s == "APROVADO").sum()
+
+# --------- BASE 1: ANÁLISE/APROVAÇÃO (POR LINHA) ----------
+base_analise = (
     df_periodo.groupby("EQUIPE")
     .agg(
         ANALISES=("STATUS_BASE", conta_analises),
         APROVACOES=("STATUS_BASE", conta_aprovacoes),
-        VENDAS=("STATUS_BASE", conta_vendas),
+    )
+    .reset_index()
+)
+
+# --------- BASE 2: VENDAS/VGV (POR CLIENTE, 1 VENDA) ------
+# Ordena por data para pegar a última movimentação do cliente no período
+df_ord = df_periodo.sort_values("DIA")
+
+df_ult = (
+    df_ord
+    .dropna(subset=["CHAVE_CLIENTE"])
+    .groupby("CHAVE_CLIENTE", as_index=False)
+    .tail(1)
+)
+
+# Considera venda se o status final for VENDA INFORMADA ou VENDA GERADA
+mask_venda_final = df_ult["STATUS_BASE"].isin(["VENDA INFORMADA", "VENDA GERADA"])
+df_vendas_clientes = df_ult[mask_venda_final].copy()
+
+vendas_eq = (
+    df_vendas_clientes
+    .groupby("EQUIPE")
+    .agg(
+        VENDAS=("STATUS_BASE", "size"),
         VGV=("VGV", "sum"),
     )
     .reset_index()
 )
+
+# --------- JUNTA AS BASES ----------
+rank_eq = pd.merge(base_analise, vendas_eq, on="EQUIPE", how="left")
+
+rank_eq["VENDAS"] = rank_eq["VENDAS"].fillna(0).astype(int)
+rank_eq["VGV"] = rank_eq["VGV"].fillna(0.0)
 
 # Remove equipes zeradas
 rank_eq = rank_eq[
@@ -182,13 +258,13 @@ if rank_eq.empty:
 rank_eq["TAXA_APROV_ANALISES"] = np.where(
     rank_eq["ANALISES"] > 0,
     rank_eq["APROVACOES"] / rank_eq["ANALISES"] * 100,
-    0
+    0,
 )
 
 rank_eq["TAXA_VENDAS_ANALISES"] = np.where(
     rank_eq["ANALISES"] > 0,
     rank_eq["VENDAS"] / rank_eq["ANALISES"] * 100,
-    0
+    0,
 )
 
 # Ordenação
@@ -197,7 +273,6 @@ rank_eq = rank_eq.sort_values(["VENDAS", "VGV"], ascending=False).reset_index(dr
 # ---------------------------------------------------------
 # ESTILO VISUAL DA TABELA
 # ---------------------------------------------------------
-
 st.markdown("### 📋 Tabela de Ranking das Equipes")
 
 def zebra(row):
@@ -233,18 +308,24 @@ total_row = pd.DataFrame({
 rank_eq_table = pd.concat([rank_eq, total_row], ignore_index=True)
 
 styles = [
-    {"selector": "th", "props": [
-        ("background-color", "#0f172a"),
-        ("color", "#e5e7eb"),
-        ("padding", "6px"),
-        ("text-align", "center"),
-        ("font-weight", "bold")
-    ]},
-    {"selector": "tbody td", "props": [
-        ("padding", "6px"),
-        ("border", "0px"),
-        ("font-size", "0.9rem")
-    ]},
+    {
+        "selector": "th",
+        "props": [
+            ("background-color", "#0f172a"),
+            ("color", "#e5e7eb"),
+            ("padding", "6px"),
+            ("text-align", "center"),
+            ("font-weight", "bold"),
+        ],
+    },
+    {
+        "selector": "tbody td",
+        "props": [
+            ("padding", "6px"),
+            ("border", "0px"),
+            ("font-size", "0.9rem"),
+        ],
+    },
 ]
 
 styled = (
@@ -265,7 +346,6 @@ st.dataframe(styled, use_container_width=True, hide_index=True)
 # ---------------------------------------------------------
 # GRÁFICO
 # ---------------------------------------------------------
-
 st.markdown("### 💰 VGV por equipe")
 
 chart = (
@@ -282,7 +362,7 @@ chart = (
             alt.Tooltip("VGV:Q", title="VGV"),
             alt.Tooltip("TAXA_APROV_ANALISES:Q", title="% Aprov.", format=".1f"),
             alt.Tooltip("TAXA_VENDAS_ANALISES:Q", title="% Vendas", format=".1f"),
-        ]
+        ],
     )
     .properties(height=450)
 )
@@ -290,6 +370,8 @@ chart = (
 st.altair_chart(chart, use_container_width=True)
 
 st.markdown(
-    "<hr><p style='text-align:center;color:#6b7280;'>Ranking por equipe baseado em análises, aprovações, vendas e VGV.</p>",
-    unsafe_allow_html=True
+    "<hr><p style='text-align:center;color:#6b7280;'>"
+    "Ranking por equipe baseado em análises, aprovações e vendas (1 por cliente) com VGV."
+    "</p>",
+    unsafe_allow_html=True,
 )
