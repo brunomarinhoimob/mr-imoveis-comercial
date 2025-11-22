@@ -3,7 +3,9 @@ import pandas as pd
 import numpy as np
 import requests
 import difflib
-from datetime import date, timedelta, datetime  # <<< acrescentei datetime
+import os
+import pickle
+from datetime import date, timedelta, datetime  # <-- inclui datetime
 
 from utils.supremo_config import TOKEN_SUPREMO
 
@@ -116,7 +118,9 @@ def carregar_dados():
     else:
         df["VGV"] = 0
 
+    # -----------------------------------------------------
     # NOME / CPF BASE – para chave de cliente
+    # -----------------------------------------------------
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
@@ -167,6 +171,11 @@ if df.empty:
 # ---------------------------------------------------------
 BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
 
+# Caminho do cache em disco
+CACHE_DIR = "cache"
+CACHE_FILE = os.path.join(CACHE_DIR, "leads_cache.pkl")
+CACHE_TTL_MINUTES = 30  # tempo de vida do cache
+
 
 def get_leads_page(pagina=1):
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
@@ -195,8 +204,57 @@ def get_leads_page(pagina=1):
     return pd.DataFrame()
 
 
-# >>> FUNÇÃO SIMPLES (SEM cache_data) – vamos controlar o tempo na mão
+def carregar_leads_from_cache():
+    """Carrega leads do arquivo .pkl se for recente o suficiente."""
+    if not os.path.exists(CACHE_FILE):
+        return None
+
+    try:
+        with open(CACHE_FILE, "rb") as f:
+            cache_data = pickle.load(f)
+    except Exception:
+        return None
+
+    ts = cache_data.get("timestamp")
+    df_cached = cache_data.get("df")
+
+    if ts is None or df_cached is None:
+        return None
+
+    # Verifica se passou do TTL
+    if datetime.now() - ts > timedelta(minutes=CACHE_TTL_MINUTES):
+        return None
+
+    return df_cached
+
+
+def salvar_leads_no_cache(df_leads: pd.DataFrame):
+    """Salva leads e timestamp em arquivo .pkl."""
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        payload = {
+            "timestamp": datetime.now(),
+            "df": df_leads
+        }
+        with open(CACHE_FILE, "wb") as f:
+            pickle.dump(payload, f)
+    except Exception as e:
+        # Não quebra o app se der erro no cache
+        st.warning(f"Não foi possível salvar o cache de leads: {e}")
+
+
 def carregar_leads(limit=1000, max_pages=100):
+    """
+    Carrega leads usando cache em disco.
+    Se o cache for recente (< 30min), usa o cache.
+    Senão, chama a API, atualiza o cache e devolve.
+    """
+    # 1) tenta cache
+    df_cache = carregar_leads_from_cache()
+    if df_cache is not None and not df_cache.empty:
+        return df_cache
+
+    # 2) senão, busca na API normalmente
     dfs = []
     total = 0
     pagina = 1
@@ -222,33 +280,17 @@ def carregar_leads(limit=1000, max_pages=100):
     if "data_captura" in df_all.columns:
         df_all["data_captura"] = pd.to_datetime(df_all["data_captura"], errors="coerce")
 
+    # salva no cache
+    salvar_leads_no_cache(df_all)
+
     return df_all
 
 
-# >>> CONTROLE DE 30 MINUTOS COM session_state
-AGORA = datetime.now()
-REFRESH_MINUTES = 30
+# Carrega leads (usando cache em disco)
+df_leads = carregar_leads()
 
-if "df_leads" not in st.session_state or "leads_last_fetch" not in st.session_state:
-    # Primeira vez: carrega da API e grava horário
-    df_leads = carregar_leads()
+if "df_leads" not in st.session_state:
     st.session_state["df_leads"] = df_leads
-    st.session_state["leads_last_fetch"] = AGORA
-else:
-    ultima = st.session_state["leads_last_fetch"]
-    if ultima is None or (AGORA - ultima).total_seconds() > REFRESH_MINUTES * 60:
-        # Passou de 30 minutos: atualiza da API
-        df_leads = carregar_leads()
-        st.session_state["df_leads"] = df_leads
-        st.session_state["leads_last_fetch"] = AGORA
-    else:
-        # Ainda dentro da janela: usa cache em memória
-        df_leads = st.session_state["df_leads"]
-
-# (Opcional) mostra info de última atualização no sidebar
-st.sidebar.caption(
-    f"Leads atualizados em: {st.session_state['leads_last_fetch'].strftime('%d/%m %H:%M')}"
-)
 
 # ---------------------------------------------------------
 # SIDEBAR
