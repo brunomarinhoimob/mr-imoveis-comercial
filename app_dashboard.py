@@ -50,7 +50,7 @@ st.markdown(
 # ---------------------------------------------------------
 LOGO_PATH = "logo_mr.png"
 try:
-    st.sidebar.image(LOGO_PATH, use_container_width=True)
+    st.sidebar.image(LOGO_PATH, use_column_width=True)
 except:
     pass
 
@@ -197,7 +197,8 @@ def get_leads_page(pagina=1):
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=60)
+# 🔁 CACHE DE 30 MINUTOS PARA LEADS (1800 segundos)
+@st.cache_data(ttl=1800)
 def carregar_leads(limit=1000, max_pages=100):
     dfs = []
     total = 0
