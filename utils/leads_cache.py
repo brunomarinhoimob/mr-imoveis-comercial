@@ -7,6 +7,7 @@ import requests
 
 from utils.supremo_config import TOKEN_SUPREMO
 
+
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DO CACHE
 # ---------------------------------------------------------
@@ -16,28 +17,42 @@ CACHE_DIR = "cache"
 CACHE_FILE = os.path.join(CACHE_DIR, "leads_cache.pkl")
 CACHE_TTL_MINUTES = 30  # tempo de vida do cache em minutos
 
-# Garante que a pasta de cache existe
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 
-def _get_leads_page(pagina: int = 1) -> pd.DataFrame:
-    """
-    Busca UMA página de leads na API do Supremo.
-    Em caso de erro, devolve DataFrame vazio SEM mostrar nada no Streamlit.
-    """
+def _ler_cache():
+    """Lê o cache do disco. Retorna (df, timestamp) ou (None, None)."""
+    if not os.path.exists(CACHE_FILE):
+        return None, None
+
+    try:
+        with open(CACHE_FILE, "rb") as f:
+            data = pickle.load(f)
+            return data.get("df"), data.get("timestamp")
+    except:
+        return None, None
+
+
+def _salvar_cache(df):
+    """Salva o cache SEM nunca quebrar o app."""
+    try:
+        payload = {"df": df, "timestamp": datetime.now()}
+        with open(CACHE_FILE, "wb") as f:
+            pickle.dump(payload, f)
+    except:
+        pass
+
+
+def _get_api_page(pagina):
+    """Busca uma página da API. Se falhar, retorna DF vazio."""
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
     params = {"pagina": pagina}
 
     try:
-        resp = requests.get(BASE_URL_LEADS, headers=headers, params=params, timeout=30)
-    except:
-        return pd.DataFrame()
-
-    if resp.status_code != 200:
-        return pd.DataFrame()
-
-    try:
-        data = resp.json()
+        r = requests.get(BASE_URL_LEADS, headers=headers, params=params, timeout=30)
+        if r.status_code != 200:
+            return pd.DataFrame()
+        data = r.json()
     except:
         return pd.DataFrame()
 
@@ -50,90 +65,53 @@ def _get_leads_page(pagina: int = 1) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def _carregar_leads_from_disk() -> pd.DataFrame | None:
+def carregar_leads(limit=1000, max_pages=100):
     """
-    Carrega o cache de leads do disco, se existir e estiver válido.
-    NÃO mostra erros no Streamlit.
+    Lógica segura:
+    1. Lê cache.
+    2. Se tiver cache recente → usa.
+    3. Se a API funcionar → atualiza cache.
+    4. Se a API falhar → usa o cache antigo SEMPRE.
     """
-    if not os.path.exists(CACHE_FILE):
-        return None
 
-    try:
-        with open(CACHE_FILE, "rb") as f:
-            cache_data = pickle.load(f)
-    except:
-        return None
+    df_cache, ts_cache = _ler_cache()
 
-    ts = cache_data.get("timestamp")
-    df_cached = cache_data.get("df")
+    # 1 — se tem cache e está dentro do TTL → usa ele
+    if df_cache is not None and ts_cache is not None:
+        if datetime.now() - ts_cache < timedelta(minutes=CACHE_TTL_MINUTES):
+            return df_cache
 
-    if ts is None or df_cached is None:
-        return None
-
-    # se passou do TTL, expirou
-    if datetime.now() - ts > timedelta(minutes=CACHE_TTL_MINUTES):
-        return None
-
-    return df_cached
-
-
-def _salvar_leads_no_disk(df_leads: pd.DataFrame) -> None:
-    """
-    Salva leads + timestamp em arquivo .pkl.
-    Nunca mostra erro.
-    """
-    try:
-        payload = {
-            "timestamp": datetime.now(),
-            "df": df_leads
-        }
-        with open(CACHE_FILE, "wb") as f:
-            pickle.dump(payload, f)
-    except:
-        pass  # ignora
-
-
-def carregar_leads(limit: int = 1000, max_pages: int = 100) -> pd.DataFrame:
-    """
-    Carrega leads do Supremo usando cache silencioso.
-    Nunca mostra aviso, nunca mostra erro.
-    Apenas retorna o DF disponível.
-    """
-    # 1) tenta cache
-    df_cache = _carregar_leads_from_disk()
-    if df_cache is not None:
-        return df_cache
-
-    # 2) busca da API
+    # 2 — tenta atualizar via API
     dfs = []
     total = 0
     pagina = 1
 
     while total < limit and pagina <= max_pages:
-        df_page = _get_leads_page(pagina)
+        df_page = _get_api_page(pagina)
         if df_page.empty:
             break
-
         dfs.append(df_page)
         total += len(df_page)
         pagina += 1
 
-    if dfs:
-        df_all = pd.concat(dfs, ignore_index=True)
+    # 3 — se API NÃO respondeu → usa cache antigo (mesmo expirado!)
+    if not dfs:
+        if df_cache is not None:
+            return df_cache
+        else:
+            return pd.DataFrame()  # realmente não temos nada
 
-        # remove duplicados
-        if "id" in df_all.columns:
-            df_all = df_all.drop_duplicates(subset="id")
+    # 4 — API respondeu, então atualiza o cache
+    df_all = pd.concat(dfs, ignore_index=True)
 
-        df_all = df_all.head(limit)
+    if "id" in df_all.columns:
+        df_all = df_all.drop_duplicates(subset="id")
 
-        # converte data
-        if "data_captura" in df_all.columns:
-            df_all["data_captura"] = pd.to_datetime(df_all["data_captura"], errors="coerce")
-    else:
-        df_all = pd.DataFrame()
+    if "data_captura" in df_all.columns:
+        df_all["data_captura"] = pd.to_datetime(df_all["data_captura"], errors="coerce")
 
-    # 3) salva no cache sempre
-    _salvar_leads_no_disk(df_all)
+    df_all = df_all.head(limit)
+
+    _salvar_cache(df_all)
 
     return df_all
