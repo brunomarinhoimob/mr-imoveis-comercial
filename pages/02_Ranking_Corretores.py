@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -17,7 +17,7 @@ st.title("🏆 Ranking por Corretor – MR Imóveis")
 
 st.caption(
     "Filtre o período e (opcionalmente) uma equipe para ver o ranking de corretores "
-    "em análises, aprovações, vendas e VGV."
+    "em análises, aprovações, vendas e VGV (sem contar venda duplicada do mesmo cliente)."
 )
 
 # ---------------------------------------------------------
@@ -95,9 +95,7 @@ def carregar_dados():
     else:
         df["VGV"] = 0.0
 
-    # -------------------------------------------------
-    # NOME / CPF BASE – para chave de cliente
-    # -------------------------------------------------
+    # Nome / CPF para chave de cliente (anti-duplicidade de venda)
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
@@ -117,11 +115,7 @@ def carregar_dados():
         df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
     else:
         df["NOME_CLIENTE_BASE"] = (
-            df[col_nome]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
+            df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
         )
 
     if col_cpf is None:
@@ -134,7 +128,15 @@ def carregar_dados():
             .str.replace(r"\D", "", regex=True)
         )
 
+    # Chave de cliente (nome + CPF) para controle de venda única
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("")
+    )
+
     return df
+
 
 df = carregar_dados()
 
@@ -173,11 +175,8 @@ periodo = st.sidebar.date_input(
 
 st.session_state["periodo_filtro"] = periodo
 
-if isinstance(periodo, tuple) or isinstance(periodo, list):
-    if len(periodo) == 2:
-        data_ini, data_fim = periodo
-    else:
-        data_ini, data_fim = default_ini, data_max
+if isinstance(periodo, (tuple, list)) and len(periodo) == 2:
+    data_ini, data_fim = periodo
 else:
     data_ini, data_fim = default_ini, data_max
 
@@ -186,7 +185,7 @@ lista_equipes = sorted(df["EQUIPE"].dropna().unique())
 equipe_sel = st.sidebar.selectbox("Equipe (opcional)", ["Todas"] + lista_equipes)
 
 # ---------------------------------------------------------
-# APLICA FILTROS
+# APLICA FILTROS DE PERÍODO / EQUIPE
 # ---------------------------------------------------------
 df_periodo = df.copy()
 dia_series_all = limpar_para_data(df_periodo["DIA"])
@@ -219,10 +218,11 @@ def conta_aprovacoes(s):
     return (s == "APROVADO").sum()
 
 # ---------------------------------------------------------
-# BASE 1: ANÁLISES E APROVAÇÕES POR CORRETOR (POR LINHA)
+# BASE PARA ANÁLISE / APROVAÇÃO (POR LINHA)
 # ---------------------------------------------------------
-df_aa = (
-    df_periodo.groupby("CORRETOR")
+base_analise = (
+    df_periodo
+    .groupby("CORRETOR")
     .agg(
         ANALISES=("STATUS_BASE", conta_analises),
         APROVACOES=("STATUS_BASE", conta_aprovacoes),
@@ -231,49 +231,40 @@ df_aa = (
 )
 
 # ---------------------------------------------------------
-# BASE 2: VENDAS / VGV POR CORRETOR (1 VENDA POR CLIENTE)
+# BASE PARA VENDAS / VGV (POR CLIENTE – ANTI-DUPLICIDADE)
 # ---------------------------------------------------------
-df_vendas_ref = df_periodo[
-    df_periodo["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA'])
-].copy()
+# Ordena por data para pegar a última linha de cada cliente no período
+df_ord = df_periodo.sort_values("DIA")
 
-if not df_vendas_ref.empty:
-    df_vendas_ref["CHAVE_CLIENTE"] = (
-        df_vendas_ref["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
-        + " | "
-        + df_vendas_ref["CPF_CLIENTE_BASE"].fillna("")
+# Última movimentação de cada cliente no período
+df_ult = (
+    df_ord
+    .dropna(subset=["CHAVE_CLIENTE"])
+    .groupby("CHAVE_CLIENTE", as_index=False)
+    .tail(1)
+)
+
+# Considera venda se o status final for VENDA INFORMADA ou VENDA GERADA
+mask_venda_final = df_ult["STATUS_BASE"].isin(["VENDA INFORMADA", "VENDA GERADA"])
+df_vendas_clientes = df_ult[mask_venda_final].copy()
+
+vendas_cor = (
+    df_vendas_clientes
+    .groupby("CORRETOR")
+    .agg(
+        VENDAS=("STATUS_BASE", "size"),
+        VGV=("VGV", "sum"),
     )
-
-    df_vendas_ref = df_vendas_ref.sort_values("DIA")
-    df_vendas_ult = df_vendas_ref.groupby("CHAVE_CLIENTE").tail(1)
-
-    df_v = (
-        df_vendas_ult.groupby("CORRETOR")
-        .agg(
-            VENDAS=("STATUS_BASE", "size"),
-            VGV=("VGV", "sum"),
-        )
-        .reset_index()
-    )
-else:
-    df_v = pd.DataFrame(columns=["CORRETOR", "VENDAS", "VGV"])
+    .reset_index()
+)
 
 # ---------------------------------------------------------
-# JUNTA AS BASES (ANÁLISES/APROVAÇÕES + VENDAS/VGV)
+# JUNTA BASES (ANÁLISE + VENDAS)
 # ---------------------------------------------------------
-rank_cor = pd.merge(df_aa, df_v, on="CORRETOR", how="outer").fillna(0)
+rank_cor = pd.merge(base_analise, vendas_cor, on="CORRETOR", how="left")
 
-# garante tipos numéricos
-for col in ["ANALISES", "APROVACOES", "VENDAS", "VGV"]:
-    rank_cor[col] = pd.to_numeric(rank_cor[col], errors="coerce").fillna(0)
-
-# Remove corretores totalmente zerados
-rank_cor = rank_cor[
-    (rank_cor["ANALISES"] > 0)
-    | (rank_cor["APROVACOES"] > 0)
-    | (rank_cor["VENDAS"] > 0)
-    | (rank_cor["VGV"] > 0)
-]
+rank_cor["VENDAS"] = rank_cor["VENDAS"].fillna(0).astype(int)
+rank_cor["VGV"] = rank_cor["VGV"].fillna(0.0)
 
 # Taxas
 rank_cor["TAXA_APROV_ANALISES"] = np.where(
@@ -288,13 +279,18 @@ rank_cor["TAXA_VENDAS_ANALISES"] = np.where(
     0,
 )
 
-# Ordena e gera POSIÇÃO
+# Remove corretores totalmente zerados
+rank_cor = rank_cor[
+    (rank_cor["ANALISES"] > 0)
+    | (rank_cor["APROVACOES"] > 0)
+    | (rank_cor["VENDAS"] > 0)
+    | (rank_cor["VGV"] > 0)
+]
+
+# Ordena e cria posição
 rank_cor = rank_cor.sort_values(["VENDAS", "VGV"], ascending=False).reset_index(drop=True)
+rank_cor.insert(0, "POSICAO_NUM", rank_cor.index + 1)
 
-# Coluna de posição numérica
-rank_cor.insert(0, "POSIÇÃO_NUM", rank_cor.index + 1)
-
-# Coluna de posição formatada com medalhas
 def format_posicao(pos):
     if pos == 1:
         return "🥇 1º"
@@ -305,11 +301,11 @@ def format_posicao(pos):
     else:
         return f"{pos}º"
 
-rank_cor["POSIÇÃO"] = rank_cor["POSIÇÃO_NUM"].apply(format_posicao)
+rank_cor["POSICAO"] = rank_cor["POSICAO_NUM"].apply(format_posicao)
 
-# Reorganiza colunas (POSIÇÃO visível, POSIÇÃO_NUM só para lógica)
+# Reorganiza colunas
 colunas_ordem = [
-    "POSIÇÃO",
+    "POSICAO",
     "CORRETOR",
     "ANALISES",
     "APROVACOES",
@@ -318,7 +314,7 @@ colunas_ordem = [
     "TAXA_APROV_ANALISES",
     "TAXA_VENDAS_ANALISES",
 ]
-rank_cor = rank_cor[colunas_ordem + ["POSIÇÃO_NUM"]]
+rank_cor = rank_cor[colunas_ordem + ["POSICAO_NUM"]]
 
 # ---------------------------------------------------------
 # ESTILO DA TABELA
@@ -326,19 +322,17 @@ rank_cor = rank_cor[colunas_ordem + ["POSIÇÃO_NUM"]]
 st.markdown("#### 📋 Tabela detalhada do ranking por corretor")
 
 def zebra_rows(row):
-    """Zebra nas linhas."""
-    base_color_even = "#020617"  # bem escuro
-    base_color_odd = "#0b1120"   # um pouco mais claro
+    base_color_even = "#020617"
+    base_color_odd = "#0b1120"
     color = base_color_even if row.name % 2 == 0 else base_color_odd
     return [f"background-color: {color}"] * len(row)
 
 def highlight_top3(row):
-    """Destaque para os TOP 3."""
-    if row.name == 0:  # 1º lugar
+    if row.name == 0:
         return ["background-color: rgba(250, 204, 21, 0.18); font-weight: bold;"] * len(row)
-    elif row.name == 1:  # 2º lugar
+    elif row.name == 1:
         return ["background-color: rgba(148, 163, 184, 0.25); font-weight: bold;"] * len(row)
-    elif row.name == 2:  # 3º lugar
+    elif row.name == 2:
         return ["background-color: rgba(248, 250, 252, 0.06); font-weight: bold;"] * len(row)
     else:
         return [""] * len(row)
@@ -365,7 +359,7 @@ table_styles = [
 ]
 
 styled_rank = (
-    rank_cor.drop(columns=["POSIÇÃO_NUM"])
+    rank_cor.drop(columns=["POSICAO_NUM"])
     .style
     .format(
         {
@@ -378,12 +372,12 @@ styled_rank = (
     .apply(zebra_rows, axis=1)
     .apply(highlight_top3, axis=1)
     .set_properties(
-        subset=["POSIÇÃO", "ANALISES", "APROVACOES", "VENDAS"],
-        **{"text-align": "center"}
+        subset=["POSICAO", "ANALISES", "APROVACOES", "VENDAS"],
+        **{"text-align": "center"},
     )
     .set_properties(
         subset=["VGV", "TAXA_APROV_ANALISES", "TAXA_VENDAS_ANALISES"],
-        **{"text-align": "right"}
+        **{"text-align": "right"},
     )
 )
 
@@ -421,7 +415,7 @@ st.altair_chart(chart_vgv, use_container_width=True)
 
 st.markdown(
     "<hr><p style='text-align:center;color:#666;'>"
-    "Ranking por corretor baseado em análises, aprovações, vendas e VGV."
+    "Ranking por corretor baseado em análises, aprovações, vendas (1 por cliente) e VGV."
     "</p>",
     unsafe_allow_html=True,
 )
