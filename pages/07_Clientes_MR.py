@@ -154,6 +154,17 @@ def carregar_dados():
         df["OBSERVACOES_RAW"] = ""
         df["VGV"] = 0.0
 
+    # NOVO: OBSERVAÇÕES 2 – para detalhamento de VENDA GERADA / VENDA INFORMADA
+    if "OBSERVAÇÕES 2" in df.columns:
+        df["OBSERVACOES2_RAW"] = (
+            df["OBSERVAÇÕES 2"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+    else:
+        df["OBSERVACOES2_RAW"] = ""
+
     # TENTA IDENTIFICAR COLUNA DE NOME E CPF DO CLIENTE
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
@@ -322,12 +333,25 @@ else:
         ult_empr = ultima_linha.get("EMPREENDIMENTO_BASE", "NÃO INFORMADO")
         ult_corretor = ultima_linha.get("CORRETOR", "NÃO INFORMADO")
 
-        # Pega somente observações não numéricas
+        # Pega somente observações não numéricas da OBSERVAÇÕES (coluna 1)
         obs_validas = [
             obs for obs in df_cli["OBSERVACOES_RAW"].fillna("")
             if obs and not observacao_e_numero(obs)
         ]
-        ultima_obs = obs_validas[-1] if obs_validas else ""
+
+        # -------- LÓGICA NOVA: se for VENDA GERADA / VENDA INFORMADA,
+        # usa OBSERVAÇÕES 2 da última linha, se existir ----------
+        ultima_obs = ""
+
+        status_ultima = str(ultima_linha.get("STATUS_BASE", "")).upper()
+        if status_ultima in ["VENDA GERADA", "VENDA INFORMADA"]:
+            obs2 = str(ultima_linha.get("OBSERVACOES2_RAW", "")).strip()
+            if obs2:
+                ultima_obs = obs2
+
+        # Se não tiver OBSERVAÇÕES 2 ou estiver vazia, cai na lógica antiga
+        if not ultima_obs:
+            ultima_obs = obs_validas[-1] if obs_validas else ""
 
         # Separa análise x reanálise
         analises_em = (df_cli["STATUS_BASE"] == "EM ANÁLISE").sum()
@@ -340,7 +364,7 @@ else:
 
             col_top1, col_top2 = st.columns(2)
 
-            # ------- LADO ESQUERDO: CAMPOS DESTACADOS (simples e bonito) -------
+            # ------- LADO ESQUERDO: CAMPOS DESTACADOS -------
             with col_top1:
                 cpf_fmt = row["CPF"] if row["CPF"] else "NÃO INFORMADO"
                 situacao_fmt = row["ULT_STATUS"] or "NÃO INFORMADO"
