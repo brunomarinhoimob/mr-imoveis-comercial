@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from streamlit_autorefresh import st_autorefresh
+import unicodedata
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -44,6 +45,13 @@ def limpar_para_data(serie):
     return dt.dt.date
 
 
+def remover_acentos(texto: str) -> str:
+    """
+    Remove acentos para facilitar comparação de textos.
+    """
+    return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+
+
 def carregar_dados():
     """
     Carrega dados da planilha SEM cache do Streamlit.
@@ -73,22 +81,6 @@ def carregar_dados():
             )
         else:
             df[col] = "NÃO INFORMADO"
-
-    # STATUS_BASE (para outras páginas; aqui vamos filtrar na coluna original)
-    possiveis_cols_situacao = [
-        "SITUAÇÃO",
-        "SITUAÇÃO ATUAL",
-        "STATUS",
-        "SITUACAO",
-        "SITUACAO ATUAL",
-    ]
-    col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
-
-    df["STATUS_BASE"] = ""
-    if col_situacao:
-        status = df[col_situacao].fillna("").astype(str).str.upper().str.strip()
-        df.loc[status == "EM ANÁLISE", "STATUS_BASE"] = "EM ANÁLISE"
-        df.loc[status == "REANÁLISE", "STATUS_BASE"] = "REANÁLISE"
 
     return df
 
@@ -143,15 +135,22 @@ possiveis_cols_situacao = [
 col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
 if col_situacao:
-    status = df[col_situacao].fillna("").astype(str).str.upper().str.strip()
+    # Normaliza texto: maiúsculo, sem espaços extras, sem acentos
+    status_raw = df[col_situacao].fillna("").astype(str)
+    status_upper = status_raw.str.upper().str.strip()
+    status_norm = status_upper.apply(remover_acentos)
+
     # 🔥 FILTRO DEFINITIVO:
-    # Só entra se for EXATAMENTE "EM ANÁLISE"
-    df_analise_base = df[status == "EM ANÁLISE"].copy()
+    # Só entra se começar com "EM ANALISE"
+    # (isso pega "EM ANALISE", "EM ANALISE - ALGUMA COISA", etc.)
+    mask_analise = status_norm.str.startswith("EM ANALISE")
+
+    df_analise_base = df[mask_analise].copy()
 else:
     df_analise_base = pd.DataFrame()
 
 if df_analise_base.empty:
-    st.info("Não há lançamentos com situação exatamente 'EM ANÁLISE'.")
+    st.info("Não há lançamentos com situação começando por 'EM ANÁLISE'.")
     st.stop()
 
 # Apenas o dia escolhido
@@ -168,7 +167,7 @@ qtde_total_dia = len(df_dia)
 
 if qtde_total_dia == 0:
     st.warning(
-        f"Nenhuma ANÁLISE (situação = 'EM ANÁLISE') no dia "
+        f"Nenhuma ANÁLISE (situação iniciando por 'EM ANÁLISE') no dia "
         f"{dia_escolhido.strftime('%d/%m/%Y')} com esses filtros."
     )
     st.stop()
@@ -183,7 +182,8 @@ with c2:
     st.markdown(
         f"### Hoje já foram registradas **{qtde_total_dia} análises** "
         f"no dia **{dia_escolhido.strftime('%d/%m/%Y')}**, "
-        "considerando apenas situação **EM ANÁLISE** (sem REANÁLISE)."
+        "considerando apenas situações que começam com **EM ANÁLISE** "
+        "(sem REANÁLISE, APROVAÇÃO, VENDA, etc.)."
     )
 
 st.markdown("---")
@@ -198,7 +198,7 @@ with col_eq:
     analises_equipe = (
         df_dia.groupby("EQUIPE")
         .size()
-        .reset_index(name="ANÁLISES")
+       .reset_index(name="ANÁLISES")
         .sort_values("ANÁLISES", ascending=False)
     )
     total_row = pd.DataFrame(
@@ -223,8 +223,8 @@ with col_corr:
 st.markdown(
     "<hr style='border-color:#1f2937'>"
     "<p style='text-align:center; color:#6b7280;'>"
-    "Painel de Análises Diárias — conta apenas lançamentos com situação "
-    "EXATAMENTE 'EM ANÁLISE'. Atualiza a cada 60 segundos."
+    "Painel de Análises Diárias — conta apenas situação iniciando por "
+    "'EM ANÁLISE' (sem REANÁLISE). Atualiza a cada 60 segundos."
     "</p>",
     unsafe_allow_html=True,
 )
