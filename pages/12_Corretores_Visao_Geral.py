@@ -150,6 +150,7 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
     """
     Carrega corretores da API do Supremo.
     Cache de 1h para não pesar a operação.
+    Aceita respostas com chaves 'data' ou 'dados'.
     """
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
     dfs = []
@@ -159,24 +160,58 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
     while True:
         params = {"pagina": pagina}
         try:
-            resp = requests.get(BASE_URL_CORRETORES, headers=headers, params=params, timeout=20)
-        except Exception:
-            break
+            resp = requests.get(
+                BASE_URL_CORRETORES,
+                headers=headers,
+                params=params,
+                timeout=20,
+            )
+        except Exception as e:
+            st.error(f"Erro de conexão com a API de corretores: {e}")
+            return pd.DataFrame()
 
         if resp.status_code != 200:
-            break
+            try:
+                corpo = resp.text
+            except Exception:
+                corpo = ""
+            corpo_resumido = corpo[:300].replace("\n", " ").replace("\r", " ")
+            st.error(
+                f"API de corretores respondeu com status {resp.status_code}. "
+                f"Detalhe (início da resposta): {corpo_resumido}"
+            )
+            return pd.DataFrame()
 
         try:
             data = resp.json()
-        except Exception:
-            break
+        except Exception as e:
+            st.error(f"Não foi possível interpretar o JSON da API de corretores: {e}")
+            return pd.DataFrame()
 
-        # Estrutura: {"dados": [...], "paginaAtual": 1, "totalPaginas": X, ...}
-        if isinstance(data, dict) and "dados" in data:
-            df_page = pd.DataFrame(data["dados"])
-            total_paginas = data.get("totalPaginas", pagina)
+        # Estruturas possíveis:
+        # { "data": [...], "current_page": 1, "last_page": X, ... }
+        # { "dados": [...], "paginaAtual": 1, "totalPaginas": X, ... }
+        # [ {...}, {...} ]
+        if isinstance(data, dict):
+            if "data" in data:
+                registros = data.get("data", [])
+            elif "dados" in data:
+                registros = data.get("dados", [])
+            else:
+                registros = []
+
+            df_page = pd.DataFrame(registros)
+
+            # Tenta descobrir total de páginas
+            total_paginas = (
+                data.get("last_page")
+                or data.get("totalPaginas")
+                or data.get("total_paginas")
+                or pagina
+            )
         elif isinstance(data, list):
             df_page = pd.DataFrame(data)
+            total_paginas = pagina
         else:
             df_page = pd.DataFrame()
 
@@ -188,16 +223,17 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
         if total_paginas is None:
             pagina += 1
         else:
-            if pagina >= total_paginas or pagina >= max_pages:
+            if pagina >= int(total_paginas) or pagina >= max_pages:
                 break
             pagina += 1
 
     if not dfs:
+        st.error("API de corretores retornou vazio (sem dados).")
         return pd.DataFrame()
 
     df_all = pd.concat(dfs, ignore_index=True)
 
-    # Normalizações básicas
+    # Normalizações
     if "nome" in df_all.columns:
         df_all["NOME_CRM"] = (
             df_all["nome"]
@@ -216,7 +252,6 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
     else:
         df_all["STATUS_CRM"] = "DESCONHECIDO"
 
-    # Telefone
     if "ddd" in df_all.columns and "telefone" in df_all.columns:
         df_all["TELEFONE_CRM"] = (
             df_all["ddd"].fillna("").astype(str).str.strip()
@@ -243,11 +278,9 @@ if df_planilha.empty:
     st.error("Erro ao carregar dados da planilha.")
     st.stop()
 
-# DIA como datetime/date
 df_planilha["DIA"] = pd.to_datetime(df_planilha["DIA"], errors="coerce")
 df_planilha["DIA_DATE"] = df_planilha["DIA"].dt.date
 
-# Normaliza CORRETOR e EQUIPE da planilha
 df_planilha["CORRETOR_MATCH"] = (
     df_planilha["CORRETOR"]
     .fillna("NÃO INFORMADO")
@@ -263,7 +296,7 @@ df_planilha["EQUIPE"] = (
     .str.strip()
 )
 
-# Leads – já carregados no app_dashboard (session_state), senão puxa direto
+# Leads
 if "df_leads" in st.session_state:
     df_leads = st.session_state["df_leads"]
 else:
@@ -273,7 +306,6 @@ else:
         df_leads = pd.DataFrame()
 
 if not df_leads.empty:
-    # Normaliza campos de data e corretor no leads
     if "data_captura" in df_leads.columns:
         df_leads["data_captura"] = pd.to_datetime(
             df_leads["data_captura"], errors="coerce"
@@ -304,7 +336,6 @@ if df_corretores.empty:
 # ---------------------------------------------------------
 st.sidebar.title("Filtros – Corretores")
 
-# Período
 dias_validos = df_planilha["DIA_DATE"].dropna()
 if dias_validos.empty:
     hoje = date.today()
@@ -331,7 +362,6 @@ else:
 if data_ini > data_fim:
     data_ini, data_fim = data_fim, data_ini
 
-# Status CRM
 status_opcoes = ["ATIVOS", "INATIVOS", "TODOS"]
 status_sel = st.sidebar.selectbox(
     "Status no CRM",
@@ -339,7 +369,6 @@ status_sel = st.sidebar.selectbox(
     index=0,
 )
 
-# Equipe (da planilha)
 lista_equipes = sorted(df_planilha["EQUIPE"].dropna().unique())
 equipe_sel = st.sidebar.selectbox(
     "Equipe (base planilha)",
@@ -467,7 +496,6 @@ else:
 # ---------------------------------------------------------
 df_corretores["NOME_MATCH"] = df_corretores["NOME_CRM"]
 
-# Filtro de status CRM
 if status_sel == "ATIVOS":
     df_corretores_filtrado = df_corretores[df_corretores["STATUS_CRM"] == "ATIVO"].copy()
 elif status_sel == "INATIVOS":
@@ -475,7 +503,6 @@ elif status_sel == "INATIVOS":
 else:
     df_corretores_filtrado = df_corretores.copy()
 
-# Merge com planilha
 df_merge = df_corretores_filtrado.merge(
     df_plan_agg,
     how="left",
@@ -483,7 +510,6 @@ df_merge = df_corretores_filtrado.merge(
     right_on="CORRETOR_MATCH",
 )
 
-# Merge com leads
 df_merge = df_merge.merge(
     df_leads_agg,
     how="left",
@@ -491,11 +517,9 @@ df_merge = df_merge.merge(
     right_on="NOME_CORRETOR_LEAD",
 )
 
-# Equipe filtro
 if equipe_sel != "Todas":
     df_merge = df_merge[df_merge["EQUIPE"] == equipe_sel]
 
-# Preenchimentos
 for col in ["ANALISES_EM", "APROVACOES", "VENDAS", "LEADS"]:
     if col in df_merge.columns:
         df_merge[col] = df_merge[col].fillna(0).astype(int)
@@ -507,18 +531,15 @@ if "VGV" in df_merge.columns:
 else:
     df_merge["VGV"] = 0.0
 
-# Última movimentação (max entre última análise e último lead)
 df_merge["ULTIMA_MOV"] = pd.to_datetime(df_merge["ULTIMA_MOV"], errors="coerce")
 df_merge["ULTIMO_LEAD"] = pd.to_datetime(df_merge["ULTIMO_LEAD"], errors="coerce")
 
 df_merge["ULTIMA_ATIVIDADE"] = df_merge[["ULTIMA_MOV", "ULTIMO_LEAD"]].max(axis=1)
 
-# Dias sem movimento
 hoje_dt = datetime.combine(date.today(), datetime.min.time())
 df_merge["DIAS_SEM_MOV"] = (hoje_dt - df_merge["ULTIMA_ATIVIDADE"]).dt.days
 df_merge.loc[df_merge["ULTIMA_ATIVIDADE"].isna(), "DIAS_SEM_MOV"] = np.nan
 
-# Flags
 df_merge["TEVE_LEAD"] = df_merge["LEADS"] > 0
 df_merge["TEVE_ANALISE"] = df_merge["ANALISES_EM"] > 0
 df_merge["TEVE_VENDA"] = df_merge["VENDAS"] > 0
@@ -683,20 +704,16 @@ if df_merge.empty:
 else:
     ativos_base = df_merge[df_merge["STATUS_CRM"] == "ATIVO"].copy()
 
-    # Ativos sem leads
     sem_leads = ativos_base[ativos_base["LEADS"] == 0]
 
-    # Ativos com leads mas sem análise
     leads_sem_analise = ativos_base[
         (ativos_base["LEADS"] > 0) & (ativos_base["ANALISES_EM"] == 0)
     ]
 
-    # Ativos com análises mas sem venda
     analise_sem_venda = ativos_base[
         (ativos_base["ANALISES_EM"] > 0) & (ativos_base["VENDAS"] == 0)
     ]
 
-    # Ativos com mais de X dias sem movimentação
     limite_dias = 7
     muito_tempo_parado = ativos_base[
         (ativos_base["DIAS_SEM_MOV"].notna())
@@ -790,7 +807,6 @@ else:
 
     col_r1, col_r2, col_r3 = st.columns(3)
 
-    # Ranking por Vendas
     with col_r1:
         st.markdown(
             '<p class="section-subtitle"><span class="good-text">Top por Vendas</span></p>',
@@ -808,7 +824,6 @@ else:
                 hide_index=True,
             )
 
-    # Ranking por VGV
     with col_r2:
         st.markdown(
             '<p class="section-subtitle"><span class="good-text">Top por VGV</span></p>',
@@ -825,7 +840,6 @@ else:
                 hide_index=True,
             )
 
-    # Ranking por Análises
     with col_r3:
         st.markdown(
             '<p class="section-subtitle"><span class="good-text">Top por Análises (só EM)</span></p>',
