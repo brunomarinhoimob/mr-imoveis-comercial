@@ -110,10 +110,6 @@ if df.empty:
 
 # ---------------------------------------------------------
 # LEADS DO SUPREMO
-# Mesma lógica do Funil Imobiliária:
-# - O app principal (ou outra página) já chamou a API
-#   e salvou o resultado em st.session_state["df_leads"].
-# - Aqui a gente só reutiliza esse dataframe.
 # ---------------------------------------------------------
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
@@ -435,7 +431,9 @@ else:
                 f"até {ref_date_cor.date().strftime('%d/%m/%Y')}."
             )
 
-            st.markdown("### 🎯 Quantas análises/aprovações esse corretor precisa para bater a meta de vendas?")
+            st.markdown(
+                "### 🎯 Quantas análises/aprovações esse corretor precisa para bater a meta de vendas?"
+            )
 
             vendas_planejadas_cor = st.number_input(
                 f"Meta de vendas no mês para {corretor_sel}",
@@ -478,6 +476,93 @@ else:
                     "Os números são aproximados e arredondados para cima, "
                     "baseados no histórico real desse corretor nos últimos 3 meses."
                 )
+
+                # -------------------------------------------------
+                # 📊 GRÁFICO – ACOMPANHAMENTO DA META DO CORRETOR
+                # -------------------------------------------------
+                if not df_cor_periodo.empty:
+                    st.markdown("### 📊 Acompanhamento da meta do corretor no período selecionado")
+
+                    indicador_meta = st.selectbox(
+                        "Indicador para comparar com a meta do corretor",
+                        ["Análises", "Aprovações", "Vendas"],
+                        key="indicador_meta_corretor",
+                    )
+
+                    dias_periodo = (
+                        pd.to_datetime(df_cor_periodo["DIA"], errors="coerce")
+                        .dt.date.dropna()
+                        .sort_values()
+                        .unique()
+                    )
+
+                    if len(dias_periodo) == 0:
+                        st.info("Não há datas válidas no período filtrado para montar o gráfico.")
+                    else:
+                        idx = pd.to_datetime(dias_periodo)
+                        df_line = pd.DataFrame(index=idx)
+                        df_line.index.name = "DIA"
+
+                        status_cor = df_cor_periodo["STATUS_BASE"].fillna("").astype(str).str.upper()
+
+                        if indicador_meta == "Análises":
+                            df_temp = df_cor_periodo[status_cor == "EM ANÁLISE"].copy()
+                            total_meta = analises_cor_necessarias_int
+                        elif indicador_meta == "Aprovações":
+                            df_temp = df_cor_periodo[status_cor == "APROVADO"].copy()
+                            total_meta = aprovacoes_cor_necessarias_int
+                        else:  # Vendas
+                            df_temp = df_cor_periodo[
+                                status_cor.isin(["VENDA GERADA", "VENDA INFORMADA"])
+                            ].copy()
+                            total_meta = vendas_planejadas_cor
+
+                        if df_temp.empty or total_meta == 0:
+                            st.info(
+                                "Não há dados suficientes ou a meta está zerada para o indicador escolhido."
+                            )
+                        else:
+                            df_temp["DIA_DATA"] = pd.to_datetime(df_temp["DIA"], errors="coerce").dt.date
+                            cont_por_dia = (
+                                df_temp.groupby("DIA_DATA")
+                                .size()
+                                .reindex(dias_periodo, fill_value=0)
+                            )
+
+                            df_line["Real"] = cont_por_dia.values
+                            df_line["Real"] = df_line["Real"].cumsum()
+                            df_line["Meta"] = np.linspace(
+                                0, total_meta, num=len(df_line), endpoint=True
+                            )
+
+                            df_plot = (
+                                df_line.reset_index()
+                                .melt("DIA", var_name="Série", value_name="Valor")
+                            )
+
+                            chart_meta_cor = (
+                                alt.Chart(df_plot)
+                                .mark_line(point=True)
+                                .encode(
+                                    x=alt.X("DIA:T", title="Dia (movimentação)"),
+                                    y=alt.Y("Valor:Q", title="Quantidade acumulada"),
+                                    color=alt.Color("Série:N", title=""),
+                                    tooltip=[
+                                        alt.Tooltip("DIA:T", title="Dia"),
+                                        alt.Tooltip("Série:N", title="Série"),
+                                        alt.Tooltip("Valor:Q", title="Quantidade"),
+                                    ],
+                                )
+                                .properties(height=320)
+                            )
+
+                            st.altair_chart(chart_meta_cor, use_container_width=True)
+                            st.caption(
+                                "Linha **Real** mostra o acumulado diário do indicador escolhido "
+                                "para esse corretor. Linha **Meta** mostra o ritmo necessário "
+                                "para bater a meta definida."
+                            )
+
             elif vendas_planejadas_cor > 0 and vendas_cor_3m == 0:
                 st.info(
                     f"O corretor **{corretor_sel}** ainda não possui vendas registradas "
