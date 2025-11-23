@@ -293,7 +293,7 @@ st.markdown(
     f"""
     <p class="motivational-text">
         Hoje já registramos <span class="number">{total_analises}</span> análises.
-        Ritmo de foguete rumo à meta! 🚀
+        <strong>Ninguém é tão bom quanto todos nós juntos!</strong> 🤝✨
     </p>
     """,
     unsafe_allow_html=True,
