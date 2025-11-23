@@ -30,7 +30,7 @@ CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&
 # ---------------------------------------------------------
 # FUNÇÃO AUXILIAR PARA LIMPAR DATA
 # ---------------------------------------------------------
-def limpar_para_data(serie):
+def limpar_para_data(serie: pd.Series) -> pd.Series:
     dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
     return dt.dt.date
 
@@ -38,7 +38,7 @@ def limpar_para_data(serie):
 # CARREGAR E PREPARAR DADOS (PLANILHA)
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def carregar_dados():
+def carregar_dados() -> pd.DataFrame:
     df = pd.read_csv(CSV_URL)
 
     # Padroniza colunas
@@ -95,6 +95,34 @@ def carregar_dados():
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0.0)
     else:
         df["VGV"] = 0.0
+
+    # NOME / CPF base para identificar cliente único
+    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
+
+    col_nome = next((c for c in possiveis_nome if c in df.columns), None)
+    col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
+
+    if col_nome is None:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+    else:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    if col_cpf is None:
+        df["CPF_CLIENTE_BASE"] = ""
+    else:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
 
     return df
 
@@ -168,12 +196,41 @@ if df_periodo.empty:
     st.stop()
 
 # ---------------------------------------------------------
+# FUNÇÃO: VENDAS ÚNICAS POR CLIENTE
+# ---------------------------------------------------------
+def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
+    """
+    Retorna apenas uma venda por cliente (último status),
+    considerando VENDA GERADA / VENDA INFORMADA.
+
+    Se o cliente tiver VENDA INFORMADA e depois VENDA GERADA,
+    fica apenas a linha da VENDA GERADA.
+    """
+    df_v = df_scope[df_scope["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
+    if df_v.empty:
+        return df_v
+
+    df_v["CHAVE_CLIENTE"] = (
+        df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        + " | "
+        + df_v["CPF_CLIENTE_BASE"].fillna("")
+    )
+
+    # garante ordem cronológica
+    df_v = df_v.sort_values("DIA")
+    # pega a última linha de cada cliente
+    df_v_ult = df_v.groupby("CHAVE_CLIENTE").tail(1)
+
+    return df_v_ult
+
+df_vendas_unicas_periodo = obter_vendas_unicas(df_periodo)
+
+# ---------------------------------------------------------
 # LEADS NO PERÍODO (IMOBILIÁRIA INTEIRA)
 # ---------------------------------------------------------
 total_leads_periodo = None
 if not df_leads.empty and "data_captura" in df_leads.columns:
     df_leads_use = df_leads.dropna(subset=["data_captura"]).copy()
-    # garante tipo datetime
     df_leads_use["data_captura"] = pd.to_datetime(
         df_leads_use["data_captura"], errors="coerce"
     )
@@ -188,36 +245,37 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES DO FUNIL
 # ---------------------------------------------------------
-def conta_analises(s):
+def conta_analises(s: pd.Series) -> int:
     """Análises totais (EM + RE) – volume."""
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
 
-def conta_analises_base(s):
+def conta_analises_base(s: pd.Series) -> int:
     """Análises para base de conversão – SOMENTE EM ANÁLISE."""
     return (s == "EM ANÁLISE").sum()
 
-def conta_reanalises(s):
+def conta_reanalises(s: pd.Series) -> int:
     """Quantidade de REANÁLISE."""
     return (s == "REANÁLISE").sum()
 
-def conta_aprovacoes(s):
+def conta_aprovacoes(s: pd.Series) -> int:
     return (s == "APROVADO").sum()
 
-def conta_vendas(s):
-    return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
+def format_currency(valor: float) -> str:
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 # ---------------------------------------------------------
 # FUNIL GERAL DA IMOBILIÁRIA
 # ---------------------------------------------------------
 st.markdown("## 🏢 Funil Geral da Imobiliária")
 
-# Contagens gerais (respeitando o filtro de data)
 analises_em = conta_analises_base(df_periodo["STATUS_BASE"])    # só EM ANÁLISE
 reanalises_total = conta_reanalises(df_periodo["STATUS_BASE"])  # só REANÁLISE
 analises_total = conta_analises(df_periodo["STATUS_BASE"])      # EM + RE (volume)
 aprov_total = conta_aprovacoes(df_periodo["STATUS_BASE"])
-vendas_total = conta_vendas(df_periodo["STATUS_BASE"])
-vgv_total = df_periodo["VGV"].sum()
+
+# VENDAS + VGV usando vendas únicas
+vendas_total = len(df_vendas_unicas_periodo)
+vgv_total = df_vendas_unicas_periodo["VGV"].sum() if not df_vendas_unicas_periodo.empty else 0.0
 
 taxa_aprov_analise = (
     aprov_total / analises_em * 100 if analises_em > 0 else 0
@@ -261,10 +319,7 @@ with col5:
 # Segunda linha de cards: VGV, taxas e média leads/análise
 col_vgv, col_t1, col_t2, col_t3 = st.columns(4)
 with col_vgv:
-    st.metric(
-        "VGV Total",
-        f"R$ {vgv_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
-    )
+    st.metric("VGV Total", format_currency(vgv_total))
 with col_t1:
     st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov_analise:.1f}%")
 with col_t2:
@@ -293,7 +348,6 @@ df_funil_geral = pd.DataFrame(
     }
 )
 
-# 🔽 TABELA EM CIMA, GRÁFICO EMBAIXO
 st.markdown("### 📋 Tabela do Funil Geral")
 st.dataframe(
     df_funil_geral.style.format(
@@ -357,7 +411,10 @@ else:
         else:
             analises_3m_base = conta_analises_base(df_3m["STATUS_BASE"])  # só EM ANÁLISE
             aprov_3m = conta_aprovacoes(df_3m["STATUS_BASE"])
-            vendas_3m = conta_vendas(df_3m["STATUS_BASE"])
+
+            # VENDAS ÚNICAS NOS 3 MESES
+            df_vendas_3m = obter_vendas_unicas(df_3m)
+            vendas_3m = len(df_vendas_3m)
 
             if vendas_3m > 0:
                 media_analise_por_venda_3m = (
@@ -459,6 +516,7 @@ else:
 st.markdown("---")
 st.markdown("## 👥 Funil por Equipe (comparativo)")
 
+# base de análise/aprovação (por equipe)
 rank_eq_funil = (
     df_periodo.groupby("EQUIPE")
     .agg(
@@ -466,12 +524,24 @@ rank_eq_funil = (
         ANALISES_BASE=("STATUS_BASE", conta_analises_base), # só EM ANÁLISE (conversão)
         REANALISES=("STATUS_BASE", conta_reanalises),       # só REANÁLISE
         APROVACOES=("STATUS_BASE", conta_aprovacoes),
-        VENDAS=("STATUS_BASE", conta_vendas),
-        VGV=("VGV", "sum"),
     )
     .reset_index()
 )
 
+# vendas únicas e VGV por equipe
+if not df_vendas_unicas_periodo.empty:
+    vendas_eq = df_vendas_unicas_periodo.groupby("EQUIPE").size().rename("VENDAS")
+    vgv_eq = df_vendas_unicas_periodo.groupby("EQUIPE")["VGV"].sum().rename("VGV")
+    rank_eq_funil = rank_eq_funil.merge(vendas_eq, on="EQUIPE", how="left")
+    rank_eq_funil = rank_eq_funil.merge(vgv_eq, on="EQUIPE", how="left")
+else:
+    rank_eq_funil["VENDAS"] = 0
+    rank_eq_funil["VGV"] = 0.0
+
+rank_eq_funil["VENDAS"] = rank_eq_funil["VENDAS"].fillna(0).astype(int)
+rank_eq_funil["VGV"] = rank_eq_funil["VGV"].fillna(0.0)
+
+# remove equipes sem movimento nenhum
 rank_eq_funil = rank_eq_funil[
     (rank_eq_funil["ANALISES"] > 0)
     | (rank_eq_funil["APROVACOES"] > 0)
@@ -498,19 +568,36 @@ else:
         0,
     )
 
-    rank_eq_funil = rank_eq_funil.sort_values(["VENDAS", "VGV"], ascending=False)
+    # ordena por VGV e VENDAS
+    rank_eq_funil = rank_eq_funil.sort_values(
+        ["VGV", "VENDAS"], ascending=False
+    ).reset_index(drop=True)
 
-    # 🔽 TABELA EM CIMA, GRÁFICO EMBAIXO
+    # tabela mais "clean" com nomes bonitos e valores formatados
+    rank_eq_exibe = rank_eq_funil.copy()
+    rank_eq_exibe["VGV"] = rank_eq_exibe["VGV"].apply(format_currency)
+    rank_eq_exibe["TAXA_APROV_ANALISES"] = rank_eq_exibe["TAXA_APROV_ANALISES"].map(lambda v: f"{v:.1f}%")
+    rank_eq_exibe["TAXA_VENDAS_ANALISES"] = rank_eq_exibe["TAXA_VENDAS_ANALISES"].map(lambda v: f"{v:.1f}%")
+    rank_eq_exibe["TAXA_VENDAS_APROV"] = rank_eq_exibe["TAXA_VENDAS_APROV"].map(lambda v: f"{v:.1f}%")
+
+    rank_eq_exibe = rank_eq_exibe.rename(
+        columns={
+            "EQUIPE": "EQUIPE",
+            "VGV": "VGV",
+            "VENDAS": "VENDAS",
+            "ANALISES": "ANÁLISES (EM + RE)",
+            "ANALISES_BASE": "ANÁLISES (só EM)",
+            "REANALISES": "REANÁLISES",
+            "APROVACOES": "APROVAÇÕES",
+            "TAXA_APROV_ANALISES": "% Aprov./Análises (só EM)",
+            "TAXA_VENDAS_ANALISES": "% Vendas/Análises (só EM)",
+            "TAXA_VENDAS_APROV": "% Vendas/Aprovações",
+        }
+    )
+
     st.markdown("### 📋 Tabela do Funil por Equipe")
     st.dataframe(
-        rank_eq_funil.style.format(
-            {
-                "VGV": "R$ {:,.2f}".format,
-                "TAXA_APROV_ANALISES": "{:.1f}%".format,
-                "TAXA_VENDAS_ANALISES": "{:.1f}%".format,
-                "TAXA_VENDAS_APROV": "{:.1f}%".format,
-            }
-        ),
+        rank_eq_exibe,
         use_container_width=True,
         hide_index=True,
     )
@@ -523,28 +610,16 @@ else:
             x=alt.X("VGV:Q", title="VGV (R$)"),
             y=alt.Y("EQUIPE:N", sort="-x", title="Equipe"),
             tooltip=[
-                "EQUIPE",
+                alt.Tooltip("EQUIPE:N", title="Equipe"),
                 alt.Tooltip("ANALISES_BASE:Q", title="Análises (só EM)"),
                 alt.Tooltip("REANALISES:Q", title="Reanálises"),
                 alt.Tooltip("ANALISES:Q", title="Análises (EM + RE)"),
-                "APROVACOES",
-                "VENDAS",
-                alt.Tooltip("VGV:Q", title="VGV"),
-                alt.Tooltip(
-                    "TAXA_APROV_ANALISES:Q",
-                    title="% Aprov./Análises (só EM)",
-                    format=".1f",
-                ),
-                alt.Tooltip(
-                    "TAXA_VENDAS_ANALISES:Q",
-                    title="% Vendas/Análises (só EM)",
-                    format=".1f",
-                ),
-                alt.Tooltip(
-                    "TAXA_VENDAS_APROV:Q",
-                    title="% Vendas/Aprovações",
-                    format=".1f",
-                ),
+                alt.Tooltip("APROVACOES:Q", title="Aprovações"),
+                alt.Tooltip("VENDAS:Q", title="Vendas"),
+                alt.Tooltip("VGV:Q", title="VGV", format=",.2f"),
+                alt.Tooltip("TAXA_APROV_ANALISES:Q", title="% Aprov./Análises (só EM)", format=".1f"),
+                alt.Tooltip("TAXA_VENDAS_ANALISES:Q", title="% Vendas/Análises (só EM)", format=".1f"),
+                alt.Tooltip("TAXA_VENDAS_APROV:Q", title="% Vendas/Aprovações", format=".1f"),
             ],
         )
         .properties(height=400)
@@ -569,8 +644,11 @@ else:
         reanalises_eq = conta_reanalises(df_eq["STATUS_BASE"])       # só RE
         analises_eq_total = conta_analises(df_eq["STATUS_BASE"])     # EM + RE
         aprov_eq = conta_aprovacoes(df_eq["STATUS_BASE"])
-        vendas_eq = conta_vendas(df_eq["STATUS_BASE"])
-        vgv_eq = df_eq["VGV"].sum()
+
+        # vendas únicas da equipe (no período filtrado)
+        df_eq_vendas_unicas = obter_vendas_unicas(df_eq)
+        vendas_eq = len(df_eq_vendas_unicas)
+        vgv_eq = df_eq_vendas_unicas["VGV"].sum() if not df_eq_vendas_unicas.empty else 0.0
 
         taxa_aprov_eq = (
             aprov_eq / analises_eq_em * 100 if analises_eq_em > 0 else 0
@@ -599,10 +677,7 @@ else:
 
         c6, c7, c8 = st.columns(3)
         with c6:
-            st.metric(
-                "VGV da equipe",
-                f"R$ {vgv_eq:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
-            )
+            st.metric("VGV da equipe", format_currency(vgv_eq))
         with c7:
             st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov_eq:.1f}%")
         with c8:
@@ -642,7 +717,9 @@ else:
                 else:
                     analises_eq_3m_base = conta_analises_base(df_eq_3m["STATUS_BASE"])  # só EM ANÁLISE
                     aprov_eq_3m = conta_aprovacoes(df_eq_3m["STATUS_BASE"])
-                    vendas_eq_3m = conta_vendas(df_eq_3m["STATUS_BASE"])
+
+                    df_eq_vendas_3m = obter_vendas_unicas(df_eq_3m)
+                    vendas_eq_3m = len(df_eq_vendas_3m)
 
                     if vendas_eq_3m > 0:
                         media_analise_por_venda_eq = (
