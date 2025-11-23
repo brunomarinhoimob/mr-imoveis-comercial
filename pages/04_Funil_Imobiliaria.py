@@ -261,73 +261,57 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------
-# PRODUTIVIDADE – EQUIPE ATIVA (ÚLTIMOS 30 DIAS POR DATA_BASE)
+# PRODUTIVIDADE – EQUIPE ATIVA (AGORA PELO PERÍODO SELECIONADO)
 # ---------------------------------------------------------
-st.markdown("## 👥 Produtividade da equipe – últimos 30 dias (DATA BASE)")
+st.markdown("## 👥 Produtividade da equipe – período selecionado")
 
-if bases_validas.empty:
-    st.info("Não há datas válidas de DATA BASE na base para calcular os últimos 30 dias.")
+if corretores_ativos_periodo == 0:
+    st.info("Não há corretores com movimentação no período selecionado.")
 else:
-    data_ref_base = bases_validas.max()
-    inicio_30 = data_ref_base - timedelta(days=30)
-
-    mask_30 = (df["DATA_BASE"] >= inicio_30) & (df["DATA_BASE"] <= data_ref_base)
-    df_30 = df[mask_30].copy()
-
-    if df_30.empty:
-        st.info(
-            f"Não há movimentações nos últimos 30 dias de DATA BASE "
-            f"(janela: {inicio_30.date().strftime('%d/%m/%Y')} "
-            f"até {data_ref_base.date().strftime('%d/%m/%Y')})."
-        )
+    # Corretores que tiveram pelo menos 1 venda única no período
+    if df_vendas_periodo.empty:
+        corretores_com_venda_periodo = 0
     else:
-        df_vendas_30 = obter_vendas_unicas(df_30)
-
-        corretores_ativos_30 = df_30["CORRETOR"].dropna().astype(str).nunique()
-        corretores_com_venda_30 = (
-            df_vendas_30["CORRETOR"].dropna().astype(str).nunique()
-            if not df_vendas_30.empty
-            else 0
+        corretores_com_venda_periodo = (
+            df_vendas_periodo["CORRETOR"].dropna().astype(str).nunique()
         )
 
-        equipe_produtiva_pct = (
-            (corretores_com_venda_30 / corretores_ativos_30 * 100)
-            if corretores_ativos_30 > 0
-            else 0.0
+    equipe_produtiva_pct = (
+        corretores_com_venda_periodo / corretores_ativos_periodo * 100
+        if corretores_ativos_periodo > 0
+        else 0.0
+    )
+
+    vendas_periodo = vendas
+    ipc_periodo_prod = ipc_periodo
+
+    c11, c12, c13, c14 = st.columns(4)
+    with c11:
+        st.metric(
+            "Corretores ativos (período)",
+            corretores_ativos_periodo,
+        )
+    with c12:
+        st.metric(
+            "% equipe produtiva (período)",
+            f"{equipe_produtiva_pct:.1f}%",
+            help="Corretor produtivo = pelo menos 1 venda única no período selecionado.",
+        )
+    with c13:
+        st.metric(
+            "Vendas (período – únicas)",
+            vendas_periodo,
+        )
+    with c14:
+        st.metric(
+            "IPC período (vendas/corretor)",
+            f"{ipc_periodo_prod:.2f}" if ipc_periodo_prod is not None else "—",
         )
 
-        vendas_30 = len(df_vendas_30)
-        vgv_30 = df_vendas_30["VGV"].sum() if not df_vendas_30.empty else 0.0
-
-        ipc_30 = (vendas_30 / corretores_ativos_30) if corretores_ativos_30 > 0 else None
-
-        c11, c12, c13, c14 = st.columns(4)
-        with c11:
-            st.metric(
-                "Corretores ativos (30 dias – DATA BASE)",
-                corretores_ativos_30,
-            )
-        with c12:
-            st.metric(
-                "% equipe produtiva (30 dias)",
-                f"{equipe_produtiva_pct:.1f}%",
-                help="Corretor produtivo = pelo menos 1 venda única nesse período de DATA BASE.",
-            )
-        with c13:
-            st.metric(
-                "Vendas (30 dias – únicas)",
-                vendas_30,
-            )
-        with c14:
-            st.metric(
-                "IPC 30 dias (vendas/corretor)",
-                f"{ipc_30:.2f}" if ipc_30 is not None else "—",
-            )
-
-        st.caption(
-            f"Janela considerada pela DATA BASE: de {inicio_30.date().strftime('%d/%m/%Y')} "
-            f"até {data_ref_base.date().strftime('%d/%m/%Y')}."
-        )
+    st.caption(
+        f"Período considerado (data de movimentação): de "
+        f"{data_ini_mov.strftime('%d/%m/%Y')} até {data_fim_mov.strftime('%d/%m/%Y')}."
+    )
 
 st.markdown("---")
 
@@ -492,7 +476,6 @@ else:
                         == "EM ANÁLISE"
                     ].copy()
                     total_meta = analises_necessarias
-                    label_real = "Análises acumuladas"
                 elif indicador == "Aprovações":
                     df_temp = df_periodo[
                         df_periodo["STATUS_BASE"]
@@ -502,11 +485,9 @@ else:
                         == "APROVADO"
                     ].copy()
                     total_meta = aprovacoes_necessarias
-                    label_real = "Aprovações acumuladas"
                 else:  # Vendas
                     df_temp = obter_vendas_unicas(df_periodo).copy()
                     total_meta = meta_vendas
-                    label_real = "Vendas acumuladas"
 
                 if df_temp.empty or total_meta == 0:
                     st.info(
