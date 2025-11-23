@@ -53,8 +53,7 @@ def normalizar_nome(nome: str) -> str:
     if pd.isna(nome):
         return ""
     s = str(nome).upper().strip()
-    # remove espaços duplos
-    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"\s+", " ", s)  # remove espaços duplicados
     return s
 
 
@@ -142,11 +141,36 @@ def carregar_dados():
     else:
         df["VGV"] = 0.0
 
-    # CHAVE DO CLIENTE
-    # Regra: se tiver CPF -> usa CPF; senão, usa NOME_CLIENTE_BASE
+    # -----------------------------------------------------
+    # CHAVE DO CLIENTE — REGRA:
+    # 1) Normaliza nome e CPF
+    # 2) Se existir algum CPF para aquele nome, todos os registros
+    #    desse nome passam a usar o MESMO CPF como chave.
+    # 3) Só se não houver nenhum CPF para o nome é que a chave fica sendo o nome.
+    # -----------------------------------------------------
+    df["NOME_CLIENTE_BASE"] = df["NOME_CLIENTE_BASE"].apply(normalizar_nome)
+    df["CPF_CLIENTE_BASE"] = df["CPF_CLIENTE_BASE"].apply(limpar_cpf)
+
+    # chave provisória
     df["CHAVE_CLIENTE"] = df["CPF_CLIENTE_BASE"]
-    sem_cpf = df["CHAVE_CLIENTE"] == ""
-    df.loc[sem_cpf, "CHAVE_CLIENTE"] = df.loc[sem_cpf, "NOME_CLIENTE_BASE"]
+    df.loc[df["CHAVE_CLIENTE"] == "", "CHAVE_CLIENTE"] = df["NOME_CLIENTE_BASE"]
+
+    # mapa nome -> cpf (apenas nomes que têm CPF em pelo menos um registro)
+    mapa_nome_cpfs = (
+        df[df["CPF_CLIENTE_BASE"] != ""]
+        .groupby("NOME_CLIENTE_BASE")["CPF_CLIENTE_BASE"]
+        .first()
+        .to_dict()
+    )
+
+    def corrigir_chave(row):
+        nome = row["NOME_CLIENTE_BASE"]
+        cpf_real = mapa_nome_cpfs.get(nome, None)
+        if cpf_real:
+            return cpf_real  # força chave pelo CPF real
+        return row["CHAVE_CLIENTE"]
+
+    df["CHAVE_CLIENTE"] = df.apply(corrigir_chave, axis=1)
 
     return df
 
@@ -213,7 +237,6 @@ if btn_buscar or termo:
 # ---------------------------------------------------------
 # AGRUPAMENTO POR CLIENTE (ÚLTIMA AÇÃO + RESUMO)
 # ---------------------------------------------------------
-# Mantém apenas linhas com data válida
 df_busca = df_busca.dropna(subset=["DT_BASE"]).copy()
 df_busca = df_busca.sort_values("DT_BASE")
 
@@ -232,7 +255,7 @@ for chave, g in df_busca.groupby("CHAVE_CLIENTE", sort=False):
     aprovacoes = (status_series == "APROVADO").sum()
 
     # Regra de vendas:
-    # - Sempre consideramos a última ação para STATUS atual (last["STATUS_BASE"])
+    # - Último status é apenas informativo (last["STATUS_BASE"])
     # - VENDA GERADA anula VENDA INFORMADA na contagem de vendas/VGV
     tem_venda_gerada = (status_series == "VENDA GERADA").any()
     if tem_venda_gerada:
@@ -267,7 +290,6 @@ if df_resumo.empty:
     st.warning("Não foi possível montar o resumo dos clientes.")
     st.stop()
 
-# Ordena por nome
 df_resumo = df_resumo.sort_values("NOME").reset_index(drop=True)
 
 # ---------------------------------------------------------
@@ -279,7 +301,9 @@ st.markdown(f"### 🔍 Resultado da busca – {qtde_clientes} cliente(s) encontr
 df_visao = df_resumo.copy()
 df_visao["ULT_DATA"] = pd.to_datetime(df_visao["ULT_DATA"], errors="coerce").dt.date
 df_visao["ULT_DATA"] = df_visao["ULT_DATA"].apply(
-    lambda d: d.strftime("%d/%m/%Y") if pd.notnull(pd.to_datetime(d, errors="coerce")) else ""
+    lambda d: d.strftime("%d/%m/%Y")
+    if pd.notnull(pd.to_datetime(d, errors="coerce"))
+    else ""
 )
 df_visao["VGV"] = df_visao["VGV"].apply(
     lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -359,7 +383,11 @@ for _, row in df_resumo.iterrows():
         df_cli_hist["DATA"] = df_cli_hist["DT_BASE"].dt.strftime("%d/%m/%Y")
         df_cli_hist["STATUS"] = df_cli_hist["STATUS_BASE"]
 
-        col_hist = [c for c in ["DATA", "STATUS", "EQUIPE", "CORRETOR", "OBSERVAÇÕES"] if c in df_cli_hist.columns]
+        col_hist = [
+            c
+            for c in ["DATA", "STATUS", "EQUIPE", "CORRETOR", "OBSERVAÇÕES"]
+            if c in df_cli_hist.columns
+        ]
         df_cli_hist = df_cli_hist[col_hist]
 
         st.dataframe(df_cli_hist, use_container_width=True, hide_index=True)
