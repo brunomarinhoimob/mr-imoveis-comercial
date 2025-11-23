@@ -245,10 +245,15 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
     else:
         df_all["NOME_CRM"] = "NÃO INFORMADO"
 
+    # 👇 AJUSTE IMPORTANTE: status ATIVO
     if "status" in df_all.columns:
-        df_all["STATUS_CRM"] = df_all["status"].apply(
-            lambda x: "ATIVO" if str(x) == "1" else "INATIVO"
-        )
+        def map_status(x):
+            s = str(x).strip().upper()
+            if s in ("1", "SIM", "TRUE", "ATIVO"):
+                return "ATIVO"
+            return "INATIVO"
+
+        df_all["STATUS_CRM"] = df_all["status"].apply(map_status)
     else:
         df_all["STATUS_CRM"] = "DESCONHECIDO"
 
@@ -561,10 +566,6 @@ total_ativos = (df_corretores["STATUS_CRM"] == "ATIVO").sum()
 ativos_com_mov = (
     (df_merge["STATUS_CRM"] == "ATIVO")
     & (df_merge["TEVE_LEAD"] | df_merge["TEVE_ANALISE"] | df_merge["TEVE_VENDA"])
-).sum()
-
-ativos_com_leads = (
-    (df_merge["STATUS_CRM"] == "ATIVO") & (df_merge["LEADS"] > 0)
 ).sum()
 
 fantasmas = df_merge["FANTASMA"].sum()
