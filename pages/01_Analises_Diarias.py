@@ -90,11 +90,11 @@ df_em_analise = df_dia[df_dia["STATUS_BASE"] == "EM ANÁLISE"]
 qtde_total_dia = len(df_em_analise)
 
 # ---------------------------------------------------------
-# FRASE ESPECIAL VERSÃO 1
+# FRASE ESPECIAL (SEM “VERSÃO 1”)
 # ---------------------------------------------------------
 st.markdown(
     f"""
-    ### 🚀 **VERSÃO 1 — No dia {dia_selecionado.strftime('%d/%m/%Y')}, nossa equipe já registrou {qtde_total_dia} análises EM ANÁLISE!**
+    ### 🚀 No dia {dia_selecionado.strftime('%d/%m/%Y')}, nossa equipe já registrou **{qtde_total_dia} análises EM ANÁLISE!**
     Acelerando rumo às metas! 🔥
     """
 )
@@ -106,24 +106,28 @@ st.subheader("Total de análises no dia")
 st.metric(label="", value=qtde_total_dia)
 
 # ---------------------------------------------------------
-# ANALISES POR EQUIPE
+# TABELAS LADO A LADO
 # ---------------------------------------------------------
-st.subheader("📌 Análises por Equipe (no dia)")
+st.subheader("📊 Análises por Equipe x Corretores (no dia)")
 
-df_equipes = df_em_analise.groupby("EQUIPE").size().reset_index(name="ANÁLISES")
-df_equipes = df_equipes.sort_values("ANÁLISES", ascending=False)
+col1, col2 = st.columns(2)
 
-st.dataframe(df_equipes, use_container_width=True)
+# Análises por Equipe
+with col1:
+    st.markdown("#### 📌 Análises por Equipe")
+    df_equipes = df_em_analise.groupby("EQUIPE").size().reset_index(name="ANÁLISES")
+    df_equipes = df_equipes.sort_values("ANÁLISES", ascending=False)
+    st.dataframe(df_equipes, use_container_width=True)
+
+# Análises por Corretor
+with col2:
+    st.markdown("#### 👥 Corretores que Subiram Análises")
+    df_corretor = df_em_analise.groupby("CORRETOR").size().reset_index(name="ANÁLISES")
+    df_corretor = df_corretor.sort_values("ANÁLISES", ascending=False)
+    st.dataframe(df_corretor, use_container_width=True)
 
 # ---------------------------------------------------------
-# ANALISES POR CORRETOR
+# RODAPÉ
 # ---------------------------------------------------------
-st.subheader("👥 Corretores que Subiram Análises (no dia)")
-
-df_corretor = df_em_analise.groupby("CORRETOR").size().reset_index(name="ANÁLISES")
-df_corretor = df_corretor.sort_values("ANÁLISES", ascending=False)
-
-st.dataframe(df_corretor, use_container_width=True)
-
 st.markdown("---")
-st.caption("Dashboard MR Imóveis • Atualizado automaticamente • VERSÃO 1")
+st.caption("Dashboard MR Imóveis • Atualizado automaticamente • Gestão à Vista")
