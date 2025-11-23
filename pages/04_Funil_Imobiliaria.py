@@ -1,126 +1,124 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import altair as alt
-from datetime import date, timedelta  # <-- acrescentei timedelta
+from datetime import date, timedelta
+
+from app_dashboard import carregar_dados_planilha
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Funil de Vendas – MR Imóveis",
+    page_title="Funil MR Imóveis – Imobiliária",
     page_icon="🔻",
     layout="wide",
 )
 
-st.title("🔻 Funil de Vendas – MR Imóveis")
+st.title("🔻 Funil de Vendas – Visão Imobiliária")
 
-# ---------------------------------------------------------
-# CARREGAMENTO DA PLANILHA (GOOGLE SHEETS)
-# ---------------------------------------------------------
-SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
-GID_ANALISES = "1574157905"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
-
-@st.cache_data(ttl=600)
-def carregar_dados_funil() -> pd.DataFrame:
-    """Carrega e trata a base de análises/vendas direto do Google Sheets."""
-    df_local = pd.read_csv(CSV_URL)
-    df_local.columns = [c.strip().upper() for c in df_local.columns]
-
-    # DATA / DIA
-    possiveis_datas = ["DATA", "DIA", "DATA DA ANÁLISE"]
-    col_data = next((c for c in possiveis_datas if c in df_local.columns), None)
-    if col_data:
-        df_local["DIA"] = pd.to_datetime(df_local[col_data], errors="coerce", dayfirst=True)
-    else:
-        df_local["DIA"] = pd.NaT
-
-    # STATUS BASE
-    if "SITUAÇÃO" in df_local.columns:
-        df_local["STATUS_BASE"] = (
-            df_local["SITUAÇÃO"].astype(str).str.upper().str.strip()
-        )
-    else:
-        df_local["STATUS_BASE"] = ""
-
-    # Normalização de alguns textos de status
-    df_local.loc[
-        df_local["STATUS_BASE"].str.contains("EM ANÁLISE", na=False),
-        "STATUS_BASE",
-    ] = "EM ANÁLISE"
-    df_local.loc[
-        df_local["STATUS_BASE"].str.contains("REANÁLISE", na=False),
-        "STATUS_BASE",
-    ] = "REANÁLISE"
-
-    # Normalização de corretor e equipe
-    for col in ["CORRETOR", "EQUIPE"]:
-        if col in df_local.columns:
-            df_local[col] = df_local[col].astype(str).str.upper().str.strip()
-        else:
-            df_local[col] = "NÃO INFORMADO"
-
-    # VGV
-    if "OBSERVAÇÕES" in df_local.columns:
-        df_local["VGV"] = pd.to_numeric(df_local["OBSERVAÇÕES"], errors="coerce").fillna(0)
-    else:
-        df_local["VGV"] = 0
-
-    return df_local
+st.caption(
+    "Visão consolidada da MR Imóveis: produtividade da equipe, funil de análises → "
+    "aprovações → vendas e previsibilidade com base nos últimos 3 meses."
+)
 
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES
 # ---------------------------------------------------------
-def conta_analises(s):
-    """Análises totais (EM + RE) – volume."""
+def conta_analises_total(status: pd.Series) -> int:
+    """Análises totais (EM ANÁLISE + REANÁLISE)."""
+    s = status.fillna("").astype(str).str.upper()
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
 
-def conta_analises_base(s):
-    """Análises para base de conversão – SOMENTE EM ANÁLISE."""
+
+def conta_analises_base(status: pd.Series) -> int:
+    """Análises que entram na base de conversão: somente EM ANÁLISE."""
+    s = status.fillna("").astype(str).str.upper()
     return (s == "EM ANÁLISE").sum()
 
-def conta_reanalises(s):
-    """Quantidade de REANÁLISE."""
+
+def conta_reanalises(status: pd.Series) -> int:
+    s = status.fillna("").astype(str).str.upper()
     return (s == "REANÁLISE").sum()
 
-def conta_aprovacoes(s):
+
+def conta_aprovacoes(status: pd.Series) -> int:
+    s = status.fillna("").astype(str).str.upper()
     return (s == "APROVADO").sum()
 
-def conta_vendas(s):
-    return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
+
+def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
+    """Retorna uma venda por cliente (último status).
+    Se tiver VENDA INFORMADA e depois VENDA GERADA, fica só a GERADA.
+    """
+    if df_scope.empty:
+        return df_scope.copy()
+
+    s = df_scope["STATUS_BASE"].fillna("").astype(str).str.upper()
+    df_v = df_scope[s.isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
+    if df_v.empty:
+        return df_v
+
+    # Garante colunas de cliente
+    if "NOME_CLIENTE_BASE" not in df_v.columns:
+        if "CLIENTE" in df_v.columns:
+            df_v["NOME_CLIENTE_BASE"] = (
+                df_v["CLIENTE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+            )
+        else:
+            df_v["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+
+    if "CPF_CLIENTE_BASE" not in df_v.columns:
+        df_v["CPF_CLIENTE_BASE"] = ""
+
+    df_v["CHAVE_CLIENTE"] = (
+        df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        + " | "
+        + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+    )
+
+    df_v = df_v.sort_values("DIA")
+    df_ult = df_v.groupby("CHAVE_CLIENTE").tail(1).copy()
+    return df_ult
+
+
+def format_currency(valor: float) -> str:
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 # ---------------------------------------------------------
-# FUNIL GERAL DA IMOBILIÁRIA
+# CARREGA A BASE DA PLANILHA (MESMA DO APP PRINCIPAL)
 # ---------------------------------------------------------
-st.markdown("### 🏙️ Visão geral – Funil por Imobiliária")
-
-df = carregar_dados_funil()
+df = carregar_dados_planilha()
 
 if df.empty:
-    st.error("Não foi possível carregar a base de dados. Verifique o Google Sheets.")
+    st.error("Não foi possível carregar os dados da planilha.")
     st.stop()
 
-# ---------------------------------------------------------
-# SIDEBAR – FILTROS
-# ---------------------------------------------------------
-st.sidebar.title("Filtros 🔎")
+# Garante coluna DIA como datetime
+df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
 
-dias_validos = pd.Series(df["DIA"].dropna())
-
-if not dias_validos.empty:
-    data_min = dias_validos.min()
-    data_max = dias_validos.max()
-else:
+dias_validos = df["DIA"].dropna()
+if dias_validos.empty:
     hoje = date.today()
     data_min = hoje - timedelta(days=30)
     data_max = hoje
+else:
+    data_min = dias_validos.min().date()
+    data_max = dias_validos.max().date()
+
+# ---------------------------------------------------------
+# SIDEBAR – PERÍODO
+# ---------------------------------------------------------
+st.sidebar.title("Filtros da visão imobiliária")
+
+# Sugestão de período padrão: últimos 30 dias
+data_ini_default = max(data_min, (data_max - timedelta(days=30)))
 
 periodo = st.sidebar.date_input(
     "Período (data de movimentação)",
-    value=(data_min.date(), data_max.date()),
-    min_value=data_min.date(),
-    max_value=data_max.date(),
+    value=(data_ini_default, data_max),
+    min_value=data_min,
+    max_value=data_max,
 )
 
 if isinstance(periodo, tuple):
@@ -129,37 +127,44 @@ else:
     data_ini = periodo
     data_fim = periodo
 
-# Filtro por equipe para os blocos que suportam "Todas"
-equipes_disponiveis = ["Todas"] + sorted(df["EQUIPE"].dropna().unique().tolist())
-equipe_sel = st.sidebar.selectbox("Equipe (para funis por equipe)", equipes_disponiveis)
+# Garante ordem correta
+if data_ini > data_fim:
+    data_ini, data_fim = data_fim, data_ini
 
-# ---------------------------------------------------------
-# APLICA FILTRO DE PERÍODO
-# ---------------------------------------------------------
-mask_periodo = (df["DIA"] >= pd.to_datetime(data_ini)) & (
-    df["DIA"] <= pd.to_datetime(data_fim)
-)
+mask_periodo = (df["DIA"].dt.date >= data_ini) & (df["DIA"].dt.date <= data_fim)
 df_periodo = df[mask_periodo].copy()
+
+st.caption(
+    f"Período selecionado: **{data_ini.strftime('%d/%m/%Y')}** até "
+    f"**{data_fim.strftime('%d/%m/%Y')}**."
+)
 
 if df_periodo.empty:
     st.warning("Nenhum registro encontrado para o período selecionado.")
     st.stop()
 
 # ---------------------------------------------------------
-# FUNIL GERAL – IMOBILIÁRIA (PERÍODO)
+# KPIs PRINCIPAIS – FUNIL DO PERÍODO
 # ---------------------------------------------------------
-st.markdown("## 🧭 Funil geral da imobiliária (período selecionado)")
+status_periodo = df_periodo["STATUS_BASE"].fillna("").astype(str).str.upper()
 
-analises_em = conta_analises_base(df_periodo["STATUS_BASE"])
-reanalises = conta_reanalises(df_periodo["STATUS_BASE"])
-analises_total = conta_analises(df_periodo["STATUS_BASE"])
-aprovacoes = conta_aprovacoes(df_periodo["STATUS_BASE"])
-vendas = conta_vendas(df_periodo["STATUS_BASE"])
-vgv_total = df_periodo["VGV"].sum()
+analises_em = conta_analises_base(status_periodo)
+reanalises = conta_reanalises(status_periodo)
+analises_total = conta_analises_total(status_periodo)
+aprovacoes = conta_aprovacoes(status_periodo)
 
-taxa_aprov = (aprovacoes / analises_em * 100) if analises_em > 0 else 0
-taxa_venda_analises = (vendas / analises_em * 100) if analises_em > 0 else 0
-taxa_venda_aprov = (vendas / aprovacoes * 100) if aprovacoes > 0 else 0
+df_vendas_periodo = obter_vendas_unicas(df_periodo)
+vendas = len(df_vendas_periodo)
+vgv_total = df_vendas_periodo["VGV"].sum() if not df_vendas_periodo.empty else 0.0
+
+taxa_aprov_analise = (aprovacoes / analises_em * 100) if analises_em > 0 else 0.0
+taxa_venda_analise = (vendas / analises_em * 100) if analises_em > 0 else 0.0
+taxa_venda_aprov = (vendas / aprovacoes * 100) if aprovacoes > 0 else 0.0
+
+corretores_ativos_periodo = df_periodo["CORRETOR"].dropna().astype(str).nunique()
+ipc_periodo = (vendas / corretores_ativos_periodo) if corretores_ativos_periodo > 0 else None
+
+st.markdown("## 🧭 Funil da Imobiliária – Período Selecionado")
 
 c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
@@ -171,322 +176,228 @@ with c3:
 with c4:
     st.metric("Aprovações", aprovacoes)
 with c5:
-    st.metric("Vendas (Total)", vendas)
+    st.metric("Vendas (únicas)", vendas)
 
 c6, c7, c8 = st.columns(3)
 with c6:
-    st.metric(
-        "VGV total",
-        f"R$ {vgv_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
-    )
+    st.metric("VGV total", format_currency(vgv_total))
 with c7:
-    st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov:.1f}%")
+    st.metric(
+        "Taxa Aprov./Análises (só EM)",
+        f"{taxa_aprov_analise:.1f}%",
+    )
 with c8:
-    st.metric("Taxa Vendas/Análises (só EM)", f"{taxa_venda_analises:.1f}%")
+    st.metric(
+        "Taxa Vendas/Análises (só EM)",
+        f"{taxa_venda_analise:.1f}%",
+    )
 
-c9, = st.columns(1)
+c9, c10 = st.columns(2)
 with c9:
-    st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
+    st.metric(
+        "Taxa Vendas/Aprovações",
+        f"{taxa_venda_aprov:.1f}%",
+    )
+with c10:
+    st.metric(
+        "IPC do período (vendas/corretor)",
+        f"{ipc_periodo:.2f}" if ipc_periodo is not None else "—",
+        help="Número médio de vendas únicas por corretor que atuou no período selecionado.",
+    )
 
 st.markdown("---")
 
 # ---------------------------------------------------------
-# FUNIL POR EQUIPE – TABELA COMPARATIVA
+# PRODUTIVIDADE – EQUIPE ATIVA (ÚLTIMOS 30 DIAS)
 # ---------------------------------------------------------
-st.markdown("## 👥 Funil por Equipe (comparativo)")
+st.markdown("## 👥 Produtividade da equipe – últimos 30 dias")
 
-df_equipes = (
-    df_periodo.groupby("EQUIPE")
-    .agg(
-        VGV=("VGV", "sum"),
-        VENDAS=("STATUS_BASE", lambda s: conta_vendas(s)),
-        ANALISES=("STATUS_BASE", lambda s: conta_analises(s)),
-        ANALISES_BASE=("STATUS_BASE", lambda s: conta_analises_base(s)),
-        REANALISES=("STATUS_BASE", lambda s: conta_reanalises(s)),
-        APROVACOES=("STATUS_BASE", lambda s: conta_aprovacoes(s)),
-    )
-    .reset_index()
-)
-
-df_equipes["TAXA_APROV_ANALISES"] = (
-    df_equipes.apply(
-        lambda row: (row["APROVACOES"] / row["ANALISES_BASE"] * 100)
-        if row["ANALISES_BASE"] > 0
-        else 0,
-        axis=1,
-    )
-)
-
-df_equipes["TAXA_VENDAS_ANALISES"] = (
-    df_equipes.apply(
-        lambda row: (row["VENDAS"] / row["ANALISES_BASE"] * 100)
-        if row["ANALISES_BASE"] > 0
-        else 0,
-        axis=1,
-    )
-)
-
-df_equipes["TAXA_VENDAS_APROV"] = (
-    df_equipes.apply(
-        lambda row: (row["VENDAS"] / row["APROVACOES"] * 100)
-        if row["APROVACOES"] > 0
-        else 0,
-        axis=1,
-    )
-)
-
-df_equipes["VGV"] = df_equipes["VGV"].fillna(0)
-
-df_equipes["VGV_FORMATADO"] = df_equipes["VGV"].apply(
-    lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-)
-
-df_equipes_vis = df_equipes[
-    [
-        "EQUIPE",
-        "VGV_FORMATADO",
-        "VENDAS",
-        "ANALISES",
-        "ANALISES_BASE",
-        "REANALISES",
-        "APROVACOES",
-        "TAXA_APROV_ANALISES",
-        "TAXA_VENDAS_ANALISES",
-        "TAXA_VENDAS_APROV",
-    ]
-].copy()
-
-df_equipes_vis.rename(
-    columns={
-        "EQUIPE": "Equipe",
-        "VGV_FORMATADO": "VGV",
-        "VENDAS": "Vendas",
-        "ANALISES": "Análises (EM + RE)",
-        "ANALISES_BASE": "Análises (só EM)",
-        "REANALISES": "Reanálises",
-        "APROVACOES": "Aprovações",
-        "TAXA_APROV_ANALISES": "% Aprov./Análises (só EM)",
-        "TAXA_VENDAS_ANALISES": "% Vendas/Análises (só EM)",
-        "TAXA_VENDAS_APROV": "% Vendas/Aprovações",
-    },
-    inplace=True,
-)
-
-st.dataframe(
-    df_equipes_vis.sort_values("VGV", ascending=False),
-    use_container_width=True,
-    hide_index=True,
-)
-
-st.markdown("---")
-
-# ---------------------------------------------------------
-# 🔍 Funil detalhado e planejamento por equipe
-# ---------------------------------------------------------
-st.markdown("## 🔍 Funil detalhado e planejamento por equipe")
-
-if equipe_sel == "Todas":
-    st.info("Selecione uma equipe específica na barra lateral para ver o funil e o planejamento dessa equipe.")
+if dias_validos.empty:
+    st.info("Não há datas válidas na base para calcular os últimos 30 dias.")
 else:
-    df_eq = df_periodo[df_periodo["EQUIPE"] == equipe_sel]
+    data_ref = dias_validos.max()
+    inicio_30 = data_ref - timedelta(days=30)
 
-    if df_eq.empty:
-        st.warning(f"A equipe **{equipe_sel}** não possui registros no período selecionado.")
+    mask_30 = (df["DIA"] >= inicio_30) & (df["DIA"] <= data_ref)
+    df_30 = df[mask_30].copy()
+
+    if df_30.empty:
+        st.info(
+            f"Não há movimentações nos últimos 30 dias "
+            f"(janela: {inicio_30.date().strftime('%d/%m/%Y')} "
+            f"até {data_ref.date().strftime('%d/%m/%Y')})."
+        )
     else:
-        analises_eq_em = conta_analises_base(df_eq["STATUS_BASE"])   # só EM
-        reanalises_eq = conta_reanalises(df_eq["STATUS_BASE"])       # só RE
-        analises_eq_total = conta_analises(df_eq["STATUS_BASE"])     # EM + RE
-        aprov_eq = conta_aprovacoes(df_eq["STATUS_BASE"])
-        vendas_eq = conta_vendas(df_eq["STATUS_BASE"])
-        vgv_eq = df_eq["VGV"].sum()
+        df_vendas_30 = obter_vendas_unicas(df_30)
 
-        taxa_aprov_eq = (
-            aprov_eq / analises_eq_em * 100 if analises_eq_em > 0 else 0
-        )
-        taxa_venda_analises_eq = (
-            vendas_eq / analises_eq_em * 100 if analises_eq_em > 0 else 0
-        )
-
-        taxa_venda_aprov_eq = (
-            vendas_eq / aprov_eq * 100 if aprov_eq > 0 else 0
-        )
-
-        # ---------------------------------------------
-        # IPC da equipe (Opção A) e Equipe Produtiva
-        # ---------------------------------------------
-        # Base completa da equipe (toda a linha do tempo)
-        df_eq_full = df[df["EQUIPE"] == equipe_sel].copy()
-
-        # Corretores da equipe ativos nos últimos 30 dias (qualquer movimentação)
-        ipc_eq = None
-        dias_eq_full = df_eq_full["DIA"].dropna()
-        if not dias_eq_full.empty:
-            data_max_eq_all = dias_eq_full.max()
-            inicio_30_eq = data_max_eq_all - timedelta(days=30)
-            df_eq_30 = df_eq_full[
-                (df_eq_full["DIA"] >= inicio_30_eq) & (df_eq_full["DIA"] <= data_max_eq_all)
-            ]
-            corretores_ativos_30_eq = df_eq_30["CORRETOR"].dropna().nunique()
-        else:
-            corretores_ativos_30_eq = 0
-
-        if corretores_ativos_30_eq > 0:
-            ipc_eq = vendas_eq / corretores_ativos_30_eq
-
-        # Equipe produtiva (% de corretores da equipe que venderam no período filtrado)
-        corretores_totais_eq_periodo = df_eq["CORRETOR"].dropna().nunique()
-        df_eq_vendas_periodo = df_eq[
-            df_eq["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])
-        ]
-        corretores_com_venda_eq = df_eq_vendas_periodo["CORRETOR"].dropna().nunique()
-        equipe_produtiva_eq = (
-            (corretores_com_venda_eq / corretores_totais_eq_periodo) * 100
-            if corretores_totais_eq_periodo > 0
+        corretores_ativos_30 = df_30["CORRETOR"].dropna().astype(str).nunique()
+        corretores_com_venda_30 = (
+            df_vendas_30["CORRETOR"].dropna().astype(str).nunique()
+            if not df_vendas_30.empty
             else 0
         )
 
-        st.markdown(f"### Equipe: **{equipe_sel}**")
+        equipe_produtiva_pct = (
+            (corretores_com_venda_30 / corretores_ativos_30 * 100)
+            if corretores_ativos_30 > 0
+            else 0.0
+        )
 
-        # Cards da equipe
-        c1, c2, c3, c4, c5 = st.columns(5)
-        with c1:
-            st.metric("Análises (só EM)", analises_eq_em)
-        with c2:
-            st.metric("Reanálises", reanalises_eq)
-        with c3:
-            st.metric("Análises (EM + RE)", analises_eq_total)
-        with c4:
-            st.metric("Aprovações", aprov_eq)
-        with c5:
-            st.metric("Vendas (Total)", vendas_eq)
+        vendas_30 = len(df_vendas_30)
+        vgv_30 = df_vendas_30["VGV"].sum() if not df_vendas_30.empty else 0.0
 
-        c6, c7, c8, c9, c10 = st.columns(5)
-        with c6:
-            st.metric(
-                "VGV da equipe",
-                f"R$ {vgv_eq:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
-            )
-        with c7:
-            st.metric(
-                "IPC da equipe",
-                f"{ipc_eq:.2f} vendas/corretor" if ipc_eq is not None else "—",
-                help="Vendas da equipe no período selecionado ÷ corretores da equipe ativos nos últimos 30 dias.",
-            )
-        with c8:
-            st.metric(
-                "% Equipe produtiva",
-                f"{equipe_produtiva_eq:.1f}%",
-                help="Porcentagem de corretores da equipe que realizaram pelo menos 1 venda no período filtrado.",
-            )
-        with c9:
-            st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov_eq:.1f}%")
-        with c10:
-            st.metric("Taxa Vendas/Análises (só EM)", f"{taxa_venda_analises_eq:.1f}%")
+        ipc_30 = (vendas_30 / corretores_ativos_30) if corretores_ativos_30 > 0 else None
 
-        c11, = st.columns(1)
+        c11, c12, c13, c14 = st.columns(4)
         with c11:
-            st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov_eq:.1f}%")
+            st.metric(
+                "Corretores ativos (30 dias)",
+                corretores_ativos_30,
+            )
+        with c12:
+            st.metric(
+                "% equipe produtiva (30 dias)",
+                f"{equipe_produtiva_pct:.1f}%",
+                help="Corretor produtivo = pelo menos 1 venda única nos últimos 30 dias.",
+            )
+        with c13:
+            st.metric(
+                "Vendas (30 dias – únicas)",
+                vendas_30,
+            )
+        with c14:
+            st.metric(
+                "IPC 30 dias (vendas/corretor)",
+                f"{ipc_30:.2f}" if ipc_30 is not None else "—",
+            )
 
-        # ---------------------------------------------
-        # PLANEJAMENTO POR EQUIPE – ÚLTIMOS 3 MESES
-        # ---------------------------------------------
-        st.markdown("### 📊 Planejamento de vendas dessa equipe (base últimos 3 meses)")
+        st.caption(
+            f"Janela considerada: de {inicio_30.date().strftime('%d/%m/%Y')} "
+            f"até {data_ref.date().strftime('%d/%m/%Y')}."
+        )
 
-        # Usa a base TOTAL mas filtrando pela equipe
-        df_eq_full = df[df["EQUIPE"] == equipe_sel].copy()
+st.markdown("---")
 
-        dt_eq_all = pd.to_datetime(df_eq_full["DIA"], errors="coerce")
-        ref_date_eq = dt_eq_all.max()
+# ---------------------------------------------------------
+# HISTÓRICO – FUNIL DOS ÚLTIMOS 3 MESES
+# ---------------------------------------------------------
+st.markdown("## 📈 Funil histórico – últimos 3 meses")
 
-        if pd.isna(ref_date_eq):
-            st.info("Não foi possível identificar a data de referência da equipe na base.")
+if dias_validos.empty:
+    st.info("Não há datas válidas para calcular o histórico de 3 meses.")
+else:
+    data_ref = dias_validos.max()
+    inicio_3m = data_ref - pd.DateOffset(months=3)
+
+    mask_3m = (df["DIA"] >= inicio_3m) & (df["DIA"] <= data_ref)
+    df_3m = df[mask_3m].copy()
+
+    if df_3m.empty:
+        st.info(
+            f"Não há registros na janela dos últimos 3 meses "
+            f"(de {inicio_3m.date().strftime('%d/%m/%Y')} "
+            f"até {data_ref.date().strftime('%d/%m/%Y')})."
+        )
+    else:
+        status_3m = df_3m["STATUS_BASE"].fillna("").astype(str).str.upper()
+
+        analises_3m = conta_analises_base(status_3m)  # só EM ANÁLISE como base
+        aprov_3m = conta_aprovacoes(status_3m)
+        df_vendas_3m = obter_vendas_unicas(df_3m)
+        vendas_3m = len(df_vendas_3m)
+        vgv_3m = df_vendas_3m["VGV"].sum() if not df_vendas_3m.empty else 0.0
+
+        corretores_ativos_3m = df_3m["CORRETOR"].dropna().astype(str).nunique()
+        ipc_3m = (vendas_3m / corretores_ativos_3m) if corretores_ativos_3m > 0 else None
+
+        if vendas_3m > 0:
+            analises_por_venda = analises_3m / vendas_3m if analises_3m > 0 else 0.0
+            aprovacoes_por_venda = aprov_3m / vendas_3m if aprov_3m > 0 else 0.0
         else:
-            limite_3m_eq = ref_date_eq - pd.DateOffset(months=3)
-            mask_3m_eq = (dt_eq_all >= limite_3m_eq) & (dt_eq_all <= ref_date_eq)
-            df_eq_3m = df_eq_full[mask_3m_eq].copy()
+            analises_por_venda = 0.0
+            aprovacoes_por_venda = 0.0
 
-            if df_eq_3m.empty:
-                st.info(
-                    f"A equipe **{equipe_sel}** não possui registros nos últimos 3 meses "
-                    f"(janela usada: {limite_3m_eq.date().strftime('%d/%m/%Y')} "
-                    f"até {ref_date_eq.date().strftime('%d/%m/%Y')})."
+        c15, c16, c17, c18 = st.columns(4)
+        with c15:
+            st.metric("Análises (3m – só EM)", analises_3m)
+        with c16:
+            st.metric("Aprovações (3m)", aprov_3m)
+        with c17:
+            st.metric("Vendas (3m – únicas)", vendas_3m)
+        with c18:
+            st.metric("VGV (3m)", format_currency(vgv_3m))
+
+        c19, c20, c21 = st.columns(3)
+        with c19:
+            st.metric(
+                "Corretores ativos (3m)",
+                corretores_ativos_3m,
+            )
+        with c20:
+            st.metric(
+                "IPC 3m (vendas/corretor)",
+                f"{ipc_3m:.2f}" if ipc_3m is not None else "—",
+            )
+        with c21:
+            st.metric(
+                "Média de análises por venda (3m)",
+                f"{analises_por_venda:.1f}" if vendas_3m > 0 else "—",
+            )
+
+        c22, = st.columns(1)
+        with c22:
+            st.metric(
+                "Média de aprovações por venda (3m)",
+                f"{aprovacoes_por_venda:.1f}" if vendas_3m > 0 else "—",
+            )
+
+        st.caption(
+            f"Janela de análise: de {inicio_3m.date().strftime('%d/%m/%Y')} "
+            f"até {data_ref.date().strftime('%d/%m/%Y')}."
+        )
+
+        st.markdown("### 🎯 Planejamento com base no funil dos últimos 3 meses")
+
+        meta_vendas = st.number_input(
+            "Meta de vendas (imobiliária) para o próximo período",
+            min_value=0,
+            step=1,
+            value=int(vendas_3m / 3) if vendas_3m > 0 else 10,
+            help="Use a meta de vendas do mês ou do período que você quer planejar.",
+        )
+
+        if meta_vendas > 0 and vendas_3m > 0:
+            analises_necessarias = int(np.ceil(analises_por_venda * meta_vendas))
+            aprovacoes_necessarias = int(np.ceil(aprovacoes_por_venda * meta_vendas))
+
+            c23, c24, c25 = st.columns(3)
+            with c23:
+                st.metric("Meta de vendas (planejada)", meta_vendas)
+            with c24:
+                st.metric(
+                    "Análises necessárias (aprox.)",
+                    f"{analises_necessarias} análises",
+                    help=(
+                        f"Cálculo: {analises_por_venda:.2f} análises/venda × "
+                        f"{meta_vendas} vendas planejadas."
+                    ),
                 )
-            else:
-                analises_eq_3m_base = conta_analises_base(df_eq_3m["STATUS_BASE"])  # só EM ANÁLISE
-                aprov_eq_3m = conta_aprovacoes(df_eq_3m["STATUS_BASE"])
-                vendas_eq_3m = conta_vendas(df_eq_3m["STATUS_BASE"])
-
-                if vendas_eq_3m > 0:
-                    media_analise_por_venda_eq = (
-                        analises_eq_3m_base / vendas_eq_3m
-                        if analises_eq_3m_base > 0 else 0
-                    )
-                    media_aprov_por_venda_eq = (
-                        aprov_eq_3m / vendas_eq_3m if aprov_eq_3m > 0 else 0
-                    )
-                else:
-                    media_analise_por_venda_eq = 0
-                    media_aprov_por_venda_eq = 0
-
-                c10, c11, c12 = st.columns(3)
-                with c10:
-                    st.metric("Análises (3m – só EM)", analises_eq_3m_base)
-                with c11:
-                    st.metric("Aprovações (3m – equipe)", aprov_eq_3m)
-                with c12:
-                    st.metric("Vendas (3m – equipe)", vendas_eq_3m)
-
-                st.caption(
-                    f"Janela histórica usada para a equipe **{equipe_sel}**: "
-                    f"de {limite_3m_eq.date().strftime('%d/%m/%Y')} "
-                    f"até {ref_date_eq.date().strftime('%d/%m/%Y')}."
+            with c25:
+                st.metric(
+                    "Aprovações necessárias (aprox.)",
+                    f"{aprovacoes_necessarias} aprovações",
+                    help=(
+                        f"Cálculo: {aprovacoes_por_venda:.2f} aprovações/venda × "
+                        f"{meta_vendas} vendas planejadas."
+                    ),
                 )
 
-                st.markdown("#### 🎯 Quantas análises/aprovações essa equipe precisa para bater a meta de vendas?")
-
-                vendas_planejadas_eq = st.number_input(
-                    "Vendas desejadas no mês para a equipe",
-                    min_value=0,
-                    step=1,
-                    value=int(vendas_eq_3m / 3) if vendas_eq_3m > 0 else 0,
-                    help="Sugestão inicial baseada na média mensal dos últimos 3 meses.",
-                )
-
-                if vendas_planejadas_eq > 0 and vendas_eq_3m > 0:
-                    analises_eq_necessarias = vendas_planejadas_eq * media_analise_por_venda_eq
-                    aprovacoes_eq_necessarias = vendas_planejadas_eq * media_aprov_por_venda_eq
-
-                    analises_eq_necessarias_int = int(np.ceil(analises_eq_necessarias))
-                    aprovacoes_eq_necessarias_int = int(np.ceil(aprovacoes_eq_necessarias))
-
-                    c13, c14 = st.columns(2)
-                    with c13:
-                        st.metric(
-                            "Análises necessárias (aprox.)",
-                            f"{analises_eq_necessarias_int} análises",
-                            help=(
-                                f"Cálculo: {media_analise_por_venda_eq:.2f} análises/venda "
-                                f"× {vendas_planejadas_eq}"
-                            ),
-                        )
-                    with c14:
-                        st.metric(
-                            "Aprovações necessárias (aprox.)",
-                            f"{aprovacoes_eq_necessarias_int} aprovações",
-                            help=(
-                                f"Cálculo: {media_aprov_por_venda_eq:.2f} aprovações/venda "
-                                f"× {vendas_planejadas_eq}"
-                            ),
-                        )
-
-                    st.caption(
-                        "Os números são aproximados e arredondados para cima, "
-                        "baseados no histórico real dessa equipe nos últimos 3 meses."
-                    )
-                elif vendas_planejadas_eq > 0 and vendas_eq_3m == 0:
-                    st.info(
-                        f"A equipe **{equipe_sel}** ainda não possui vendas registradas "
-                        "nos últimos 3 meses, então não é possível estimar quantas análises/aprovações são necessárias."
-                    )
-                else:
-                    st.info("Defina um número de vendas desejadas maior que zero para ver a projeção.")
+            st.caption(
+                "Esses números são aproximados e baseados no comportamento real da "
+                "imobiliária nos últimos 3 meses (não é chute, é dado)."
+            )
+        elif meta_vendas > 0 and vendas_3m == 0:
+            st.info(
+                "Ainda não há vendas registradas nos últimos 3 meses para calcular "
+                "a previsibilidade do funil."
+            )
