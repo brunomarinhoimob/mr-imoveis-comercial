@@ -16,34 +16,62 @@ st.set_page_config(
 st.title("🔻 Funil de Vendas – MR Imóveis")
 
 # ---------------------------------------------------------
-# FUNÇÕES AUXILIARES
+# CARREGAMENTO DA PLANILHA (GOOGLE SHEETS)
 # ---------------------------------------------------------
+SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
+GID_ANALISES = "1574157905"
+CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
+
 @st.cache_data(ttl=600)
-def carregar_dados(caminho: str) -> pd.DataFrame:
-    """
-    Carrega dados do Excel já com alguns tratamentos de tipos.
-    TTL de 600s para não ficar recarregando a cada navegação.
-    """
-    df_local = pd.read_excel(caminho)
+def carregar_dados_funil() -> pd.DataFrame:
+    """Carrega e trata a base de análises/vendas direto do Google Sheets."""
+    df_local = pd.read_csv(CSV_URL)
+    df_local.columns = [c.strip().upper() for c in df_local.columns]
 
-    # Normaliza nomes de colunas que vamos usar bastante
-    df_local.columns = [c.upper().strip() for c in df_local.columns]
+    # DATA / DIA
+    possiveis_datas = ["DATA", "DIA", "DATA DA ANÁLISE"]
+    col_data = next((c for c in possiveis_datas if c in df_local.columns), None)
+    if col_data:
+        df_local["DIA"] = pd.to_datetime(df_local[col_data], errors="coerce", dayfirst=True)
+    else:
+        df_local["DIA"] = pd.NaT
 
-    if "DIA" in df_local.columns:
-        df_local["DIA"] = pd.to_datetime(df_local["DIA"], errors="coerce")
+    # STATUS BASE
+    if "SITUAÇÃO" in df_local.columns:
+        df_local["STATUS_BASE"] = (
+            df_local["SITUAÇÃO"].astype(str).str.upper().str.strip()
+        )
+    else:
+        df_local["STATUS_BASE"] = ""
 
-    # Garante VGV numérico
-    if "VGV" in df_local.columns:
-        df_local["VGV"] = pd.to_numeric(df_local["VGV"], errors="coerce").fillna(0)
+    # Normalização de alguns textos de status
+    df_local.loc[
+        df_local["STATUS_BASE"].str.contains("EM ANÁLISE", na=False),
+        "STATUS_BASE",
+    ] = "EM ANÁLISE"
+    df_local.loc[
+        df_local["STATUS_BASE"].str.contains("REANÁLISE", na=False),
+        "STATUS_BASE",
+    ] = "REANÁLISE"
 
-    # Corrige espaços em textos importantes
-    for col in ["STATUS_BASE", "EQUIPE", "CORRETOR", "CLIENTE"]:
+    # Normalização de corretor e equipe
+    for col in ["CORRETOR", "EQUIPE"]:
         if col in df_local.columns:
-            df_local[col] = df_local[col].astype(str).str.strip().str.upper()
+            df_local[col] = df_local[col].astype(str).str.upper().str.strip()
+        else:
+            df_local[col] = "NÃO INFORMADO"
+
+    # VGV
+    if "OBSERVAÇÕES" in df_local.columns:
+        df_local["VGV"] = pd.to_numeric(df_local["OBSERVAÇÕES"], errors="coerce").fillna(0)
+    else:
+        df_local["VGV"] = 0
 
     return df_local
 
-
+# ---------------------------------------------------------
+# FUNÇÕES AUXILIARES
+# ---------------------------------------------------------
 def conta_analises(s):
     """Análises totais (EM + RE) – volume."""
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
@@ -67,13 +95,10 @@ def conta_vendas(s):
 # ---------------------------------------------------------
 st.markdown("### 🏙️ Visão geral – Funil por Imobiliária")
 
-# Caminho do arquivo
-CAMINHO_ARQUIVO = "dados/base_mr_imoveis.xlsx"
-
-df = carregar_dados(CAMINHO_ARQUIVO)
+df = carregar_dados_funil()
 
 if df.empty:
-    st.error("Não foi possível carregar a base de dados. Verifique o caminho do arquivo.")
+    st.error("Não foi possível carregar a base de dados. Verifique o Google Sheets.")
     st.stop()
 
 # ---------------------------------------------------------
@@ -322,7 +347,7 @@ else:
 
         st.markdown(f"### Equipe: **{equipe_sel}**")
 
-        # Cards separando análise x reanálise na equipe
+        # Cards da equipe
         c1, c2, c3, c4, c5 = st.columns(5)
         with c1:
             st.metric("Análises (só EM)", analises_eq_em)
@@ -465,5 +490,3 @@ else:
                     )
                 else:
                     st.info("Defina um número de vendas desejadas maior que zero para ver a projeção.")
-
-
