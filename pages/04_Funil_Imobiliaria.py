@@ -16,12 +16,13 @@ st.set_page_config(
     layout="wide",
 )
 
+# Cabeçalho com logo + título
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
     try:
         st.image("logo_mr.png", width=160)
     except Exception:
-        st.write("")  # se não achar a imagem, só ignora
+        st.write("")  # Se não achar a imagem, apenas ignora
 with col_title:
     st.title("🔻 Funil de Vendas – Visão Imobiliária")
     st.caption(
@@ -34,13 +35,17 @@ with col_title:
 # FUNÇÕES AUXILIARES
 # ---------------------------------------------------------
 def conta_analises_total(status: pd.Series) -> int:
-    """Análises totais (EM ANÁLISE + REANÁLISE)."""
+    """
+    Análises totais (EM ANÁLISE + REANÁLISE).
+    """
     s = status.fillna("").astype(str).str.upper()
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
 
 
 def conta_analises_base(status: pd.Series) -> int:
-    """Análises que entram na base de conversão: somente EM ANÁLISE."""
+    """
+    Análises que entram na base de conversão: somente EM ANÁLISE.
+    """
     s = status.fillna("").astype(str).str.upper()
     return (s == "EM ANÁLISE").sum()
 
@@ -56,7 +61,8 @@ def conta_aprovacoes(status: pd.Series) -> int:
 
 
 def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
-    """Retorna uma venda por cliente (último status).
+    """
+    Retorna uma venda por cliente (último status).
     Se tiver VENDA INFORMADA e depois VENDA GERADA, fica só a GERADA.
     """
     if df_scope.empty:
@@ -110,22 +116,39 @@ if df.empty:
 # Garante coluna DIA como datetime
 df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
 
-# Garante coluna DATA_BASE como datetime (mês comercial)
-col_data_base = None
-for cand in ["DATA_BASE", "DATA BASE", "DATA_BASE_COMERCIAL", "DATA_BASE_MES"]:
+# ---------------------------------------------------------
+# DATA_BASE (MÊS COMERCIAL)
+# ---------------------------------------------------------
+# Tentamos localizar a coluna original da planilha que representa o mês comercial.
+col_data_base_original = None
+for cand in ["DATA_BASE", "DATA BASE", "DATA BASE MÊS", "DATA BASE MES", "MÊS COMERCIAL", "MES COMERCIAL"]:
     if cand in df.columns:
-        col_data_base = cand
+        col_data_base_original = cand
         break
 
-if col_data_base is not None:
-    df["DATA_BASE"] = pd.to_datetime(df[col_data_base], errors="coerce")
+if col_data_base_original is not None:
+    # Tenta parsear usando formato brasileiro primeiro (dayfirst=True)
+    serie_bruta = df[col_data_base_original]
+    dt_base = pd.to_datetime(serie_bruta, dayfirst=True, errors="coerce")
+
+    # Se por algum motivo tudo virou NaT (formato diferente), tenta novamente sem dayfirst
+    if dt_base.isna().all():
+        dt_base = pd.to_datetime(serie_bruta, errors="coerce")
+
+    # Se mesmo assim ficar tudo NaT, faz fallback para a coluna DIA
+    if dt_base.isna().all():
+        df["DATA_BASE"] = pd.to_datetime(df["DIA"], errors="coerce")
+    else:
+        df["DATA_BASE"] = dt_base
 else:
-    # fallback: se não tiver, usa a própria DIA como base
-    df["DATA_BASE"] = df["DIA"]
+    # Se a planilha não tiver coluna específica de mês comercial,
+    # usamos a própria data de movimentação como "DATA_BASE"
+    df["DATA_BASE"] = pd.to_datetime(df["DIA"], errors="coerce")
 
 dias_validos = df["DIA"].dropna()
 bases_validas = df["DATA_BASE"].dropna()
 
+# Limites de datas de movimentação
 if dias_validos.empty:
     hoje = date.today()
     data_min_mov = hoje - timedelta(days=30)
@@ -133,6 +156,7 @@ if dias_validos.empty:
 else:
     data_min_mov = dias_validos.min().date()
     data_max_mov = dias_validos.max().date()
+
 
 # ---------------------------------------------------------
 # SIDEBAR – PERÍODO (APENAS DATA DE MOVIMENTAÇÃO)
@@ -157,7 +181,7 @@ else:
 if data_ini_mov > data_fim_mov:
     data_ini_mov, data_fim_mov = data_fim_mov, data_ini_mov
 
-# Filtro principal SOMENTE por DIA (sem DATA_BASE)
+# Filtro principal SOMENTE por DIA (sem filtro manual de DATA_BASE)
 mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
 df_periodo = df[mask_mov].copy()
 
