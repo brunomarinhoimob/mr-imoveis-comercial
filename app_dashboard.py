@@ -66,9 +66,6 @@ def limpar_para_data(serie: pd.Series) -> pd.Series:
 
 
 def carregar_dados_planilha() -> pd.DataFrame:
-    """
-    Carrega SEM cache do Streamlit, sempre pega a versão atual da planilha.
-    """
     df = pd.read_csv(CSV_URL)
     df.columns = [c.strip().upper() for c in df.columns]
 
@@ -154,16 +151,12 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# LEADS – CHAMADA DIRETA NA API (SEM CACHE)
+# LEADS – API SUPREMO (SEM CACHE)
 # ---------------------------------------------------------
 BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
 
 
 def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFrame:
-    """
-    Busca os leads diretamente na API do Supremo, sem usar cache em disco
-    e sem st.cache_data. Chama a API sempre que a página é executada.
-    """
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
     dfs = []
@@ -179,8 +172,7 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
                 params=params,
                 timeout=30,
             )
-        except Exception as e:
-            # Se der erro de conexão, interrompe e usa o que já veio
+        except Exception:
             break
 
         if resp.status_code != 200:
@@ -222,9 +214,8 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
 
 
 df_leads = carregar_leads_direto()
-ts_atualizacao_leads = datetime.now()
 
-# Guarda em sessão só pra reaproveitar dentro da mesma sessão (não tem disco)
+# Mantém em sessão para reuso interno
 if "df_leads" not in st.session_state:
     st.session_state["df_leads"] = df_leads
 
@@ -284,11 +275,6 @@ st.caption(
     f"Registros filtrados: {registros_filtrados}"
 )
 
-# Mostra hora da atualização dos leads (agora, sem cache)
-st.caption(
-    f"🕒 Leads (Supremo) carregados em: {ts_atualizacao_leads.strftime('%d/%m/%Y %H:%M:%S')}"
-)
-
 # ---------------------------------------------------------
 # CÁLCULOS PRINCIPAIS
 # ---------------------------------------------------------
@@ -299,7 +285,6 @@ reprovacoes = (df_filtrado["STATUS_BASE"] == "REPROVADO").sum()
 
 analises_total = em_analise + reanalise
 
-# VENDAS – status final por cliente
 df_vendas_ref = df_filtrado[
     df_filtrado["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])
 ].copy()
