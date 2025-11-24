@@ -538,7 +538,58 @@ df_rank_base["IS_ANALISE"] = df_rank_base["STATUS_BASE_NORM"].isin(
 df_rank_base["IS_APROV"] = df_rank_base["STATUS_BASE_NORM"].str.contains(
     "APROV", na=False
 )
-df_rank_base["IS_VENDA"] = df_rank_base["STATUS_BASE_NORM"] == "VENDIDO"
+
+# ---------- REGRAS DE VENDA (DEDUP POR CLIENTE) ----------
+# inicializa sem venda
+df_rank_base["IS_VENDA"] = False
+
+# tenta descobrir coluna de cliente
+cliente_col = None
+for c in df_rank_base.columns:
+    nome_c = str(c).upper()
+    if nome_c in ("CLIENTE", "NOME_CLIENTE", "CLIENTE_NOME"):
+        cliente_col = c
+        break
+
+# linhas com algum status de venda
+mask_venda_status = df_rank_base["STATUS_BASE_NORM"].str.contains(
+    "VENDA", na=False
+) | (df_rank_base["STATUS_BASE_NORM"] == "VENDIDO")
+
+if cliente_col is not None and mask_venda_status.any():
+    df_v = df_rank_base.loc[mask_venda_status].copy()
+    df_v["CLIENTE_BASE"] = (
+        df_v[cliente_col]
+        .fillna("SEM CLIENTE")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    if "DIA" in df_v.columns:
+        df_v = df_v.sort_values("DIA")
+        idx_last = df_v.groupby("CLIENTE_BASE")["DIA"].idxmax()
+    else:
+        # se por algum motivo não tiver DIA, considera todas
+        idx_last = df_v.index
+
+    df_rank_base.loc[idx_last, "IS_VENDA"] = True
+else:
+    # fallback: qualquer linha com VENDA conta
+    df_rank_base["IS_VENDA"] = mask_venda_status
+
+# transforma flags em int pra somar
+df_rank_base["IS_ANALISE"] = df_rank_base["IS_ANALISE"].fillna(False).astype(int)
+df_rank_base["IS_APROV"] = df_rank_base["IS_APROV"].fillna(False).astype(int)
+df_rank_base["IS_VENDA"] = df_rank_base["IS_VENDA"].fillna(False).astype(int)
+
+# VGV apenas das linhas marcadas como venda (dedupadas)
+if "VGV" in df_rank_base.columns:
+    df_rank_base["VGV_VENDA"] = np.where(
+        df_rank_base["IS_VENDA"] == 1, df_rank_base["VGV"], 0.0
+    )
+else:
+    df_rank_base["VGV_VENDA"] = 0.0
 
 total_analises = int(df_rank_base["IS_ANALISE"].sum())
 total_aprov = int(df_rank_base["IS_APROV"].sum())
@@ -633,12 +684,12 @@ df_rank = (
         APROVACOES=("IS_APROV", "sum"),
         VENDAS=("IS_VENDA", "sum"),
         DIAS_SEM_MOV=("DIA", lambda x: (hoje - x.max()).days if len(x.dropna()) > 0 else -1),
-        VGV=("VGV", "sum") if "VGV" in df_rank_base.columns else ("IS_VENDA", "sum"),
+        VGV=("VGV_VENDA", "sum"),
     )
     .reset_index()
 )
 
-# Tratar VGV caso não exista na base
+# Tratar VGV caso não exista na base original
 if "VGV" not in df_rank_base.columns:
     df_rank["VGV"] = 0.0
 
@@ -680,7 +731,7 @@ df_merge = pd.merge(
 
 df_merge["LEADS"] = df_merge["LEADS"].fillna(0).astype(int)
 
-# Identificar se o corretor está sem movimento (sem leads, sem análises, sem vendas)
+# Garantir numéricos
 for col in ["ANALISES", "APROVACOES", "VENDAS"]:
     if col in df_merge.columns:
         df_merge[col] = df_merge[col].fillna(0).astype(int)
