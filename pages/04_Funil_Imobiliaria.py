@@ -90,7 +90,11 @@ def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
         df_v["CPF_CLIENTE_BASE"] = ""
 
     df_v["CHAVE_CLIENTE"] = (
-        df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        df_v["NOME_CLIENTE_BASE"]
+        .fillna("NÃO INFORMADO")
+        .astype(str)
+        .str.upper()
+        .str.strip()
         + " | "
         + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
     )
@@ -119,43 +123,45 @@ df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
 # ---------------------------------------------------------
 # DATA_BASE (MÊS COMERCIAL)
 # ---------------------------------------------------------
-# Tentamos localizar a coluna original da planilha que representa o mês comercial.
 col_data_base_original = None
-for cand in ["DATA_BASE", "DATA BASE", "DATA BASE MÊS", "DATA BASE MES", "MÊS COMERCIAL", "MES COMERCIAL"]:
+for cand in [
+    "DATA_BASE",
+    "DATA BASE",
+    "DATA BASE MÊS",
+    "DATA BASE MES",
+    "MÊS COMERCIAL",
+    "MES COMERCIAL",
+]:
     if cand in df.columns:
         col_data_base_original = cand
         break
 
 if col_data_base_original is not None:
-    # Tenta parsear usando formato brasileiro primeiro (dayfirst=True)
     serie_bruta = df[col_data_base_original]
     dt_base = pd.to_datetime(serie_bruta, dayfirst=True, errors="coerce")
-
-    # Se por algum motivo tudo virou NaT (formato diferente), tenta novamente sem dayfirst
     if dt_base.isna().all():
         dt_base = pd.to_datetime(serie_bruta, errors="coerce")
-
-    # Se mesmo assim ficar tudo NaT, faz fallback para a coluna DIA
     if dt_base.isna().all():
         df["DATA_BASE"] = pd.to_datetime(df["DIA"], errors="coerce")
     else:
         df["DATA_BASE"] = dt_base
 else:
-    # Se a planilha não tiver coluna específica de mês comercial,
-    # usamos a própria data de movimentação como "DATA_BASE"
     df["DATA_BASE"] = pd.to_datetime(df["DIA"], errors="coerce")
 
 dias_validos = df["DIA"].dropna()
 bases_validas = df["DATA_BASE"].dropna()
 
 # Limites de datas de movimentação
+hoje = date.today()
 if dias_validos.empty:
-    hoje = date.today()
     data_min_mov = hoje - timedelta(days=30)
     data_max_mov = hoje
 else:
     data_min_mov = dias_validos.min().date()
     data_max_mov = dias_validos.max().date()
+
+# Permitimos selecionar datas futuras até 1 ano à frente
+max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
 
 
 # ---------------------------------------------------------
@@ -169,7 +175,7 @@ periodo_mov = st.sidebar.date_input(
     "Período (data de movimentação)",
     value=(data_ini_default_mov, data_max_mov),
     min_value=data_min_mov,
-    max_value=data_max_mov,
+    max_value=max_futuro,
 )
 
 if isinstance(periodo_mov, tuple):
@@ -181,7 +187,6 @@ else:
 if data_ini_mov > data_fim_mov:
     data_ini_mov, data_fim_mov = data_fim_mov, data_ini_mov
 
-# Filtro principal SOMENTE por DIA (sem filtro manual de DATA_BASE)
 mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
 df_periodo = df[mask_mov].copy()
 
@@ -268,7 +273,6 @@ st.markdown("## 👥 Produtividade da equipe – período selecionado")
 if corretores_ativos_periodo == 0:
     st.info("Não há corretores com movimentação no período selecionado.")
 else:
-    # Corretores que tiveram pelo menos 1 venda única no período
     if df_vendas_periodo.empty:
         corretores_com_venda_periodo = 0
     else:
@@ -442,9 +446,6 @@ else:
                 "a previsibilidade do funil."
             )
 
-        # -------------------------------------------------
-        # GRÁFICO DE LINHAS – ACOMPANHAMENTO DA META
-        # -------------------------------------------------
         if meta_vendas > 0 and vendas_3m > 0 and not df_periodo.empty:
             st.markdown("### 📊 Acompanhamento da meta no período selecionado")
 
@@ -453,7 +454,6 @@ else:
                 ["Análises", "Aprovações", "Vendas"],
             )
 
-            # eixo de dias do período (movimentação)
             dias_periodo = (
                 df_periodo["DIA"]
                 .dt.date.dropna()
