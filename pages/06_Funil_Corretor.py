@@ -147,28 +147,32 @@ st.sidebar.title("Filtros 🔎")
 
 dias_validos = pd.Series(df["DIA"].dropna())
 
+hoje = date.today()
+
 if not dias_validos.empty:
     data_min = dias_validos.min()
     data_max = dias_validos.max()
 else:
-    hoje = date.today()
     data_max = hoje
     data_min = hoje - timedelta(days=30)
 
 # 🎯 janela padrão: últimos 30 dias até a última data da base
 data_ini_default = max(data_min, data_max - timedelta(days=30))
 
+# permite escolher datas futuras (até 1 ano pra frente)
+max_futuro = max(data_max, hoje) + timedelta(days=365)
+
 periodo = st.sidebar.date_input(
     "Período (para ver o funil do corretor)",
     value=(data_ini_default, data_max),
     min_value=data_min,
-    max_value=data_max,
+    max_value=max_futuro,
 )
 
 if isinstance(periodo, tuple):
     data_ini, data_fim = periodo
 else:
-    data_ini, data_fim = data_ini_default, data_max
+    data_ini, data_fim = data_ini_default, periodo
 
 # Filtro de corretor
 lista_corretor = sorted(df["CORRETOR"].dropna().unique())
@@ -489,12 +493,9 @@ else:
                         key="indicador_meta_corretor",
                     )
 
-                    dias_periodo = (
-                        pd.to_datetime(df_cor_periodo["DIA"], errors="coerce")
-                        .dt.date.dropna()
-                        .sort_values()
-                        .unique()
-                    )
+                    # eixo de dias = todo o período filtrado (pode ter datas futuras)
+                    dr = pd.date_range(start=data_ini, end=data_fim, freq="D")
+                    dias_periodo = [d.date() for d in dr]
 
                     if len(dias_periodo) == 0:
                         st.info("Não há datas válidas no período filtrado para montar o gráfico.")
@@ -522,15 +523,26 @@ else:
                                 "Não há dados suficientes ou a meta está zerada para o indicador escolhido."
                             )
                         else:
-                            df_temp["DIA_DATA"] = pd.to_datetime(df_temp["DIA"], errors="coerce").dt.date
+                            df_temp["DIA_DATA"] = pd.to_datetime(
+                                df_temp["DIA"], errors="coerce"
+                            ).dt.date
                             cont_por_dia = (
                                 df_temp.groupby("DIA_DATA")
                                 .size()
                                 .reindex(dias_periodo, fill_value=0)
                             )
 
+                            # Linha Real acumulada
                             df_line["Real"] = cont_por_dia.values
                             df_line["Real"] = df_line["Real"].cumsum()
+
+                            # Corta a linha Real depois do dia de hoje
+                            hoje_date = hoje
+                            limite_real = min(hoje_date, data_fim)
+                            mask_future = df_line.index.date > limite_real
+                            df_line.loc[mask_future, "Real"] = np.nan
+
+                            # Meta distribuída até o fim do período
                             df_line["Meta"] = np.linspace(
                                 0, total_meta, num=len(df_line), endpoint=True
                             )
@@ -556,11 +568,27 @@ else:
                                 .properties(height=320)
                             )
 
+                            # ponto marcando o dia de hoje, se estiver dentro do período
+                            hoje_dentro = (hoje_date >= data_ini) and (hoje_date <= data_fim)
+                            if hoje_dentro:
+                                df_real_reset = df_line.reset_index()
+                                df_real_hoje = df_real_reset[
+                                    df_real_reset["DIA"].dt.date == limite_real
+                                ]
+                                if not df_real_hoje.empty:
+                                    ponto_hoje = (
+                                        alt.Chart(df_real_hoje)
+                                        .mark_point(size=80)
+                                        .encode(x="DIA:T", y="Real:Q")
+                                    )
+                                    chart_meta_cor = chart_meta_cor + ponto_hoje
+
                             st.altair_chart(chart_meta_cor, use_container_width=True)
                             st.caption(
                                 "Linha **Real** mostra o acumulado diário do indicador escolhido "
-                                "para esse corretor. Linha **Meta** mostra o ritmo necessário "
-                                "para bater a meta definida."
+                                "para esse corretor, parando no **dia de hoje**. "
+                                "Linha **Meta** vai até a **data final escolhida** e mostra o "
+                                "ritmo necessário para bater a meta definida."
                             )
 
             elif vendas_planejadas_cor > 0 and vendas_cor_3m == 0:
