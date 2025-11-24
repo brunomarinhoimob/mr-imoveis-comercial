@@ -35,17 +35,11 @@ with col_title:
 # FUNÇÕES AUXILIARES
 # ---------------------------------------------------------
 def conta_analises_total(status: pd.Series) -> int:
-    """
-    Análises totais (EM ANÁLISE + REANÁLISE).
-    """
     s = status.fillna("").astype(str).str.upper()
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
 
 
 def conta_analises_base(status: pd.Series) -> int:
-    """
-    Análises que entram na base de conversão: somente EM ANÁLISE.
-    """
     s = status.fillna("").astype(str).str.upper()
     return (s == "EM ANÁLISE").sum()
 
@@ -109,7 +103,7 @@ def format_currency(valor: float) -> str:
 
 
 # ---------------------------------------------------------
-# CARREGA A BASE DA PLANILHA (MESMA DO APP PRINCIPAL)
+# CARREGA A BASE DA PLANILHA
 # ---------------------------------------------------------
 df = carregar_dados_planilha()
 
@@ -117,7 +111,6 @@ if df.empty:
     st.error("Não foi possível carregar os dados da planilha.")
     st.stop()
 
-# Garante coluna DIA como datetime
 df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
 
 # ---------------------------------------------------------
@@ -163,9 +156,8 @@ else:
 # Permitimos selecionar datas futuras até 1 ano à frente
 max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
 
-
 # ---------------------------------------------------------
-# SIDEBAR – PERÍODO (APENAS DATA DE MOVIMENTAÇÃO)
+# SIDEBAR – PERÍODO (DATA DE MOVIMENTAÇÃO)
 # ---------------------------------------------------------
 st.sidebar.title("Filtros da visão imobiliária")
 
@@ -198,9 +190,8 @@ if df_periodo.empty:
     st.warning("Nenhum registro encontrado para o período selecionado.")
     st.stop()
 
-
 # ---------------------------------------------------------
-# KPIs PRINCIPAIS – FUNIL DO PERÍODO (FILTRADO)
+# KPIs PRINCIPAIS – FUNIL DO PERÍODO
 # ---------------------------------------------------------
 status_periodo = df_periodo["STATUS_BASE"].fillna("").astype(str).str.upper()
 
@@ -238,22 +229,13 @@ c6, c7, c8 = st.columns(3)
 with c6:
     st.metric("VGV total", format_currency(vgv_total))
 with c7:
-    st.metric(
-        "Taxa Aprov./Análises (só EM)",
-        f"{taxa_aprov_analise:.1f}%",
-    )
+    st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov_analise:.1f}%")
 with c8:
-    st.metric(
-        "Taxa Vendas/Análises (só EM)",
-        f"{taxa_venda_analise:.1f}%",
-    )
+    st.metric("Taxa Vendas/Análises (só EM)", f"{taxa_venda_analise:.1f}%")
 
 c9, c10 = st.columns(2)
 with c9:
-    st.metric(
-        "Taxa Vendas/Aprovações",
-        f"{taxa_venda_aprov:.1f}%",
-    )
+    st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
 with c10:
     st.metric(
         "IPC do período (vendas/corretor)",
@@ -263,9 +245,8 @@ with c10:
 
 st.markdown("---")
 
-
 # ---------------------------------------------------------
-# PRODUTIVIDADE – EQUIPE ATIVA (AGORA PELO PERÍODO SELECIONADO)
+# PRODUTIVIDADE – EQUIPE ATIVA
 # ---------------------------------------------------------
 st.markdown("## 👥 Produtividade da equipe – período selecionado")
 
@@ -290,10 +271,7 @@ else:
 
     c11, c12, c13, c14 = st.columns(4)
     with c11:
-        st.metric(
-            "Corretores ativos (período)",
-            corretores_ativos_periodo,
-        )
+        st.metric("Corretores ativos (período)", corretores_ativos_periodo)
     with c12:
         st.metric(
             "% equipe produtiva (período)",
@@ -301,10 +279,7 @@ else:
             help="Corretor produtivo = pelo menos 1 venda única no período selecionado.",
         )
     with c13:
-        st.metric(
-            "Vendas (período – únicas)",
-            vendas_periodo,
-        )
+        st.metric("Vendas (período – únicas)", vendas_periodo)
     with c14:
         st.metric(
             "IPC período (vendas/corretor)",
@@ -312,12 +287,11 @@ else:
         )
 
     st.caption(
-        f"Período considerado (data de movimentação): de "
+        f"Período considerado (data de movimentação): "
         f"{data_ini_mov.strftime('%d/%m/%Y')} até {data_fim_mov.strftime('%d/%m/%Y')}."
     )
 
 st.markdown("---")
-
 
 # ---------------------------------------------------------
 # HISTÓRICO – FUNIL DOS ÚLTIMOS 3 MESES (DATA_BASE)
@@ -346,7 +320,7 @@ else:
     else:
         status_3m = df_3m["STATUS_BASE"].fillna("").astype(str).str.upper()
 
-        analises_3m = conta_analises_base(status_3m)  # só EM ANÁLISE como base
+        analises_3m = conta_analises_base(status_3m)  # só EM ANÁLISE
         aprov_3m = conta_aprovacoes(status_3m)
         df_vendas_3m = obter_vendas_unicas(df_3m)
         vendas_3m = len(df_vendas_3m)
@@ -374,10 +348,7 @@ else:
 
         c19, c20, c21 = st.columns(3)
         with c19:
-            st.metric(
-                "Corretores ativos (3m)",
-                corretores_ativos_3m,
-            )
+            st.metric("Corretores ativos (3m)", corretores_ativos_3m)
         with c20:
             st.metric(
                 "IPC 3m (vendas/corretor)",
@@ -430,7 +401,7 @@ else:
                     "Aprovações necessárias (aprox.)",
                     f"{aprovacoes_necessarias} aprovações",
                     help=(
-                        f"Cálculo: {aprovações_por_venda:.2f} aprovações/venda × "
+                        f"Cálculo: {aprovacoes_por_venda:.2f} aprovações/venda × "
                         f"{meta_vendas} vendas planejadas."
                     ),
                 )
@@ -439,6 +410,7 @@ else:
                 "Esses números são aproximados e baseados no comportamento real da "
                 "imobiliária nos últimos 3 meses (não é chute, é dado)."
             )
+
         elif meta_vendas > 0 and vendas_3m == 0:
             st.info(
                 "Ainda não há vendas registradas nos últimos 3 meses para calcular "
@@ -456,8 +428,7 @@ else:
                 ["Análises", "Aprovações", "Vendas"],
             )
 
-            # Agora o eixo de dias vai de data_ini_mov até data_fim_mov,
-            # mesmo que não tenha movimentação em todos os dias.
+            # Eixo de dias: intervalo completo de data_ini_mov até data_fim_mov
             dr = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
             dias_periodo = [d.date() for d in dr]
 
@@ -505,7 +476,6 @@ else:
                     df_line["Real"] = cont_por_dia.values
                     df_line["Real"] = df_line["Real"].cumsum()
 
-                    # Meta distribuída linearmente até a DATA FINAL do filtro
                     df_line["Meta"] = np.linspace(
                         0, total_meta, num=len(df_line), endpoint=True
                     )
