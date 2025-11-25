@@ -169,7 +169,7 @@ def format_currency(valor: float) -> str:
 
 
 # ---------------------------------------------------------
-# DEFINIÇÃO DO PERÍODO (MESMA LÓGICA DO FUNIL) :contentReference[oaicite:1]{index=1}
+# DEFINIÇÃO DO PERÍODO (MESMA LÓGICA DO FUNIL)
 # ---------------------------------------------------------
 hoje = date.today()
 dias_validos = df["DIA"].dropna()
@@ -255,24 +255,54 @@ ticket_medio = vgv_total / qtd_vendas if qtd_vendas > 0 else 0.0
 qtd_aprovacoes = conta_aprovacoes(df_periodo["STATUS_BASE"])
 taxa_venda_aprov = (qtd_vendas / qtd_aprovacoes * 100) if qtd_aprovacoes > 0 else 0.0
 
-# Leads do CRM no período (mesma lógica de datas do funil)
+# ---------------------------------------------------------
+# LEADS DO CRM NO PERÍODO (AGORA FILTRANDO POR EQUIPE/CORRETOR)
+# ---------------------------------------------------------
 total_leads_periodo = None
 leads_por_venda = None
 
-if not df_leads.empty and "data_captura" in df_leads.columns:
-    df_leads_use = df_leads.dropna(subset=["data_captura"]).copy()
-    df_leads_use["data_captura"] = pd.to_datetime(df_leads_use["data_captura"], errors="coerce")
-    df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
+if not df_leads.empty:
 
-    mask_leads_periodo = (
-        (df_leads_use["data_captura_date"] >= data_ini_mov)
-        & (df_leads_use["data_captura_date"] <= data_fim_mov)
-    )
-    df_leads_periodo = df_leads_use[mask_leads_periodo].copy()
-    total_leads_periodo = len(df_leads_periodo)
+    df_leads_use = df_leads.copy()
 
-    if total_leads_periodo > 0 and qtd_vendas > 0:
-        leads_por_venda = total_leads_periodo / qtd_vendas
+    # Garante coluna de data
+    if "data_captura_date" in df_leads_use.columns:
+        base_date_col = "data_captura_date"
+    elif "data_captura" in df_leads_use.columns:
+        df_leads_use["data_captura"] = pd.to_datetime(
+            df_leads_use["data_captura"], errors="coerce"
+        )
+        df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
+        base_date_col = "data_captura_date"
+    else:
+        base_date_col = None
+
+    if base_date_col is not None:
+        df_leads_use = df_leads_use.dropna(subset=[base_date_col]).copy()
+
+        # Filtro por período
+        mask_leads_periodo = (
+            (df_leads_use[base_date_col] >= data_ini_mov)
+            & (df_leads_use[base_date_col] <= data_fim_mov)
+        )
+        df_leads_periodo = df_leads_use[mask_leads_periodo].copy()
+
+        # Filtro por equipe (se existir essa coluna)
+        if equipe_sel != "Todas" and "equipe_lead_norm" in df_leads_periodo.columns:
+            df_leads_periodo = df_leads_periodo[
+                df_leads_periodo["equipe_lead_norm"] == equipe_sel
+            ]
+
+        # Filtro por corretor (se existir essa coluna)
+        if corretor_sel != "Todos" and "nome_corretor_norm" in df_leads_periodo.columns:
+            df_leads_periodo = df_leads_periodo[
+                df_leads_periodo["nome_corretor_norm"] == corretor_sel
+            ]
+
+        total_leads_periodo = len(df_leads_periodo)
+
+        if total_leads_periodo > 0 and qtd_vendas > 0:
+            leads_por_venda = total_leads_periodo / qtd_vendas
 
 perc_meta = (qtd_vendas / meta_vendas * 100) if meta_vendas > 0 else 0.0
 
@@ -302,7 +332,7 @@ with c8:
     st.metric("Leads por venda (CRM)", "-" if leads_por_venda is None else f"{leads_por_venda:.1f}")
 
 # ---------------------------------------------------------
-# EVOLUÇÃO DIÁRIA – VGV E LINHA DE META (COPIANDO LÓGICA DO FUNIL)
+# EVOLUÇÃO DIÁRIA – VGV E LINHA DE META
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("## 📈 Evolução diária das vendas")
@@ -353,17 +383,15 @@ else:
         )
         st.altair_chart(chart_vgv_dia, use_container_width=True)
 
-        # --------- VGV acumulado x Meta (mesma pegada do gráfico do funil) ---------
+        # --------- VGV acumulado x Meta ---------
         st.markdown("### 📊 VGV acumulado no período")
 
-        # linha Real: corta depois do dia de hoje
         hoje_date = date.today()
         limite_real = min(hoje_date, data_fim_mov)
         mask_future = df_line.index.date > limite_real
         df_line_real = df_line.copy()
         df_line_real.loc[mask_future, "VGV_ACUM"] = np.nan
 
-        # linha Meta: VGV alvo = meta_vendas * ticket_medio, distribuído no período todo
         if meta_vendas > 0 and ticket_medio > 0:
             meta_total_vgv = meta_vendas * ticket_medio
             df_line_real["META_ACUM"] = np.linspace(
@@ -406,14 +434,18 @@ else:
             .properties(height=320)
         )
 
-        # ponto destacando o dia de hoje se estiver no período
+        # ponto do dia de hoje, se estiver no período
         hoje_dentro = (hoje_date >= data_ini_mov) and (hoje_date <= data_fim_mov)
         if hoje_dentro:
             df_real_reset = df_line_real.reset_index()
             df_real_hoje = df_real_reset[df_real_reset["DIA"].dt.date == limite_real]
             if not df_real_hoje.empty:
                 ponto_hoje = (
-                    alt.Chart(df_real_hoje.assign(DIA_STR=df_real_hoje["DIA"].dt.strftime("%d/%m")))
+                    alt.Chart(
+                        df_real_hoje.assign(
+                            DIA_STR=df_real_hoje["DIA"].dt.strftime("%d/%m")
+                        )
+                    )
                     .mark_point(size=80)
                     .encode(
                         x="DIA_STR:N",
