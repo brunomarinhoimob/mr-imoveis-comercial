@@ -264,10 +264,11 @@ else:
 lista_corretor = sorted(base_corretor["CORRETOR"].dropna().unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
-# Meta de vendas (para % de atingimento)
-meta_vendas = st.sidebar.number_input(
+# 🔹 META DE VENDAS – AGORA AJUSTÁVEL POR SLIDER
+meta_vendas = st.sidebar.slider(
     "Meta de vendas (qtde) para o período",
     min_value=0,
+    max_value=100,
     value=10,
     step=1,
 )
