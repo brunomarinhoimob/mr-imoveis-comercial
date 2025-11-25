@@ -36,7 +36,7 @@ st.markdown(
         padding: 18px 24px;
         border-radius: 20px;
         box-shadow: 0 18px 40px rgba(0,0,0,0.6);
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.2rem;
         border: 1px solid #1f2937;
     }
 
@@ -53,40 +53,36 @@ st.markdown(
         margin-bottom: 0;
     }
 
-    .metric-card {
+    /* chips mais discretos para as métricas principais */
+    .metric-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 1.2rem;
+    }
+
+    .metric-chip {
         background: #111827;
-        padding: 16px 20px;
-        border-radius: 18px;
-        box-shadow: 0 14px 30px rgba(0,0,0,0.55);
+        padding: 6px 12px;
+        border-radius: 999px;
         border: 1px solid #1f2937;
-        text-align: left;
-        margin-bottom: 1rem;
-    }
-
-    .metric-label {
         font-size: 0.85rem;
-        color: #9ca3af;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        margin-bottom: 6px;
+        color: #e5e7eb;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
     }
 
-    .metric-value {
-        font-size: 1.6rem;
+    .metric-chip span.value {
         font-weight: 700;
-    }
-
-    .metric-helper {
-        font-size: 0.8rem;
-        color: #6b7280;
-        margin-top: 4px;
+        color: #38bdf8;
     }
 
     .section-title {
         font-size: 1.1rem;
         font-weight: 600;
         margin-top: 0.5rem;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.4rem;
     }
 
     .section-subtitle {
@@ -99,6 +95,7 @@ st.markdown(
         display: flex;
         align-items: baseline;
         gap: 8px;
+        margin-bottom: 0.4rem;
     }
 
     .rank-header span.badge {
@@ -112,13 +109,24 @@ st.markdown(
 
     .motivational-text {
         font-size: 1rem;
-        margin-bottom: 1.5rem;
+        margin-bottom: 0.8rem;
         color: #e5e7eb;
     }
 
     .motivational-text span.number {
         font-weight: 700;
         color: #38bdf8;
+    }
+
+    /* tabelas mais limpas para TV */
+    .stTable thead tr th {
+        background-color: #111827 !important;
+        color: #e5e7eb !important;
+        font-size: 0.9rem;
+    }
+
+    .stTable tbody tr td {
+        font-size: 0.9rem;
     }
     </style>
     """,
@@ -284,7 +292,7 @@ if total_analises == 0:
     st.stop()
 
 # ---------------------------------------------------------
-# MÉTRICAS PRINCIPAIS
+# MÉTRICAS PRINCIPAIS (VERSÃO DISCRETA PARA TV)
 # ---------------------------------------------------------
 equipes_ativas = df_em_analise["EQUIPE"].nunique()
 corretores_ativos = df_em_analise["CORRETOR"].nunique()
@@ -299,46 +307,25 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-m1, m2, m3 = st.columns(3)
-
-with m1:
-    st.markdown(
-        f"""
-        <div class="metric-card">
-            <div class="metric-label">Análises no dia</div>
-            <div class="metric-value">{total_analises}</div>
-            <div class="metric-helper">Status: EM ANÁLISE</div>
+st.markdown(
+    f"""
+    <div class="metric-chips">
+        <div class="metric-chip">
+            Análises no dia: <span class="value">{total_analises}</span>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with m2:
-    st.markdown(
-        f"""
-        <div class="metric-card">
-            <div class="metric-label">Equipes ativas</div>
-            <div class="metric-value">{equipes_ativas}</div>
-            <div class="metric-helper">Subiram pelo menos 1 análise</div>
+        <div class="metric-chip">
+            Equipes ativas: <span class="value">{equipes_ativas}</span>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with m3:
-    st.markdown(
-        f"""
-        <div class="metric-card">
-            <div class="metric-label">Corretores ativos</div>
-            <div class="metric-value">{corretores_ativos}</div>
-            <div class="metric-helper">Subiram pelo menos 1 análise</div>
+        <div class="metric-chip">
+            Corretores ativos: <span class="value">{corretores_ativos}</span>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ---------------------------------------------------------
-# RANKINGS
+# RANKINGS (DESTAQUE PARA EQUIPES E CORRETORES)
 # ---------------------------------------------------------
 col_eq, col_cor = st.columns(2)
 
@@ -357,10 +344,10 @@ with col_eq:
     df_equipes = df_em_analise.groupby("EQUIPE").size().reset_index(name="ANÁLISES")
     df_equipes = df_equipes.sort_values("ANÁLISES", ascending=False).reset_index(drop=True)
     df_equipes.insert(0, "POSIÇÃO", criar_coluna_rank(len(df_equipes)))
-
     df_equipes = df_equipes.rename(columns={"EQUIPE": "Equipe", "ANÁLISES": "Análises no dia"})
 
-    st.dataframe(df_equipes, use_container_width=True, hide_index=True)
+    # st.table não cria barra de rolagem interna – melhor pra TV
+    st.table(df_equipes)
 
 # CORRETORES
 with col_cor:
@@ -377,16 +364,12 @@ with col_cor:
     df_corretor = df_em_analise.groupby("CORRETOR").size().reset_index(name="ANÁLISES")
     df_corretor = df_corretor.sort_values("ANÁLISES", ascending=False).reset_index(drop=True)
     df_corretor.insert(0, "POSIÇÃO", criar_coluna_rank(len(df_corretor)))
-
     df_corretor = df_corretor.rename(columns={"CORRETOR": "Corretor", "ANÁLISES": "Análises no dia"})
 
-    st.dataframe(df_corretor, use_container_width=True, hide_index=True)
-
+    st.table(df_corretor)
 
 # ---------------------------------------------------------
 # RODAPÉ
 # ---------------------------------------------------------
 st.markdown("---")
-st.caption(
-    "Dashboard MR Imóveis • Gestão à Vista • Atualização suave a cada 30s"
-)
+st.caption("Dashboard MR Imóveis • Gestão à Vista • Atualização suave a cada 30s")
