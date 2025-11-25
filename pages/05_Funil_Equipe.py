@@ -141,7 +141,14 @@ def format_currency(valor: float) -> str:
 # DATA_BASE (MÊS COMERCIAL) PARA ESSA EQUIPE
 # ---------------------------------------------------------
 col_data_base_original = None
-for cand in ["DATA_BASE", "DATA BASE", "DATA BASE MÊS", "DATA BASE MES", "MÊS COMERCIAL", "MES COMERCIAL"]:
+for cand in [
+    "DATA_BASE",
+    "DATA BASE",
+    "DATA BASE MÊS",
+    "DATA BASE MES",
+    "MÊS COMERCIAL",
+    "MES COMERCIAL",
+]:
     if cand in df.columns:
         col_data_base_original = cand
         break
@@ -228,7 +235,7 @@ taxa_venda_aprov = (vendas / aprovacoes * 100) if aprovacoes > 0 else 0.0
 corretores_ativos_periodo = df_periodo["CORRETOR"].dropna().astype(str).nunique()
 ipc_periodo = (vendas / corretores_ativos_periodo) if corretores_ativos_periodo > 0 else None
 
-# --------- LEADS DO PERÍODO (CRM – FILTRADOS POR EQUIPE, SE POSSÍVEL) ---------
+# --------- LEADS DO PERÍODO (CRM – OBRIGATORIAMENTE DA EQUIPE) ---------
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
 total_leads_periodo = None
@@ -242,7 +249,7 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
     )
     df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
 
-    # tenta achar coluna de equipe no df_leads
+    # PROCURAR UMA COLUNA DE EQUIPE NO CRM
     equipe_col = None
     cols_lower = {c.lower(): c for c in df_leads_use.columns}
     for nome in ["equipe", "nome_equipe", "time", "equipe_nome"]:
@@ -250,26 +257,28 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
             equipe_col = cols_lower[nome]
             break
 
-    mask_periodo_leads = (
-        (df_leads_use["data_captura_date"] >= data_ini_mov)
-        & (df_leads_use["data_captura_date"] <= data_fim_mov)
-    )
-
     if equipe_col is not None:
+        mask_periodo_leads = (
+            (df_leads_use["data_captura_date"] >= data_ini_mov)
+            & (df_leads_use["data_captura_date"] <= data_fim_mov)
+        )
         mask_equipe_leads = df_leads_use[equipe_col].astype(str) == str(equipe_sel)
         df_leads_periodo = df_leads_use[mask_periodo_leads & mask_equipe_leads].copy()
+
+        total_leads_periodo = len(df_leads_periodo)
+
+        if total_leads_periodo > 0:
+            conv_leads_analise_pct = (
+                analises_em / total_leads_periodo * 100 if analises_em > 0 else 0.0
+            )
+            leads_por_analise = (
+                total_leads_periodo / analises_em if analises_em > 0 else None
+            )
     else:
-        # se não tiver coluna de equipe no CRM, considera só o período
-        df_leads_periodo = df_leads_use[mask_periodo_leads].copy()
-
-    total_leads_periodo = len(df_leads_periodo)
-
-    if total_leads_periodo > 0:
-        conv_leads_analise_pct = (
-            analises_em / total_leads_periodo * 100 if analises_em > 0 else 0.0
-        )
-        leads_por_analise = (
-            total_leads_periodo / analises_em if analises_em > 0 else None
+        st.info(
+            "Os leads ainda não estão marcados por equipe no CRM (coluna de equipe "
+            "não encontrada no df_leads). Por isso, os indicadores de leads da equipe "
+            "não foram calculados para evitar misturar com a imobiliária toda."
         )
 
 # -------------------------------------------------------------------
