@@ -124,7 +124,10 @@ elif "interesses" in df.columns:
 
 # ---------------------------------------------------------
 # REMOVE LEADS PERDIDOS (QUALQUER COISA COM 'PERDID' EM ETAPA OU SITUAÇÃO)
+# MAS GUARDA NUM DATAFRAME SEPARADO PARA CONTAR NO PERÍODO
 # ---------------------------------------------------------
+df_perdidos = pd.DataFrame()
+
 if col_situacao or col_etapa:
     mask_perdido = pd.Series(False, index=df.index)
 
@@ -137,10 +140,17 @@ if col_situacao or col_etapa:
             "PERDID", case=False, na=False
         )
 
+    # guarda perdidos para contagem futura
+    df_perdidos = df[mask_perdido].copy()
+
+    # remove perdidos da base principal
     df = df[~mask_perdido].copy()
 
-# Remove leads sem data de captura
+# Remove leads sem data de captura (tanto na base principal quanto nos perdidos)
 df = df[df["DATA_CAPTURA_DT"].notna()].copy()
+if not df_perdidos.empty:
+    df_perdidos = df_perdidos[df_perdidos["DATA_CAPTURA_DT"].notna()].copy()
+
 if df.empty:
     st.error("Não há leads com data de captura válida.")
     st.stop()
@@ -215,7 +225,7 @@ dias_sem_retorno = st.sidebar.slider(
 )
 
 # ---------------------------------------------------------
-# APLICA FILTROS
+# APLICA FILTROS NA BASE PRINCIPAL
 # ---------------------------------------------------------
 mask_periodo = (df["DATA_CAPTURA_DT"].dt.date >= data_ini) & (
     df["DATA_CAPTURA_DT"].dt.date <= data_fim
@@ -226,6 +236,23 @@ if corretor_sel != "Todos":
     df_periodo = df_periodo[df_periodo["CORRETOR_EXIBICAO"] == corretor_sel]
 
 qtde_leads_periodo = len(df_periodo)
+
+# ---------------------------------------------------------
+# CONTAGEM DE LEADS PERDIDOS NO PERÍODO (MESMOS FILTROS)
+# ---------------------------------------------------------
+qtde_leads_perdidos_periodo = 0
+if not df_perdidos.empty:
+    mask_periodo_perdidos = (df_perdidos["DATA_CAPTURA_DT"].dt.date >= data_ini) & (
+        df_perdidos["DATA_CAPTURA_DT"].dt.date <= data_fim
+    )
+    df_perdidos_periodo = df_perdidos[mask_periodo_perdidos].copy()
+
+    if corretor_sel != "Todos":
+        df_perdidos_periodo = df_perdidos_periodo[
+            df_perdidos_periodo["CORRETOR_EXIBICAO"] == corretor_sel
+        ]
+
+    qtde_leads_perdidos_periodo = len(df_perdidos_periodo)
 
 st.caption(
     f"Período: **{data_ini.strftime('%d/%m/%Y')}** até **{data_fim.strftime('%d/%m/%Y')}** "
@@ -283,11 +310,11 @@ mask_sem_retorno_x = df_periodo["DIAS_SEM_RETORNO"] >= dias_sem_retorno
 leads_sem_retorno_qtde = int(mask_sem_retorno_x.sum())
 
 # ---------------------------------------------------------
-# CARDS RESUMO (APENAS 4 CARDS GERAIS)
+# CARDS RESUMO (AGORA COM LEADS PERDIDOS NO PERÍODO)
 # ---------------------------------------------------------
 st.markdown("## 🧾 Visão geral do atendimento")
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5 = st.columns(5)
 
 with c1:
     st.metric("Leads no período", qtde_leads_periodo)
@@ -303,6 +330,9 @@ with c4:
         "SLA médio (leads atendidos)",
         format_minutes(sla_medio_min) if leads_atendidos > 0 else "-",
     )
+
+with c5:
+    st.metric("Leads perdidos no período", qtde_leads_perdidos_periodo)
 
 # ---------------------------------------------------------
 # BUSCA POR LEAD ESPECÍFICO
@@ -446,6 +476,7 @@ df_rank_exibe = df_rank_exibe[
     ]
 ].rename(
     columns={
+
         "CORRETOR_EXIBICAO": "Corretor",
         "LEADS": "Leads",
         "ATENDIDOS": "Atendidos",
@@ -637,7 +668,7 @@ else:
         "NOME_LEAD",
         "TELEFONE_LEAD",
         "CORRETOR_EXIBICAO",
-        "DATA_REFERENCIA_RETORNO",
+        "DATA_REFERENCIA_RETORНО",
         "DIAS_SEM_RETORNO",
     ]
     if col_situacao:
@@ -654,7 +685,7 @@ else:
             "NOME_LEAD": "Lead",
             "TELEFONE_LEAD": "Telefone",
             "CORRETOR_EXIBICAO": "Corretor",
-            "DATA_REFERENCIA_RETORNO": "Último contato",
+            "DATA_REFERENCIA_RETORНО": "Último contato",
             "DIAS_SEM_RETORNO": "Dias sem retorno",
             col_situacao: "Situação" if col_situacao else col_situacao,
             col_etapa: "Etapa" if col_etapa else col_etapa,
