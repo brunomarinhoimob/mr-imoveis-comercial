@@ -170,15 +170,6 @@ def format_minutes(m):
     return f"{horas}h {minutos} min"
 
 
-def format_days(d):
-    if pd.isna(d):
-        return "-"
-    d_int = int(round(d))
-    if d_int == 1:
-        return "1 dia"
-    return f"{d_int} dias"
-
-
 def fmt_dt(dt_value):
     if pd.isna(dt_value):
         return "-"
@@ -288,14 +279,13 @@ df_periodo.loc[mask_sla, "SLA_MIN"] = (
 sla_medio_min = df_periodo["SLA_MIN"].mean()
 
 # Leads sem retorno há X dias
-# Considera última interação, se não tiver usa data_com_corretor
 hoje = pd.Timestamp(datetime.now().date())
 
 df_periodo["DATA_REFERENCIA_RETORNO"] = df_periodo["DATA_ULT_INTERACAO_DT"]
 mask_sem_ult = df_periodo["DATA_REFERENCIA_RETORNO"].isna() & df_periodo[
     "DATA_COM_CORRETOR_DT"
 ].notna()
-df_periodo.loc[mask_sem_ult, "DATA_REFERENCIA_RETORNO"] = df_periodo.loc[
+df_periodo.loc[mask_sem_ult, "DATA_REFERENCIA_RETORНО"] = df_periodo.loc[
     mask_sem_ult, "DATA_COM_CORRETOR_DT"
 ]
 
@@ -307,7 +297,7 @@ df_periodo.loc[mask_tem_referencia, "DIAS_SEM_RETORNO"] = (
 ).dt.days
 
 mask_sem_retorno_x = df_periodo["DIAS_SEM_RETORNO"] >= dias_sem_retorno
-leads_sem_retorno_qtde = int(mask_sem_retorno_x.sum())
+leads_sem_retorno_qtde = int(mask_sem_retorно_x.sum())
 
 # ---------------------------------------------------------
 # CARDS RESUMO (AGORA COM LEADS PERDIDOS NO PERÍODO)
@@ -476,7 +466,6 @@ df_rank_exibe = df_rank_exibe[
     ]
 ].rename(
     columns={
-
         "CORRETOR_EXIBICAO": "Corretor",
         "LEADS": "Leads",
         "ATENDIDOS": "Atendidos",
@@ -506,7 +495,7 @@ colunas_det = [
     "CORRETOR_EXIBICAO",
     "DATA_CAPTURA_DT",
     "DATA_REFERENCIA_RETORNO",
-    "DIAS_SEM_RETORNO",
+    "DIAS_SEM_RETORНО",
 ]
 if col_situacao:
     colunas_det.append(col_situacao)
@@ -605,8 +594,8 @@ else:
         "NOME_LEAD",
         "TELEFONE_LEAD",
         "CORRETOR_EXIBICAO",
-        "DATA_REFERENCIA_RETORNO",
-        "DIAS_SEM_RETORNO",
+        "DATA_REFERENCIA_RETORНО",
+        "DIAS_SEM_RETORНО",
     ]
     if col_situacao:
         colunas_sr.append(col_situacao)
@@ -621,7 +610,7 @@ else:
             "TELEFONE_LEAD": "Telefone",
             "CORRETOR_EXIBICAO": "Corretor",
             "DATA_REFERENCIA_RETORNO": "Último contato",
-            "DIAS_SEM_RETORNO": "Dias sem retorno",
+            "DIAS_SEM_RETORНО": "Dias sem retorno",
             col_situacao: "Situação" if col_situacao else col_situacao,
             col_etapa: "Etapa" if col_etapa else col_etapa,
         }
@@ -669,7 +658,7 @@ else:
         "TELEFONE_LEAD",
         "CORRETOR_EXIBICAO",
         "DATA_REFERENCIA_RETORНО",
-        "DIAS_SEM_RETORNO",
+        "DIAS_SEM_RETORНО",
     ]
     if col_situacao:
         colunas_uc.append(col_situacao)
@@ -684,9 +673,9 @@ else:
         columns={
             "NOME_LEAD": "Lead",
             "TELEFONE_LEAD": "Telefone",
-            "CORRETOR_EXIBICAO": "Corretor",
-            "DATA_REFERENCIA_RETORНО": "Último contato",
-            "DIAS_SEM_RETORNO": "Dias sem retorno",
+            "CORRETOR_EXIBICAО": "Corretor",
+            "DATA_REFERENCIA_RETORNO": "Último contato",
+            "DIAS_SEM_RETORНО": "Dias sem retorno",
             col_situacao: "Situação" if col_situacao else col_situacao,
             col_etapa: "Etapa" if col_etapa else col_etapa,
             col_descricao: "Descrição" if col_descricao else col_descricao,
