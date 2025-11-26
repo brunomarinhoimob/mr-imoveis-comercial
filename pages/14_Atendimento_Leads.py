@@ -99,13 +99,17 @@ else:
 
 # com corretor (primeiro atendimento)
 if "data_com_corretor" in df.columns:
-    df["DATA_COM_CORRETOR_DT"] = pd.to_datetime(df["data_com_corretor"], errors="coerce")
+    df["DATA_COM_CORRETOR_DT"] = pd.to_datetime(
+        df["data_com_corretor"], errors="coerce"
+    )
 else:
     df["DATA_COM_CORRETOR_DT"] = pd.NaT
 
 # última interação
 if "data_ultima_interacao" in df.columns:
-    df["DATA_ULT_INTERACAO_DT"] = pd.to_datetime(df["data_ultima_interacao"], errors="coerce")
+    df["DATA_ULT_INTERACAO_DT"] = pd.to_datetime(
+        df["data_ultima_interacao"], errors="coerce"
+    )
 else:
     df["DATA_ULT_INTERACAO_DT"] = pd.NaT
 
@@ -116,7 +120,9 @@ else:
     df["DATA_VENDENDO_DT"] = pd.NaT
 
 if "data_vendido_perdido" in df.columns:
-    df["DATA_VENDIDO_PERDIDO_DT"] = pd.to_datetime(df["data_vendido_perdido"], errors="coerce")
+    df["DATA_VENDIDO_PERDIDO_DT"] = pd.to_datetime(
+        df["data_vendido_perdido"], errors="coerce"
+    )
 else:
     df["DATA_VENDIDO_PERDIDO_DT"] = pd.NaT
 
@@ -268,7 +274,7 @@ df_periodo.loc[mask_tem_ref, "DIAS_SEM_RETORNO"] = (
     hoje - df_periodo.loc[mask_tem_ref, "DATA_REFERENCIA_RETORNO"].dt.normalize()
 ).dt.days
 
-mask_sem_retorno_x = df_periodo["DIAS_SEM_RETORНО"] >= dias_sem_retorno
+mask_sem_retorno_x = df_periodo["DIAS_SEM_RETORNO"] >= dias_sem_retorno
 leads_sem_retorno_qtde = int(mask_sem_retorno_x.sum())
 
 # ---------------------------------------------------------
@@ -352,7 +358,9 @@ if nome_busca.strip():
         with c_e:
             st.write(f"**Com corretor em:** {fmt_dt(lead_sel['DATA_COM_CORRETOR_DT'])}")
         with c_f:
-            st.write(f"**Última interação:** {fmt_dt(lead_sel['DATA_ULT_INTERACAO_DT'])}")
+            st.write(
+                f"**Última interação:** {fmt_dt(lead_sel['DATA_ULT_INTERACAO_DT'])}"
+            )
 
         c_g, c_h = st.columns(2)
         with c_g:
@@ -453,7 +461,7 @@ colunas_det = [
     "TELEFONE_LEAD",
     "CORRETOR_EXIBICAO",
     "DATA_CAPTURA_DT",
-    "DATA_REFERENCIA_RETORНО",
+    "DATA_REFERENCIA_RETORNO",
     "DIAS_SEM_RETORNO",
 ]
 if col_situacao:
@@ -470,7 +478,7 @@ df_tab_det = df_tab_det.rename(
         "TELEFONE_LEAD": "Telefone",
         "CORRETOR_EXIBICAO": "Corretor",
         "DATA_CAPTURA_DT": "Data captura",
-        "DATA_REFERENCIA_RETORНО": "Último contato",
+        "DATA_REFERENCIA_RETORNO": "Último contato",
         "DIAS_SEM_RETORNO": "Dias sem retorno",
         col_situacao: "Situação" if col_situacao else col_situacao,
         col_etapa: "Etapa" if col_etapa else col_etapa,
@@ -501,7 +509,7 @@ else:
         "NOME_LEAD",
         "TELEFONE_LEAD",
         "CORRETOR_EXIBICAO",
-        "DATA_REFERENCIA_RETORНО",
+        "DATA_REFERENCIA_RETORNO",
         "DIAS_SEM_RETORNO",
     ]
     if col_situacao:
@@ -515,8 +523,8 @@ else:
             "NOME_LEAD": "Lead",
             "TELEFONE_LEAD": "Telefone",
             "CORRETOR_EXIBICAO": "Corretor",
-            "DATA_REFERENCIA_RETORНО": "Último contato",
-            "DIAS_SEM_RETORНО": "Dias sem retorno",
+            "DATA_REFERENCIA_RETORNO": "Último contato",
+            "DIAS_SEM_RETORNO": "Dias sem retorno",
             col_situacao: "Situação" if col_situacao else col_situacao,
             col_etapa: "Etapa" if col_etapa else col_etapa,
         }
