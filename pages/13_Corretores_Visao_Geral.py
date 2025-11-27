@@ -580,7 +580,7 @@ with col_m2:
 
 with col_m3:
     st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.markmarkdown(
+    st.markdown(
         '<div class="metric-title">Produção do período</div>',
         unsafe_allow_html=True,
     )
