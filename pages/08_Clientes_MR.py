@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 from datetime import date
 
+from app_dashboard import carregar_dados_planilha
+
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
 # ---------------------------------------------------------
@@ -17,53 +19,70 @@ st.set_page_config(
 # ---------------------------------------------------------
 LOGO_PATH = "logo_mr.png"
 
-col_tit, col_logo = st.columns([4, 1])
-with col_tit:
-    st.markdown("## Clientes MR")
-    st.caption(
-        "Visão geral dos clientes com histórico de análises, aprovações, "
-        "vendas, situação atual, corretor responsável e a última observação registrada."
-    )
+col_logo, col_tit = st.columns([1, 4])
 with col_logo:
     try:
         st.image(LOGO_PATH, use_column_width=True)
     except Exception:
         st.write("MR Imóveis")
 
+with col_tit:
+    st.markdown("## Clientes MR – Visão Geral")
+    st.caption(
+        "Visão consolidada dos clientes da MR Imóveis. "
+        "Na busca, a situação atual segue a regra:\n"
+        "- Se houver **VENDA GERADA** ou **VENDA INFORMADA** após o último `DESISTIU`, "
+        "essa venda será SEMPRE considerada a situação atual.\n"
+        "- A venda só deixa de ser atual quando, em alguma linha POSTERIOR, houver o status **DESISTIU**.\n"
+        "- O `DESISTIU` funciona como um **reset**, abrindo um novo ciclo para o cliente."
+    )
 
 # ---------------------------------------------------------
-# FUNÇÃO AUXILIAR PARA LIMPAR DATA
-# ---------------------------------------------------------
-def limpar_para_data(serie):
-    dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
-    return dt.dt.date
-
-
-# ---------------------------------------------------------
-# CONFIG: LINK DA PLANILHA (MESMO DA ABA ANÁLISES)
-# ---------------------------------------------------------
-SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
-GID_ANALISES = "1574157905"
-CSV_URL_ANALISES = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
-
-
-# ---------------------------------------------------------
-# CARREGAR E PREPARAR DADOS
+# CARREGAMENTO DOS DADOS
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def carregar_dados():
-    df = pd.read_csv(CSV_URL_ANALISES)
+def carregar_dados_clientes() -> pd.DataFrame:
+    df = carregar_dados_planilha()
+    if df is None or df.empty:
+        return pd.DataFrame()
 
-    # Padroniza nomes de colunas
+    # Colunas em caixa alta
     df.columns = [c.strip().upper() for c in df.columns]
 
     # DATA / DIA
-    if "DATA" in df.columns:
-        df["DIA"] = limpar_para_data(df["DATA"])
-    elif "DIA" in df.columns:
-        df["DIA"] = limpar_para_data(df["DIA"])
+    if "DIA" in df.columns:
+        df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
+    elif "DATA" in df.columns:
+        df["DIA"] = pd.to_datetime(df["DATA"], errors="coerce")
     else:
         df["DIA"] = pd.NaT
+
+    # NOME CLIENTE
+    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+    col_nome = next((c for c in possiveis_nome if c in df.columns), None)
+    if col_nome is None:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+    else:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    # CPF
+    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
+    col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
+    if col_cpf is None:
+        df["CPF_CLIENTE_BASE"] = ""
+    else:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
 
     # EQUIPE / CORRETOR
     for col in ["EQUIPE", "CORRETOR"]:
@@ -82,17 +101,8 @@ def carregar_dados():
     possiveis_construtora = ["CONSTRUTORA", "INCORPORADORA"]
     possiveis_empreend = ["EMPREENDIMENTO", "PRODUTO", "IMÓVEL", "IMOVEL"]
 
-    col_construtora = None
-    for c in possiveis_construtora:
-        if c in df.columns:
-            col_construtora = c
-            break
-
-    col_empreend = None
-    for c in possiveis_empreend:
-        if c in df.columns:
-            col_empreend = c
-            break
+    col_construtora = next((c for c in possiveis_construtora if c in df.columns), None)
+    col_empreend = next((c for c in possiveis_empreend if c in df.columns), None)
 
     if col_construtora is None:
         df["CONSTRUTORA_BASE"] = "NÃO INFORMADO"
@@ -116,7 +126,7 @@ def carregar_dados():
             .str.strip()
         )
 
-    # STATUS BASE + SITUAÇÃO ORIGINAL
+    # SITUAÇÃO / STATUS
     possiveis_cols_situacao = [
         "SITUAÇÃO",
         "SITUAÇÃO ATUAL",
@@ -124,87 +134,39 @@ def carregar_dados():
         "SITUACAO",
         "SITUACAO ATUAL",
     ]
-    col_situacao = None
-    for c in possiveis_cols_situacao:
-        if c in df.columns:
-            col_situacao = c
-            break
+    col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
     df["STATUS_BASE"] = ""
     if col_situacao:
-        # texto original da planilha (mantém maiúsculas/minúsculas)
-        status_original = df[col_situacao].fillna("").astype(str)
+        status_original = df[col_situacao].fillna("").astype(str).str.strip()
+        status_upper = status_original.str.upper()
 
-        # versão em maiúsculo só para classificar STATUS_BASE
-        status = status_original.str.upper()
+        df.loc[status_upper.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
+        df.loc[status_upper.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
+        df.loc[status_upper.str.contains(r"\bAPROVAÇÃO\b"), "STATUS_BASE"] = "APROVADO"
+        df.loc[status_upper.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
+        df.loc[status_upper.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
+        df.loc[status_upper.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
+        df.loc[status_upper.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
 
-        df.loc[status.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
-        df.loc[status.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
-        df.loc[status.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
-        df.loc[status.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
-        df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
-        df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
-
-        # Situação ORIGINAL – exatamente como na planilha (apenas removendo espaços extras)
-        df["SITUACAO_ORIGINAL"] = status_original.str.strip()
+        df["SITUACAO_ORIGINAL"] = status_original
     else:
         df["SITUACAO_ORIGINAL"] = "NÃO INFORMADO"
 
-    # OBSERVAÇÕES / VGV
+    # OBS / OBS2 / VGV
     if "OBSERVAÇÕES" in df.columns:
         df["OBSERVACOES_RAW"] = df["OBSERVAÇÕES"].fillna("").astype(str).str.strip()
-        # VGV a partir de OBSERVAÇÕES – pode ser sobrescrito depois se tiver coluna específica
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0.0)
     else:
         df["OBSERVACOES_RAW"] = ""
         df["VGV"] = 0.0
 
-    # Se houver uma coluna explícita de VGV, preferir ela
-    for col_vgv in ["VGV", "VALOR_VENDA", "VALOR"]:
-        if col_vgv in df.columns and col_vgv != "VGV":
-            df["VGV"] = pd.to_numeric(df[col_vgv], errors="coerce").fillna(df["VGV"])
-            break
-
-    # OBSERVAÇÕES 2 (para VENDA GERADA / INFORMADA)
     if "OBSERVAÇÕES 2" in df.columns:
-        df["OBS2_RAW"] = df["OBSERVAÇÕES 2"].fillna("").astype(str).str.strip()
+        df["OBSERVACOES2_RAW"] = df["OBSERVAÇÕES 2"].fillna("").astype(str).str.strip()
     else:
-        df["OBS2_RAW"] = ""
+        df["OBSERVACOES2_RAW"] = ""
 
-    # NOME / CPF
-    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
-    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
-
-    col_nome = None
-    for c in possiveis_nome:
-        if c in df.columns:
-            col_nome = c
-            break
-
-    col_cpf = None
-    for c in possiveis_cpf:
-        if c in df.columns:
-            col_cpf = c
-            break
-
-    if col_nome is None:
-        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
-    else:
-        df["NOME_CLIENTE_BASE"] = (
-            df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
-        )
-
-    if col_cpf is None:
-        df["CPF_CLIENTE_BASE"] = ""
-    else:
-        df["CPF_CLIENTE_BASE"] = (
-            df[col_cpf]
-            .fillna("")
-            .astype(str)
-            .str.replace(r"\D", "", regex=True)
-        )
-
-    # Chave única CLIENTE (nome + CPF) para agrupar histórico
+    # CHAVE CLIENTE (pra linkar histórico)
     df["CHAVE_CLIENTE"] = (
         df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
         + " | "
@@ -214,35 +176,107 @@ def carregar_dados():
     return df
 
 
-df = carregar_dados()
-
-if df.empty:
-    st.error("Não foi possível carregar dados da planilha.")
+df = carregar_dados_clientes()
+if df is None or df.empty:
+    st.error("Não foi possível carregar dados de clientes.")
     st.stop()
 
 # ---------------------------------------------------------
-# DEFINIÇÕES BÁSICAS
+# FILTROS DO PERÍODO (PARA KPIs E TABELA GERAL)
 # ---------------------------------------------------------
-if "NOME_CLIENTE_BASE" in df.columns:
-    col_cliente = "NOME_CLIENTE_BASE"
-elif "CLIENTE" in df.columns:
-    col_cliente = "CLIENTE"
+st.sidebar.title("Filtros – Clientes MR")
+
+hoje = date.today()
+data_min = df["DIA"].min()
+data_max = df["DIA"].max()
+
+if pd.isna(data_min) or pd.isna(data_max):
+    data_min = hoje
+    data_max = hoje
+
+periodo = st.sidebar.date_input(
+    "Período (data de movimentação)",
+    value=(data_min, data_max),
+    min_value=data_min,
+    max_value=data_max,
+)
+
+if isinstance(periodo, (tuple, list)):
+    data_ini, data_fim = periodo
 else:
-    st.error("Não encontrei coluna de cliente na base.")
+    data_ini = periodo
+    data_fim = periodo
+
+if data_ini > data_fim:
+    st.sidebar.error("Data inicial maior que data final. Ajuste o período.")
     st.stop()
 
-if "DIA" not in df.columns:
-    st.error("Não encontrei coluna DIA na base.")
+mask_periodo = (df["DIA"] >= pd.to_datetime(data_ini)) & (df["DIA"] <= pd.to_datetime(data_fim))
+df_periodo = df[mask_periodo].copy()
+
+if df_periodo.empty:
+    st.info("Não há movimentações de clientes no período selecionado.")
     st.stop()
 
-# Garantir datetime
-df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
-df_valid = df.dropna(subset=["DIA"]).copy()
-df_valid = df_valid.sort_values(by=[col_cliente, "DIA"])
+st.sidebar.markdown("---")
+equipe_sel = st.sidebar.selectbox(
+    "Filtrar por equipe (para os KPIs):",
+    options=["Todas"] + sorted(df_periodo["EQUIPE"].dropna().unique().tolist()),
+    index=0,
+)
+if equipe_sel != "Todas":
+    df_periodo = df_periodo[df_periodo["EQUIPE"] == equipe_sel].copy()
+
+corretor_sel = st.sidebar.selectbox(
+    "Filtrar por corretor (para os KPIs):",
+    options=["Todos"] + sorted(df_periodo["CORRETOR"].dropna().unique().tolist()),
+    index=0,
+)
+if corretor_sel != "Todos":
+    df_periodo = df_periodo[df_periodo["CORRETOR"] == corretor_sel].copy()
+
+if df_periodo.empty:
+    st.info("Nenhum cliente encontrado com esse filtro para o período.")
+    st.stop()
 
 # ---------------------------------------------------------
-# BARRA LATERAL – BUSCA (NOME / CPF)
+# VISÃO GERAL (KPIs DO PERÍODO)
 # ---------------------------------------------------------
+total_registros = len(df_periodo)
+total_clientes_unicos = df_periodo["CHAVE_CLIENTE"].nunique()
+total_analises = df_periodo["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"]).sum()
+total_aprovacoes = (df_periodo["STATUS_BASE"] == "APROVADO").sum()
+total_vendas_geradas = (df_periodo["STATUS_BASE"] == "VENDA GERADA").sum()
+total_vendas_informadas = (df_periodo["STATUS_BASE"] == "VENDA INFORMADA").sum()
+vgv_total = df_periodo["VGV"].sum()
+
+
+def format_currency(valor: float) -> str:
+    return (
+        f"R$ {valor:,.2f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Registros no período", int(total_registros))
+c2.metric("Clientes únicos", int(total_clientes_unicos))
+c3.metric("Total análises (EM+RE)", int(total_analises))
+c4.metric("Total aprovações", int(total_aprovacoes))
+
+c5, c6, c7 = st.columns(3)
+c5.metric("Vendas geradas", int(total_vendas_geradas))
+c6.metric("Vendas informadas", int(total_vendas_informadas))
+c7.metric("VGV estimado", format_currency(vgv_total))
+
+st.markdown("---")
+
+# ---------------------------------------------------------
+# BUSCA DE CLIENTES (NOME / CPF) – USA HISTÓRICO COMPLETO
+# ---------------------------------------------------------
+st.sidebar.markdown("---")
 st.sidebar.title("Busca de clientes MR 🔎")
 
 tipo_busca = st.sidebar.radio(
@@ -257,113 +291,10 @@ termo_busca = st.sidebar.text_input(
 
 st.sidebar.caption(
     "• Nome: pode digitar só uma parte (ex: 'SILVA')\n"
-    "• CPF: digite só números (não precisa de ponto ou traço)"
+    "• CPF: digite só números (não precisa de ponto ou traço)."
 )
 
-if not termo_busca.strip():
-    st.info("Digite um nome ou CPF na barra lateral para buscar um cliente.")
-    st.stop()
-
-# ---------------------------------------------------------
-# FILTRO INICIAL POR BUSCA
-# ---------------------------------------------------------
-df_resultado = pd.DataFrame()
-termo_limpo = termo_busca.strip().upper()
-
-if tipo_busca.startswith("Nome"):
-    df_resultado = df[df["NOME_CLIENTE_BASE"].str.contains(termo_limpo, na=False)].copy()
-else:
-    termo_cpf = "".join(ch for ch in termo_busca if ch.isdigit())
-    df_resultado = df[df["CPF_CLIENTE_BASE"].str.contains(termo_cpf, na=False)].copy()
-
-if df_resultado.empty:
-    st.warning("Nenhum cliente encontrado com esse critério de busca.")
-    st.stop()
-
-# Usa mesma chave única
-df_resultado["CHAVE_CLIENTE"] = (
-    df_resultado["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
-    + " | "
-    + df_resultado["CPF_CLIENTE_BASE"].fillna("")
-)
-
-# Ordena por cliente + data
-df_resultado = df_resultado.sort_values(by=["CHAVE_CLIENTE", "DIA"]).copy()
-
-# ---------------------------------------------------------
-# RESUMO POR CLIENTE
-# ---------------------------------------------------------
-def conta_analises(s):
-    return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
-
-
-def conta_aprovacoes(s):
-    return (s == "APROVADO").sum()
-
-
-def conta_vendas(s):
-    return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
-
-
-resumo = (
-    df_resultado.groupby("CHAVE_CLIENTE")
-    .agg(
-        NOME=("NOME_CLIENTE_BASE", "first"),
-        CPF=("CPF_CLIENTE_BASE", "first"),
-        ANALISES=("STATUS_BASE", conta_analises),
-        APROVACOES=("STATUS_BASE", conta_aprovacoes),
-        VENDAS=("STATUS_BASE", conta_vendas),
-        VGV=("VGV", "sum"),
-        ULT_STATUS=("SITUACAO_ORIGINAL", "last"),  # última situação EXATA da planilha
-        ULT_DATA=("DIA", "max"),
-    )
-    .reset_index()
-)
-
-# ---------------------------------------------------------
-# VISÃO GERAL (TABELA DO TOPO)
-# ---------------------------------------------------------
-st.markdown(f"### 🔍 Resultado da busca – {len(resumo)} cliente(s) encontrado(s)")
-
-visao_cols = [
-    "NOME",
-    "CPF",
-    "ULT_STATUS",
-    "ULT_DATA",
-    "ANALISES",
-    "APROVACOES",
-    "VENDAS",
-    "VGV",
-]
-visao = resumo[visao_cols].copy()
-
-# Formata data e VGV
-visao["ULT_DATA"] = pd.to_datetime(visao["ULT_DATA"], errors="coerce").dt.strftime("%d/%m/%Y")
-visao["VGV"] = visao["VGV"].apply(
-    lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-)
-
-visao = visao.rename(
-    columns={
-        "NOME": "NOME",
-        "CPF": "CPF",
-        "ULT_STATUS": "ULT_STATUS",
-        "ULT_DATA": "ULT_DATA",
-        "ANALISES": "ANÁLISES",
-        "APROVACOES": "APROVAÇÕES",
-        "VENDAS": "VENDAS",
-        "VGV": "VGV",
-    }
-)
-
-st.markdown("#### 🗂 Visão geral")
-st.dataframe(visao, use_container_width=True, hide_index=True)
-
-# ---------------------------------------------------------
-# DETALHES POR CLIENTE (CARDS)
-# ---------------------------------------------------------
-st.markdown("### 📂 Detalhamento por cliente")
-
+# Helper: checa se observação é só número/valor
 def observacao_e_numero(txt: str) -> bool:
     if not txt:
         return False
@@ -377,75 +308,306 @@ def observacao_e_numero(txt: str) -> bool:
     return t.isdigit()
 
 
-for _, row in resumo.sort_values(["VENDAS", "VGV"], ascending=False).iterrows():
-    chave = row["CHAVE_CLIENTE"]
-    df_cli = df_resultado[df_resultado["CHAVE_CLIENTE"] == chave].copy()
+def obter_ultima_linha_regra_venda_reset(df_cli: pd.DataFrame) -> pd.Series:
+    """
+    Aplica a regra:
+    - Considera somente o trecho após o último DESISTIU (se existir).
+    - Dentro desse trecho, se houver VENDA GERADA/INFORMADA, a situação atual é a última venda.
+    - Se não houver venda nesse trecho, a situação atual é a última linha do trecho.
+    """
+    if df_cli.empty:
+        return pd.Series()
 
-    # garante histórico ordenado
-    df_cli = df_cli.sort_values("DIA")
-    ultima_linha = df_cli.iloc[-1]
+    df_cli_ord = df_cli.sort_values("DIA")
+    status = df_cli_ord["STATUS_BASE"].fillna("")
 
-    ult_constr = ultima_linha.get("CONSTRUTORA_BASE", "NÃO INFORMADO")
-    ult_empr = ultima_linha.get("EMPREENDIMENTO_BASE", "NÃO INFORMADO")
-    ult_corretor = ultima_linha.get("CORRETOR", "NÃO INFORMADO")
-    ult_status_original = ultima_linha.get("SITUACAO_ORIGINAL", row["ULT_STATUS"])
-
-    # Lógica para última observação
-    status_ultima = ultima_linha.get("STATUS_BASE", "")
-    if status_ultima in ["VENDA GERADA", "VENDA INFORMADA"] and ultima_linha.get("OBS2_RAW", ""):
-        ultima_obs = ultima_linha["OBS2_RAW"]
+    # Último DESISTIU
+    idx_reset = df_cli_ord.index[status == "DESISTIU"]
+    if len(idx_reset) > 0:
+        last_reset_idx = idx_reset[-1]
+        df_segmento = df_cli_ord.loc[last_reset_idx:]
     else:
-        obs_validas = [
-            obs
-            for obs in df_cli["OBSERVACOES_RAW"].fillna("")
-            if obs and not observacao_e_numero(obs)
-        ]
-        ultima_obs = obs_validas[-1] if obs_validas else ""
+        df_segmento = df_cli_ord
 
-    analises_em = (df_cli["STATUS_BASE"] == "EM ANÁLISE").sum()
-    reanalises = (df_cli["STATUS_BASE"] == "REANÁLISE").sum()
-    analises_total = analises_em + reanalises
+    status_seg = df_segmento["STATUS_BASE"].fillna("")
+    vendas_mask = status_seg.isin(["VENDA GERADA", "VENDA INFORMADA"])
 
-    st.markdown("---")
-    st.markdown(f"##### 👤 {row['NOME']}")
+    if vendas_mask.any():
+        ultima = df_segmento.loc[vendas_mask].iloc[-1]
+    else:
+        ultima = df_segmento.iloc[-1]
 
-    col_top1, col_top2 = st.columns(2)
+    return ultima
 
-    with col_top1:
-        cpf_fmt = row["CPF"] if row["CPF"] else "NÃO INFORMADO"
-        # Situação atual EXATAMENTE como na planilha (sem forçar maiúsculo)
-        situacao_fmt = ult_status_original or "NÃO INFORMADO"
 
-        st.write(f"**CPF:** `{cpf_fmt}`")
-        st.write(f"**Situação atual:** `{situacao_fmt}`")
-        st.write(f"**Corretor responsável (última movimentação):** `{ult_corretor}`")
-        st.write(f"**Construtora (última movimentação):** `{ult_constr}`")
-        st.write(f"**Empreendimento (última movimentação):** `{ult_empr}`")
-        if ultima_obs:
-            st.write(f"**Última observação:** `{ultima_obs}`")
+if termo_busca.strip():
+    termo = termo_busca.strip().upper()
 
-    with col_top2:
-        if pd.notna(row["ULT_DATA"]):
-            data_fmt = pd.to_datetime(row["ULT_DATA"]).strftime("%d/%m/%Y")
-        else:
-            data_fmt = "NÃO INFORMADA"
-        st.write(f"**Última movimentação:** `{data_fmt}`")
+    # Busca no HISTÓRICO COMPLETO (df), NÃO só no período
+    if tipo_busca.startswith("Nome"):
+        df_resultado = df[
+            df["NOME_CLIENTE_BASE"].str.contains(termo, na=False)
+        ].copy()
+    else:
+        termo_cpf = "".join(ch for ch in termo_busca if ch.isdigit())
+        df_resultado = df[
+            df["CPF_CLIENTE_BASE"].str.contains(termo_cpf, na=False)
+        ].copy()
 
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.metric("Análises (só EM)", int(analises_em))
-    with m2:
-        st.metric("Reanálises", int(reanalises))
-    with m3:
-        st.metric("Análises (EM + RE)", int(analises_total))
+    if df_resultado.empty:
+        st.warning("Nenhum cliente encontrado na base completa com esse critério de busca.")
+    else:
+        df_resultado["DIA"] = pd.to_datetime(df_resultado["DIA"], errors="coerce")
 
-    m4, m5, m6 = st.columns(3)
-    with m4:
-        st.metric("Aprovações", int(row["APROVACOES"]))
-    with m5:
-        st.metric("Vendas", int(row["VENDAS"]))
-    with m6:
-        st.metric(
-            "VGV total",
-            f"R$ {row['VGV']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        # ---- função que gera o resumo de CADA cliente x corretor ----
+        def resumo_cliente(gr: pd.DataFrame) -> pd.Series:
+            gr = gr.sort_values("DIA")
+            status = gr["STATUS_BASE"].fillna("")
+
+            analises = status.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
+            aprovacoes = (status == "APROVADO").sum()
+            vendas = status.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
+            vgv = gr["VGV"].sum()
+
+            # aplica a regra da última situação (venda x desistiu)
+            ultima = obter_ultima_linha_regra_venda_reset(gr)
+
+            ult_status = ultima.get("SITUACAO_ORIGINAL", "")
+            ult_data = ultima.get("DIA", pd.NaT)
+
+            return pd.Series(
+                {
+                    "NOME": gr["NOME_CLIENTE_BASE"].iloc[0],
+                    "CPF": gr["CPF_CLIENTE_BASE"].iloc[0],
+                    "CORRETOR_RESUMO": gr["CORRETOR"].iloc[0],
+                    "ANALISES": analises,
+                    "APROVACAOES": aprovacoes,
+                    "VENDAS": vendas,
+                    "VGV": vgv,
+                    "ULT_STATUS": ult_status,
+                    "ULT_DATA": ult_data,
+                }
+            )
+
+        # Agrupa por cliente + corretor (história com aquele corretor)
+        resumo = (
+            df_resultado.groupby(["CHAVE_CLIENTE", "CORRETOR"])
+            .apply(resumo_cliente)
+            .reset_index()
         )
+
+        st.markdown(
+            f"### 🔎 Resultado da busca – {len(resumo)} registro(s) de cliente x corretor encontrado(s)"
+        )
+
+        # ---------- VISÃO GERAL (TABELA DO TOPO) ----------
+        visao = resumo[
+            [
+                "NOME",
+                "CPF",
+                "CORRETOR_RESUMO",
+                "ULT_STATUS",
+                "ULT_DATA",
+                "ANALISES",
+                "APROVACAOES",
+                "VENDAS",
+                "VGV",
+            ]
+        ].copy()
+
+        visao["ULT_DATA"] = pd.to_datetime(
+            visao["ULT_DATA"], errors="coerce"
+        ).dt.strftime("%d/%m/%Y")
+        visao["VGV"] = visao["VGV"].apply(format_currency)
+
+        visao = visao.rename(
+            columns={
+                "CORRETOR_RESUMO": "Corretor",
+                "ULT_STATUS": "Situação atual (regra venda/desistiu)",
+                "ULT_DATA": "Data última movimentação",
+                "ANALISES": "Qtd análises (histórico)",
+                "APROVACAOES": "Qtd aprovações (histórico)",
+                "VENDAS": "Qtd vendas (histórico)",
+                "VGV": "VGV total (histórico)",
+            }
+        )
+
+        st.markdown("#### 🗂 Visão geral cliente x corretor")
+        st.dataframe(
+            visao.sort_values(["VENDAS", "VGV total (histórico)"], ascending=False),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        # ---------- DETALHES POR CLIENTE + LINHA DO TEMPO ----------
+        st.markdown("#### 📂 Detalhamento por cliente (história com o corretor)")
+
+        for _, row in resumo.sort_values(["VENDAS", "VGV"], ascending=False).iterrows():
+            chave = row["CHAVE_CLIENTE"]
+            corr = row["CORRETOR"]
+
+            # História do cliente SOMENTE com aquele corretor
+            df_cli = df[
+                (df["CHAVE_CLIENTE"] == chave) & (df["CORRETOR"] == corr)
+            ].copy()
+            if df_cli.empty:
+                continue
+
+            df_cli = df_cli.sort_values("DIA")
+
+            ultima_linha = obter_ultima_linha_regra_venda_reset(df_cli)
+
+            ult_constr = ultima_linha.get("CONSTRUTORA_BASE", "NÃO INFORMADO")
+            ult_empr = ultima_linha.get("EMPREENDIMENTO_BASE", "NÃO INFORMADO")
+            ult_corretor = ultima_linha.get("CORRETOR", "NÃO INFORMADO")
+            ult_status_original = ultima_linha.get("SITUACAO_ORIGINAL", row["ULT_STATUS"])
+            data_ult = ultima_linha.get("DIA", row["ULT_DATA"])
+
+            # OBS: se for venda, tenta pegar OBS2; senão, última OBS normal
+            status_ultima = str(ultima_linha.get("STATUS_BASE", "")).upper()
+            ultima_obs = ""
+            if status_ultima in ["VENDA GERADA", "VENDA INFORMADA"]:
+                obs2 = str(ultima_linha.get("OBSERVACOES2_RAW", "")).strip()
+                if obs2:
+                    ultima_obs = obs2
+
+            if not ultima_obs:
+                obs_validas = [
+                    obs
+                    for obs in df_cli["OBSERVACOES_RAW"].fillna("")
+                    if obs and not observacao_e_numero(obs)
+                ]
+                ultima_obs = obs_validas[-1] if obs_validas else ""
+
+            analises_em = (df_cli["STATUS_BASE"] == "EM ANÁLISE").sum()
+            reanalises = (df_cli["STATUS_BASE"] == "REANÁLISE").sum()
+            analises_total = analises_em + reanalises
+            aprovacoes_cli = (df_cli["STATUS_BASE"] == "APROVADO").sum()
+            vendas_cli = df_cli["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
+            vgv_cli = df_cli["VGV"].sum()
+
+            st.markdown("---")
+            st.markdown(f"##### 👤 {row['NOME']} — Corretor: `{ult_corretor}`")
+
+            col_top1, col_top2 = st.columns(2)
+
+            with col_top1:
+                cpf_fmt = row["CPF"] if row["CPF"] else "NÃO INFORMADO"
+                situacao_fmt = ult_status_original or "NÃO INFORMADO"
+
+                st.write(f"**CPF:** `{cpf_fmt}`")
+                st.write(f"**Situação atual (regra venda/desistiu):** `{situacao_fmt}`")
+                st.write(
+                    f"**Corretor responsável (última movimentação):** `{ult_corretor}`"
+                )
+                st.write(f"**Construtora (última movimentação):** `{ult_constr}`")
+                st.write(f"**Empreendimento (última movimentação):** `{ult_empr}`")
+                if ultima_obs:
+                    st.write(f"**Última observação:** `{ultima_obs}`")
+
+            with col_top2:
+                if pd.notna(data_ult):
+                    data_fmt = pd.to_datetime(data_ult).strftime("%d/%m/%Y")
+                else:
+                    data_fmt = "NÃO INFORMADA"
+                st.write(f"**Última movimentação:** `{data_fmt}`")
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Análises (só EM)", int(analises_em))
+            m2.metric("Reanálises", int(reanalises))
+            m3.metric("Análises (EM + RE)", int(analises_total))
+
+            m4, m5, m6 = st.columns(3)
+            m4.metric("Aprovações (histórico)", int(aprovacoes_cli))
+            m5.metric("Vendas (GER+INF histórico)", int(vendas_cli))
+            m6.metric("VGV total (cliente x corretor)", format_currency(vgv_cli))
+
+            # ---------- LINHA DO TEMPO COMPLETA (TABELA) ----------
+            st.markdown("**Linha do tempo completa desse cliente com esse corretor:**")
+
+            colunas_timeline = [
+                "DIA",
+                "EQUIPE",
+                "CORRETOR",
+                "CONSTRUTORA_BASE",
+                "EMPREENDIMENTO_BASE",
+                "SITUACAO_ORIGINAL",
+                "STATUS_BASE",
+                "OBSERVACOES_RAW",
+                "OBSERVACOES2_RAW",
+            ]
+            colunas_existentes = [c for c in colunas_timeline if c in df_cli.columns]
+
+            df_timeline = df_cli[colunas_existentes].copy()
+            if "DIA" in df_timeline.columns:
+                df_timeline["DIA"] = pd.to_datetime(
+                    df_timeline["DIA"], errors="coerce"
+                ).dt.strftime("%d/%m/%Y")
+
+            df_timeline = df_timeline.rename(
+                columns={
+                    "DIA": "Data",
+                    "EQUIPE": "Equipe",
+                    "CORRETOR": "Corretor",
+                    "CONSTRUTORA_BASE": "Construtora",
+                    "EMPREENDIMENTO_BASE": "Empreendimento",
+                    "SITUACAO_ORIGINAL": "Situação (planilha)",
+                    "STATUS_BASE": "Status (classificado)",
+                    "OBSERVACOES_RAW": "Observações",
+                    "OBSERVACOES2_RAW": "Observações 2",
+                }
+            )
+
+            st.dataframe(
+                df_timeline,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+# ---------------------------------------------------------
+# LISTA COMPLETA – CLIENTES DO PERÍODO (FILTRO)
+# ---------------------------------------------------------
+st.markdown("---")
+st.markdown("### 📋 Lista de clientes do período (filtro aplicado)")
+
+cols_preferidas = [
+    "NOME_CLIENTE_BASE",
+    "CPF_CLIENTE_BASE",
+    "EQUIPE",
+    "CORRETOR",
+    "EMPREENDIMENTO_BASE",
+    "STATUS_BASE",
+    "DIA",
+    "VGV",
+]
+cols_existentes = [c for c in cols_preferidas if c in df_periodo.columns]
+
+df_tabela = df_periodo[cols_existentes].copy()
+
+if "DIA" in df_tabela.columns:
+    df_tabela["DIA"] = pd.to_datetime(
+        df_tabela["DIA"], errors="coerce"
+    ).dt.strftime("%d/%m/%Y")
+
+if "VGV" in df_tabela.columns:
+    df_tabela["VGV"] = df_tabela["VGV"].apply(format_currency)
+
+df_tabela = df_tabela.rename(
+    columns={
+        "NOME_CLIENTE_BASE": "Cliente",
+        "CPF_CLIENTE_BASE": "CPF",
+        "EQUIPE": "Equipe",
+        "CORRETOR": "Corretor",
+        "EMPREENDIMENTO_BASE": "Empreendimento",
+        "STATUS_BASE": "Situação",
+        "DIA": "Última movimentação",
+    }
+)
+
+df_tabela = df_tabela.sort_values("Última movimentação", ascending=False)
+
+st.dataframe(
+    df_tabela,
+    use_container_width=True,
+    hide_index=True,
+)
