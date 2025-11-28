@@ -11,20 +11,26 @@ st.set_page_config(
 )
 
 # LOGO
-st.image("logo_mr.png", width=160)
+try:
+    st.image("logo_mr.png", width=160)
+except Exception:
+    st.write("MR Imóveis")
 
 st.markdown("## 🔎 Consulta de Clientes – MR Imóveis")
-st.caption("Pesquise o cliente para visualizar a situação atual e todo o histórico com o corretor.")
+st.caption(
+    "Pesquise o cliente para visualizar a situação atual (respeitando a regra VENDA / DESISTIU) "
+    "e todo o histórico dele com o corretor."
+)
 
-# -----------------------------
+# ---------------------------------------------------------
 # CARREGAMENTO DOS DADOS
-# -----------------------------
+# ---------------------------------------------------------
 @st.cache_data(ttl=60)
 def carregar_dados():
     df = carregar_dados_planilha()
     df.columns = [c.upper().strip() for c in df.columns]
 
-    # DATA
+    # DATA / DIA
     if "DIA" in df:
         df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
     elif "DATA" in df:
@@ -33,38 +39,87 @@ def carregar_dados():
         df["DIA"] = pd.NaT
 
     # NOME
-    for col in ["NOME", "CLIENTE", "NOME CLIENTE"]:
-        if col in df:
-            df["NOME_CLIENTE_BASE"] = df[col].astype(str).str.upper().str.strip()
-            break
+    col_nome = next(
+        (c for c in ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"] if c in df),
+        None,
+    )
+    if col_nome:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        )
     else:
         df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
 
     # CPF
-    for col in ["CPF", "CPF CLIENTE"]:
-        if col in df:
-            df["CPF_CLIENTE_BASE"] = df[col].astype(str).str.replace(r"\D", "", regex=True)
-            break
+    col_cpf = next(
+        (c for c in ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"] if c in df),
+        None,
+    )
+    if col_cpf:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+            .str.strip()
+        )
     else:
         df["CPF_CLIENTE_BASE"] = ""
 
     # CORRETOR
-    df["CORRETOR"] = df.get("CORRETOR", "NÃO INFORMADO").fillna("NÃO INFORMADO").astype(str).str.upper()
+    df["CORRETOR"] = (
+        df.get("CORRETOR", "NÃO INFORMADO")
+        .fillna("NÃO INFORMADO")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
 
     # CONSTRUTORA / EMPREENDIMENTO
-    df["CONSTRUTORA"] = df.get("CONSTRUTORA", "").astype(str).str.upper()
-    df["EMPREENDIMENTO"] = df.get("EMPREENDIMENTO", "").astype(str).str.upper()
+    df["CONSTRUTORA"] = (
+        df.get("CONSTRUTORA", "")
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+    df["EMPREENDIMENTO"] = (
+        df.get("EMPREENDIMENTO", "")
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
 
-    # STATUS
-    situacao_col = next((c for c in ["SITUAÇÃO", "STATUS", "SITUACAO"] if c in df), None)
-    df["SITUACAO_ORIGINAL"] = df[situacao_col].astype(str).str.strip() if situacao_col else ""
+    # STATUS / SITUAÇÃO
+    situacao_col = next(
+        (c for c in ["SITUAÇÃO", "SITUACAO", "STATUS", "SITUAÇÃO ATUAL"] if c in df),
+        None,
+    )
+    if situacao_col:
+        df["SITUACAO_ORIGINAL"] = (
+            df[situacao_col].fillna("").astype(str).str.strip()
+        )
+    else:
+        df["SITUACAO_ORIGINAL"] = ""
+
     df["STATUS_BASE"] = df["SITUACAO_ORIGINAL"].str.upper()
 
-    # OBS
-    df["OBS"] = df.get("OBSERVAÇÕES", "").astype(str).str.strip()
-    df["OBS2"] = df.get("OBSERVAÇÕES 2", "").astype(str).str.strip()
+    # OBS / OBS2 (AGORA SEM NAN)
+    df["OBS"] = (
+        df.get("OBSERVAÇÕES", "")
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+    df["OBS2"] = (
+        df.get("OBSERVAÇÕES 2", "")
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
 
-    # CHAVE
+    # CHAVE CLIENTE
     df["CHAVE"] = df["NOME_CLIENTE_BASE"] + "|" + df["CPF_CLIENTE_BASE"]
 
     return df
@@ -72,65 +127,118 @@ def carregar_dados():
 
 df = carregar_dados()
 
-# -----------------------------
+# ---------------------------------------------------------
 # BUSCA
-# -----------------------------
+# ---------------------------------------------------------
 st.sidebar.title("Busca Cliente")
 
-modalidade = st.sidebar.radio("Buscar por:", ["Nome", "CPF"])
+modo_busca = st.sidebar.radio("Buscar por:", ["Nome", "CPF"])
 termo = st.sidebar.text_input("Digite para buscar")
 
-def obter_status_atual(df_cli):
-    df_cli = df_cli.sort_values("DIA")
+def obter_status_atual(df_cli: pd.DataFrame) -> pd.Series:
+    """
+    Regra:
+    - Considera apenas o trecho após o último DESISTIU (se existir);
+    - Dentro desse trecho, se tiver VENDA GERADA / VENDA INFORMADA, pega a última venda;
+    - Se não tiver venda, pega a última linha do trecho.
+    """
+    df_cli = df_cli.sort_values("DIA").copy()
 
-    desistiu = df_cli[df_cli["STATUS_BASE"].str.contains("DESIST")]
-    if not desistiu.empty:
-        df_cli = df_cli.loc[desistiu.index[-1]:]
-
-    vendas = df_cli[df_cli["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])]
-    if not vendas.empty:
-        return vendas.iloc[-1]
+    # Último DESISTIU
+    mask_desistiu = df_cli["STATUS_BASE"].str.contains("DESIST", na=False)
+    if mask_desistiu.any():
+        idx_last_reset = df_cli[mask_desistiu].index[-1]
+        df_seg = df_cli.loc[idx_last_reset:]
     else:
-        return df_cli.iloc[-1]
+        df_seg = df_cli
+
+    # Verifica vendas dentro do ciclo atual
+    mask_venda = df_seg["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])
+    if mask_venda.any():
+        return df_seg[mask_venda].iloc[-1]
+    else:
+        return df_seg.iloc[-1]
 
 
 if termo.strip():
-    termo = termo.upper().strip()
+    termo_input = termo.strip().upper()
 
-    if modalidade == "Nome":
-        filtro = df["NOME_CLIENTE_BASE"].str.contains(termo, na=False)
+    if modo_busca == "Nome":
+        mask = df["NOME_CLIENTE_BASE"].str.contains(termo_input, na=False)
     else:
-        filtro = df["CPF_CLIENTE_BASE"].str.contains("".join(c for c in termo if c.isdigit()), na=False)
+        cpf_num = "".join(c for c in termo if c.isdigit())
+        mask = df["CPF_CLIENTE_BASE"].str.contains(cpf_num, na=False)
 
-    resultado = df[filtro]
+    resultado = df[mask].copy()
 
     if resultado.empty:
-        st.warning("Cliente não encontrado.")
+        st.warning("Cliente não encontrado na base.")
     else:
-        for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
+        # Agrupa por cliente + corretor (história por corretor)
+        for (chave, corr), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
+            grupo = grupo.sort_values("DIA").copy()
             ultima = obter_status_atual(grupo)
 
+            nome_cli = ultima["NOME_CLIENTE_BASE"]
+            cpf_cli = ultima["CPF_CLIENTE_BASE"]
+            data_ult = (
+                ultima["DIA"].strftime("%d/%m/%Y")
+                if pd.notna(ultima["DIA"])
+                else ""
+            )
+            situacao_atual = ultima["SITUACAO_ORIGINAL"] or "NÃO INFORMADO"
+            corretor = ultima["CORRETOR"]
+            construtora = ultima.get("CONSTRUTORA", "") or "NÃO INFORMADO"
+            empreendimento = ultima.get("EMPREENDIMENTO", "") or "NÃO INFORMADO"
+
+            # OBS: sempre limpar possíveis 'nan'
+            obs2 = (ultima.get("OBS2", "") or "").strip()
+            obs1 = (ultima.get("OBS", "") or "").strip()
+            ultima_obs = obs2 if obs2 else obs1
+
             st.markdown("---")
-            st.markdown(f"### 👤 {ultima['NOME_CLIENTE_BASE']}")
-            st.write(f"**CPF:** `{ultima['CPF_CLIENTE_BASE']}`")
-            st.write(f"**Última movimentação:** `{ultima['DIA'].strftime('%d/%m/%Y') if pd.notna(ultima['DIA']) else ''}`")
-            st.write(f"**Situação atual:** `{ultima['SITUACAO_ORIGINAL']}`")
-            st.write(f"**Corretor responsável:** `{ultima['CORRETOR']}`")
-            st.write(f"**Construtora:** `{ultima.get('CONSTRUTORA','')}`")
-            st.write(f"**Empreendimento:** `{ultima.get('EMPREENDIMENTO','')}`")
+            st.markdown(f"### 👤 {nome_cli}")
+            st.write(f"**CPF:** `{'NÃO INFORMADO' if not cpf_cli else cpf_cli}`")
+            st.write(f"**Última movimentação:** `{data_ult}`")
+            st.write(f"**Situação atual:** `{situacao_atual}`")
+            st.write(f"**Corretor responsável:** `{corretor}`")
+            st.write(f"**Construtora:** `{construtora}`")
+            st.write(f"**Empreendimento:** `{empreendimento}`")
 
-            obs = ultima["OBS2"] or ultima["OBS"]
-            if obs:
+            if ultima_obs:
                 st.markdown("**Última observação:**")
-                st.info(obs)
+                st.info(ultima_obs)
 
-            # HISTÓRICO
+            # ---------------- LINHA DO TEMPO ----------------
             st.markdown("#### 📜 Histórico do cliente com este corretor")
+
+            df_hist = grupo[["DIA", "SITUACAO_ORIGINAL", "OBS", "OBS2"]].copy()
+
+            df_hist["DIA"] = df_hist["DIA"].dt.strftime("%d/%m/%Y")
+            # Limpa textos 'nan' se ainda tiver restado algo
+            for col in ["OBS", "OBS2"]:
+                df_hist[col] = (
+                    df_hist[col]
+                    .fillna("")
+                    .astype(str)
+                    .replace("nan", "")
+                    .str.strip()
+                )
+
+            df_hist = df_hist.rename(
+                columns={
+                    "DIA": "Data",
+                    "SITUACAO_ORIGINAL": "Situação",
+                    "OBS": "Obs",
+                    "OBS2": "Obs 2",
+                }
+            )
+
             st.dataframe(
-                grupo.sort_values("DIA")[["DIA","SITUACAO_ORIGINAL","OBS","OBS2"]],
+                df_hist,
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
             )
 
 else:
-    st.info("Digite o nome ou CPF para consultar um cliente.")
+    st.info("Digite o nome ou CPF na barra lateral para consultar um cliente.")
