@@ -322,6 +322,67 @@ else:
     )
 
 # ---------------------------------------------------------
+# CÁLCULO DE INATIVIDADE (> 30 DIAS SEM MOVIMENTO EM CRM E PLANILHA)
+# ---------------------------------------------------------
+hoje_ref = date.today()
+
+# Movimento na planilha (último DIA por corretor)
+df_plan_mov = df_planilha.dropna(subset=["DIA"]).copy()
+if not df_plan_mov.empty:
+    ult_mov_plan = (
+        df_plan_mov.groupby("CORRETOR_NORM")["DIA"]
+        .max()
+        .reset_index(name="ULT_DIA_PLAN")
+    )
+    ult_mov_plan["DIAS_SEM_MOV_PLAN"] = ult_mov_plan["ULT_DIA_PLAN"].apply(
+        lambda d: (hoje_ref - d).days if pd.notna(d) else None
+    )
+else:
+    ult_mov_plan = pd.DataFrame(
+        columns=["CORRETOR_NORM", "ULT_DIA_PLAN", "DIAS_SEM_MOV_PLAN"]
+    )
+
+# Movimento no CRM (último lead por corretor)
+df_leads_mov = df_leads.dropna(subset=["data_captura_date"]).copy()
+if not df_leads_mov.empty:
+    ult_mov_crm = (
+        df_leads_mov.groupby("nome_corretor_norm")["data_captura_date"]
+        .max()
+        .reset_index(name="ULT_DIA_CRM")
+        .rename(columns={"nome_corretor_norm": "CORRETOR_NORM"})
+    )
+    ult_mov_crm["DIAS_SEM_MOV_CRM"] = ult_mov_crm["ULT_DIA_CRM"].apply(
+        lambda d: (hoje_ref - d).days if pd.notna(d) else None
+    )
+else:
+    ult_mov_crm = pd.DataFrame(
+        columns=["CORRETOR_NORM", "ULT_DIA_CRM", "DIAS_SEM_MOV_CRM"]
+    )
+
+df_inativ = pd.merge(
+    ult_mov_plan[["CORRETOR_NORM", "DIAS_SEM_MOV_PLAN"]],
+    ult_mov_crm[["CORRETOR_NORM", "DIAS_SEM_MOV_CRM"]],
+    on="CORRETOR_NORM",
+    how="outer",
+)
+
+if df_inativ.empty:
+    corretores_inativos_30 = []
+else:
+    df_inativ["DIAS_SEM_MOV_PLAN"] = df_inativ["DIAS_SEM_MOV_PLAN"].fillna(9999)
+    df_inativ["DIAS_SEM_MOV_CRM"] = df_inativ["DIAS_SEM_MOV_CRM"].fillna(9999)
+    df_inativ["INATIVO_30"] = (
+        (df_inativ["DIAS_SEM_MOV_PLAN"] > 30)
+        & (df_inativ["DIAS_SEM_MOV_CRM"] > 30)
+    )
+    corretores_inativos_30 = (
+        df_inativ.loc[df_inativ["INATIVO_30"], "CORRETOR_NORM"]
+        .dropna()
+        .astype(str)
+        .tolist()
+    )
+
+# ---------------------------------------------------------
 # SE NÃO TIVERMOS CRMs
 # ---------------------------------------------------------
 if df_corretores_crm is None or df_corretores_crm.empty:
@@ -382,6 +443,7 @@ with st.sidebar:
         for c in corretores_disponiveis
         if c != "NÃO INFORMADO"
         and (not corretores_ativos_norm or c in corretores_ativos_norm)
+        and (c not in corretores_inativos_30)
     ]
 
     corretor_selecionado = st.selectbox(
@@ -449,10 +511,15 @@ st.markdown(
 # ---------------------------------------------------------
 df_rank_base = df_plan_periodo.copy()
 
-# Remove corretores inativos
+# Remove corretores CRM inativos e também inativos >30 dias (planilha + CRM)
 if corretores_ativos_norm:
     df_rank_base = df_rank_base[
         df_rank_base["CORRETOR_NORM"].isin(corretores_ativos_norm)
+    ]
+
+if corretores_inativos_30:
+    df_rank_base = df_rank_base[
+        ~df_rank_base["CORRETOR_NORM"].isin(corretores_inativos_30)
     ]
 
 if "STATUS_BASE_NORM" not in df_rank_base.columns:
@@ -485,12 +552,10 @@ df_rank_base["VGV"] = pd.to_numeric(df_rank_base["VGV"], errors="coerce").fillna
 # ---------------------------------------------------------
 # VENDA / VGV – usando STATUS_BASE e VGV da planilha
 # ---------------------------------------------------------
-# Vendas são as linhas com status de venda na base
 df_rank_base["IS_VENDA"] = df_rank_base["STATUS_BASE_NORM"].isin(
     ["VENDA GERADA", "VENDA INFORMADA", "VENDA", "VENDIDO"]
 )
 
-# VGV somente nas linhas de venda
 df_rank_base["VGV_VENDA"] = np.where(
     df_rank_base["IS_VENDA"], df_rank_base["VGV"], 0.0
 )
@@ -528,6 +593,12 @@ if not df_leads.empty:
         df_leads_periodo = df_leads_periodo[
             df_leads_periodo["nome_corretor_norm"] == corretor_selecionado
         ]
+
+    # tira corretores considerados inativos >30 dias
+    if corretores_inativos_30:
+        df_leads_periodo = df_leads_periodo[
+            ~df_leads_periodo["nome_corretor_norm"].isin(corretores_inativos_30)
+        ]
 else:
     df_leads_periodo = pd.DataFrame(columns=df_leads.columns)
 
@@ -536,6 +607,13 @@ total_leads_periodo = len(df_leads_periodo)
 df_corretores_crm_ativos = df_corretores_crm[
     df_corretores_crm["STATUS_CRM"] == "ATIVO"
 ].copy()
+
+# remove os inativos de 30 dias também da visão de ativos
+if corretores_inativos_30:
+    df_corretores_crm_ativos = df_corretores_crm_ativos[
+        ~df_corretores_crm_ativos["NOME_CRM_BASE"].isin(corretores_inativos_30)
+    ]
+
 qtde_corretores_crm_ativos = len(df_corretores_crm_ativos)
 
 # ---------------------------------------------------------
@@ -554,7 +632,7 @@ with col_m1:
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="metric-help">Cadastrados como ATIVOS no CRM.</div>',
+        '<div class="metric-help">Ativos no CRM e com movimento recente (&le; 30 dias em CRM ou planilha).</div>',
         unsafe_allow_html=True,
     )
     st.markdown("</div>", unsafe_allow_html=True)
@@ -776,7 +854,7 @@ else:
     with col_a1:
         st.markdown("#### ⏳ Corretores há mais de 7 dias sem movimento")
         if df_sem_mov.empty:
-            st.write("Nenhum corretor parado há mais de 7 dias.")
+            st.write("Nenhum corretor parado há mais de 7 dias (considerando apenas quem ainda está ativo no painel).")
         else:
             cols_view = [
                 "NOME_CRM_VISUAL",
