@@ -15,29 +15,148 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# ESTILO (CSS)
+# ESTILO (CSS) – TEMA MIDNIGHT BLUE MR
 # ---------------------------------------------------------
 st.markdown(
     """
     <style>
+    :root {
+        --mr-bg-main: #020617;
+        --mr-bg-card: #020617;
+        --mr-bg-card-soft: #0b1120;
+        --mr-border-subtle: #1f2937;
+        --mr-primary: #3b82f6;
+        --mr-primary-soft: rgba(59,130,246,0.16);
+        --mr-text-main: #e5e7eb;
+        --mr-text-soft: #9ca3af;
+        --mr-accent-green: #22c55e;
+        --mr-accent-red: #ef4444;
+    }
+
+    /* fundo geral */
     .stApp {
-        background-color: #050814;
-        color: #f5f5f5;
+        background: radial-gradient(circle at top left, #020617 0, #020617 40%, #020617 100%);
+        color: var(--mr-text-main);
     }
+
+    /* container central */
+    .main .block-container {
+        max-width: 1400px;
+        padding-top: 1.3rem;
+        padding-bottom: 1.5rem;
+        margin: 0 auto;
+    }
+
+    /* sidebar */
     section[data-testid="stSidebar"] {
-        background: #111827;
-        border-right: 1px solid #1f2937;
+        background: #020617;
+        border-right: 1px solid var(--mr-border-subtle);
     }
+    section[data-testid="stSidebar"] * {
+        color: var(--mr-text-main) !important;
+    }
+
+    /* títulos */
+    h1, h2, h3, h4 {
+        color: #e5e7eb;
+        font-weight: 600;
+    }
+
+    /* textos secundários */
+    p, span, label {
+        color: var(--mr-text-soft);
+    }
+
+    /* métricas (st.metric) em cards premium */
     div[data-testid="stMetric"] {
-        background: #111827;
-        padding: 16px;
+        background: linear-gradient(145deg, var(--mr-bg-card-soft) 0%, #020617 100%);
+        padding: 18px 16px;
         border-radius: 16px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.45);
-        border: 1px solid #1f2937;
+        box-shadow: 0 18px 35px rgba(0,0,0,0.55);
+        border: 1px solid rgba(148,163,184,0.25);
     }
+    div[data-testid="stMetric"] > label {
+        font-size: 0.80rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #9ca3af;
+    }
+    div[data-testid="stMetric"] > div {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #e5e7eb;
+    }
+
+    /* separadores (---) */
+    hr {
+        border: none;
+        border-top: 1px solid rgba(148,163,184,0.25);
+        margin: 1.4rem 0;
+    }
+
+    /* tabelas / dataframes */
+    .stDataFrame {
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid rgba(148,163,184,0.25);
+        box-shadow: 0 14px 30px rgba(0,0,0,0.45);
+        background: var(--mr-bg-card);
+    }
+
+    /* tentativas de estilizar cabeçalho/linhas (pode variar por versão) */
+    .stDataFrame table thead tr th {
+        background-color: #020617 !important;
+        color: #e5e7eb !important;
+        border-bottom: 1px solid rgba(148,163,184,0.25) !important;
+        font-size: 0.78rem !important;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .stDataFrame table tbody tr:nth-child(odd) {
+        background: #020617 !important;
+    }
+    .stDataFrame table tbody tr:nth-child(even) {
+        background: #020617 !important;
+    }
+    .stDataFrame table tbody tr:hover {
+        background: #111827 !important;
+    }
+
+    /* hover de tabelas HTML simples (st.table / pandas styler) */
     .dataframe tbody tr:hover {
         background: #111827 !important;
     }
+
+    /* botões padrão */
+    button[kind="primary"], button[data-baseweb="button"] {
+        border-radius: 999px;
+        background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 50%, #0ea5e9 100%);
+        border: none;
+        color: white;
+        font-weight: 600;
+        box-shadow: 0 10px 25px rgba(37,99,235,0.45);
+    }
+    button[kind="primary"]:hover, button[data-baseweb="button"]:hover {
+        filter: brightness(1.05);
+        box-shadow: 0 14px 30px rgba(37,99,235,0.6);
+    }
+
+    /* alerts (st.info, st.warning, etc.) */
+    .stAlert {
+        border-radius: 12px;
+        border: 1px solid rgba(148,163,184,0.35);
+        background: rgba(15,23,42,0.85);
+    }
+
+    /* inputs / selects / date */
+    .stSelectbox > div, .stTextInput > div, .stDateInput > div {
+        background: #020617;
+        border-radius: 10px;
+        border: 1px solid rgba(148,163,184,0.35);
+    }
+
+    /* rodapé padrão do Streamlit escondido */
+    footer {visibility: hidden;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -269,6 +388,7 @@ dias_validos = df["DIA"].dropna()
 data_min = dias_validos.min()
 data_max = dias_validos.max()
 
+# padrão: últimos 30 dias (ou menos se não tiver tudo isso)
 data_ini_default = max(data_min, data_max - timedelta(days=30))
 
 periodo = st.sidebar.date_input(
