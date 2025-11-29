@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, timedelta
 
 from app_dashboard import carregar_dados_planilha
 
@@ -17,7 +17,10 @@ with col_logo:
         st.write("MR IMÓVEIS")
 with col_titulo:
     st.markdown("## 📂 Carteira de Clientes por Equipe / Corretor")
-    st.caption("Filtre clientes por equipe, corretor, período e situação atual.")
+    st.caption(
+        "Filtre clientes por equipe, corretor, período e situação atual.\n"
+        "A situação respeita a regra VENDA / DESISTIU."
+    )
 
 # ---------------------------------------------------------
 # CARREGAR DADOS
@@ -65,12 +68,14 @@ df = carregar()
 # ---------------------------------------------------------
 # REGRA SITUAÇÃO ATUAL
 # ---------------------------------------------------------
-def obter_ultima_linha(grupo):
-    grupo = grupo.sort_values("DIA")
+def obter_ultima_linha(grupo: pd.DataFrame) -> pd.Series:
+    grupo = grupo.sort_values("DIA").copy()
 
-    idx_reset = grupo[grupo["SITUACAO_ORIGINAL"].str.contains("DESIST", na=False)].index
-    if len(idx_reset) > 0:
-        grupo = grupo.loc[idx_reset[-1]:]
+    # reset no DESISTIU
+    mask_reset = grupo["SITUACAO_ORIGINAL"].str.contains("DESIST", na=False)
+    if mask_reset.any():
+        idx_last = grupo[mask_reset].index[-1]
+        grupo = grupo.loc[idx_last:]
 
     vendas = grupo[grupo["STATUS_BASE"].isin(["VENDA GERADA","VENDA INFORMADA"])]
     if not vendas.empty:
@@ -78,16 +83,36 @@ def obter_ultima_linha(grupo):
     return grupo.iloc[-1]
 
 # ---------------------------------------------------------
-# FILTROS
+# FILTROS (SIDEBAR)
 # ---------------------------------------------------------
 st.sidebar.subheader("Filtros – Carteira")
 
-# PERÍODO
 dt_min = df["DIA"].min()
 dt_max = df["DIA"].max()
 
-periodo = st.sidebar.date_input("Período:", value=(dt_min, dt_max))
-dt_ini, dt_fim = periodo if isinstance(periodo, tuple) else (periodo, periodo)
+if pd.isna(dt_min) or pd.isna(dt_max):
+    dt_min = date.today()
+    dt_max = date.today()
+else:
+    dt_min = dt_min.date()
+    dt_max = dt_max.date()
+
+# 👉 LÓGICA BR: padrão últimos 30 dias (ou menos, se não tiver tudo isso)
+inicio_default = max(dt_min, dt_max - timedelta(days=30))
+fim_default = dt_max
+
+periodo = st.sidebar.date_input(
+    "Período (dd/mm/aaaa):",
+    value=(inicio_default, fim_default),
+    min_value=dt_min,
+    max_value=dt_max,
+)
+
+if isinstance(periodo, tuple):
+    dt_ini, dt_fim = periodo
+else:
+    dt_ini = periodo
+    dt_fim = periodo
 
 df = df[(df["DIA"] >= pd.to_datetime(dt_ini)) & (df["DIA"] <= pd.to_datetime(dt_fim))]
 
@@ -100,6 +125,10 @@ if equipe != "Todas":
 corretor = st.sidebar.selectbox("Corretor:", ["Todos"] + sorted(df["CORRETOR"].unique()))
 if corretor != "Todos":
     df = df[df["CORRETOR"] == corretor]
+
+if df.empty:
+    st.info("Nenhum cliente encontrado com esses filtros.")
+    st.stop()
 
 # ---------------------------------------------------------
 # MONTAR CARTEIRA
@@ -127,33 +156,28 @@ for (ch, corr), grupo in df.groupby(["CHAVE", "CORRETOR"]):
 df_resumo = pd.DataFrame(resumo)
 
 # ---------------------------------------------------------
-# FILTRO POR SITUAÇÃO (NOVO)
+# FILTRO POR SITUAÇÃO (MULTISELECT)
 # ---------------------------------------------------------
 st.markdown("### 🎛️ Filtro por Situação do Cliente")
 
 situacoes = sorted(df_resumo["Situação atual"].dropna().unique().tolist())
 
 situacoes_select = st.multiselect(
-    "Selecione as situações que deseja visualizar:",
+    "Selecione as situações:",
     options=situacoes,
-    default=situacoes
+    default=situacoes,
 )
 
 if situacoes_select:
     df_resumo = df_resumo[df_resumo["Situação atual"].isin(situacoes_select)]
 
-st.markdown("---")
-
 # FORMATAÇÃO
 df_resumo["Última movimentação"] = pd.to_datetime(df_resumo["Última movimentação"]).dt.strftime("%d/%m/%Y")
-
-df_resumo["VGV"] = df_resumo["VGV"].apply(lambda x:
-    f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X",".")
+df_resumo["VGV"] = df_resumo["VGV"].apply(
+    lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X",".")
 )
 
-# ---------------------------------------------------------
-# TABELA FINAL
-# ---------------------------------------------------------
+st.markdown("---")
 st.markdown("### 🧾 Carteira de clientes do período")
 st.caption(f"Total de clientes exibidos: {len(df_resumo)}")
 

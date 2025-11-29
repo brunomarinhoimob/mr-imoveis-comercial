@@ -10,6 +10,84 @@ st.set_page_config(
     layout="wide",
 )
 
+# ---------------------------------------------------------
+# ESTILO GLOBAL (BADGES, AJUSTES VISUAIS)
+# ---------------------------------------------------------
+st.markdown(
+    """
+    <style>
+        .badge-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            border: 1px solid rgba(148, 163, 184, 0.55);
+            background: rgba(15, 23, 42, 0.9);
+        }
+        .badge-venda {
+            border-color: rgba(34, 197, 94, 0.9);
+            background: rgba(22, 163, 74, 0.13);
+            color: #bbf7d0;
+        }
+        .badge-aprovado {
+            border-color: rgba(250, 204, 21, 0.9);
+            background: rgba(202, 138, 4, 0.18);
+            color: #fef9c3;
+        }
+        .badge-analise {
+            border-color: rgba(59, 130, 246, 0.9);
+            background: rgba(37, 99, 235, 0.16);
+            color: #dbeafe;
+        }
+        .badge-pendente {
+            border-color: rgba(249, 115, 22, 0.9);
+            background: rgba(194, 65, 12, 0.17);
+            color: #ffedd5;
+        }
+        .badge-reprovado {
+            border-color: rgba(248, 113, 113, 0.9);
+            background: rgba(185, 28, 28, 0.22);
+            color: #fee2e2;
+        }
+        .badge-neutro {
+            color: #e5e7eb;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+def badge_status(situacao: str) -> str:
+    """Gera a badge visual estilo cartinha + emoji."""
+    if not situacao:
+        return '<span class="badge-status badge-neutro">⚪ Sem informação</span>'
+
+    s = str(situacao).upper()
+    if "VENDA" in s:
+        cls = "badge-venda"
+        emoji = "🟢"
+    elif "APROV" in s:
+        cls = "badge-aprovado"
+        emoji = "🟡"
+    elif "ANÁLISE" in s or "ANALISE" in s or "REANÁLISE" in s or "REANALISE" in s:
+        cls = "badge-analise"
+        emoji = "🔵"
+    elif "PEND" in s:
+        cls = "badge-pendente"
+        emoji = "🟠"
+    elif "REPROV" in s or "DESIST" in s:
+        cls = "badge-reprovado"
+        emoji = "🔴"
+    else:
+        cls = "badge-neutro"
+        emoji = "⚪"
+
+    return f'<span class="badge-status {cls}">{emoji} {situacao}</span>'
+
 # LOGO
 try:
     st.image("logo_mr.png", width=160)
@@ -105,7 +183,7 @@ def carregar_dados():
 
     df["STATUS_BASE"] = df["SITUACAO_ORIGINAL"].str.upper()
 
-    # OBS / OBS2 (AGORA SEM NAN)
+    # OBS / OBS2 (sem NAN)
     df["OBS"] = (
         df.get("OBSERVAÇÕES", "")
         .fillna("")
@@ -200,7 +278,13 @@ if termo.strip():
             st.markdown(f"### 👤 {nome_cli}")
             st.write(f"**CPF:** `{'NÃO INFORMADO' if not cpf_cli else cpf_cli}`")
             st.write(f"**Última movimentação:** `{data_ult}`")
-            st.write(f"**Situação atual:** `{situacao_atual}`")
+
+            # Situação atual com BADGE estilo D
+            st.markdown(
+                f"**Situação atual:** {badge_status(situacao_atual)}",
+                unsafe_allow_html=True,
+            )
+
             st.write(f"**Corretor responsável:** `{corretor}`")
             st.write(f"**Construtora:** `{construtora}`")
             st.write(f"**Empreendimento:** `{empreendimento}`")
@@ -215,7 +299,6 @@ if termo.strip():
             df_hist = grupo[["DIA", "SITUACAO_ORIGINAL", "OBS", "OBS2"]].copy()
 
             df_hist["DIA"] = df_hist["DIA"].dt.strftime("%d/%m/%Y")
-            # Limpa textos 'nan' se ainda tiver restado algo
             for col in ["OBS", "OBS2"]:
                 df_hist[col] = (
                     df_hist[col]
