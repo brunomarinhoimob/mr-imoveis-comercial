@@ -13,6 +13,12 @@ st.set_page_config(
     layout="wide",
 )
 
+# Logo MR Imóveis na lateral
+try:
+    st.sidebar.image("logo_mr.png", use_container_width=True)
+except Exception:
+    pass
+
 st.title("👥 Ranking por Equipe – MR Imóveis")
 
 # ---------------------------------------------------------
@@ -131,7 +137,7 @@ if dias_validos.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# SIDEBAR – FILTRO DE PERÍODO
+# SIDEBAR – FILTRO DE PERÍODO + TIPO DE VENDA
 # ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
 
@@ -152,6 +158,20 @@ if isinstance(periodo, (tuple, list)) and len(periodo) == 2:
 else:
     data_ini, data_fim = data_ini_default, data_max
 
+# MESMA LÓGICA DO RANKING POR CORRETOR: filtro de tipo de venda
+opcao_venda = st.sidebar.radio(
+    "Tipo de venda para o ranking",
+    ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
+    index=0,
+)
+
+if opcao_venda == "Só VENDA GERADA":
+    status_venda_considerado = ["VENDA GERADA"]
+    desc_venda = "apenas VENDA GERADA"
+else:
+    status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
+    desc_venda = "VENDA GERADA + VENDA INFORMADA"
+
 df_ref = df[
     (df["DIA"] >= data_ini) &
     (df["DIA"] <= data_fim)
@@ -161,7 +181,8 @@ registros_ref = len(df_ref)
 
 st.caption(
     f"Período: {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')} • "
-    f"Registros considerados: {registros_ref}"
+    f"Registros considerados: {registros_ref} • "
+    f"Vendas consideradas no ranking: {desc_venda}"
 )
 
 if df_ref.empty:
@@ -180,8 +201,8 @@ analises_por_eq = df_analises.groupby("EQUIPE").size().rename("ANALISES")
 df_aprov = df_ref[df_ref["STATUS_BASE"] == "APROVADO"]
 aprov_por_eq = df_aprov.groupby("EQUIPE").size().rename("APROVACOES")
 
-# Vendas (1 por cliente) + VGV
-df_vendas = df_ref[df_ref["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
+# Vendas (1 por cliente) + VGV com tipo de venda filtrado
+df_vendas = df_ref[df_ref["STATUS_BASE"].isin(status_venda_considerado)].copy()
 
 if not df_vendas.empty:
     df_vendas["CHAVE_CLIENTE"] = (
@@ -324,7 +345,7 @@ st.altair_chart(chart, use_container_width=True)
 st.markdown(
     "<hr><p style='text-align:center;color:#666;'>"
     "Ranking por equipe baseado em análises, aprovações, vendas (1 por cliente) e VGV, "
-    "filtrado pelo período selecionado."
+    "filtrado pelo período selecionado e pelo tipo de venda escolhido na barra lateral."
     "</p>",
     unsafe_allow_html=True,
 )
