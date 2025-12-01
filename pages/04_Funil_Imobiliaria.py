@@ -54,16 +54,24 @@ def conta_aprovacoes(status: pd.Series) -> int:
     return (s == "APROVADO").sum()
 
 
-def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
+def obter_vendas_unicas(
+    df_scope: pd.DataFrame,
+    status_venda=None,
+) -> pd.DataFrame:
     """
     Retorna uma venda por cliente (último status).
     Se tiver VENDA INFORMADA e depois VENDA GERADA, fica só a GERADA.
+    O parâmetro `status_venda` define quais status serão considerados
+    como venda (ex.: ["VENDA GERADA"] ou ["VENDA GERADA", "VENDA INFORMADA"]).
     """
     if df_scope.empty:
         return df_scope.copy()
 
+    if status_venda is None:
+        status_venda = ["VENDA GERADA", "VENDA INFORMADA"]
+
     s = df_scope["STATUS_BASE"].fillna("").astype(str).str.upper()
-    df_v = df_scope[s.isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
+    df_v = df_scope[s.isin(status_venda)].copy()
     if df_v.empty:
         return df_v
 
@@ -157,7 +165,7 @@ else:
 max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
 
 # ---------------------------------------------------------
-# SIDEBAR – PERÍODO (DATA DE MOVIMENTAÇÃO)
+# SIDEBAR – PERÍODO (DATA DE MOVIMENTAÇÃO) + TIPO DE VENDA
 # ---------------------------------------------------------
 st.sidebar.title("Filtros da visão imobiliária")
 
@@ -178,12 +186,27 @@ else:
 if data_ini_mov > data_fim_mov:
     data_ini_mov, data_fim_mov = data_fim_mov, data_ini_mov
 
+# Filtro de tipo de venda (igual às páginas de ranking)
+opcao_venda = st.sidebar.radio(
+    "Tipo de venda para o funil",
+    ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
+    index=0,
+)
+
+if opcao_venda == "Só VENDA GERADA":
+    status_venda_considerado = ["VENDA GERADA"]
+    desc_venda = "apenas VENDA GERADA"
+else:
+    status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
+    desc_venda = "VENDA GERADA + VENDA INFORMADA"
+
 mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
 df_periodo = df[mask_mov].copy()
 
 st.caption(
     f"Período (movimentação): **{data_ini_mov.strftime('%d/%m/%Y')}** até "
-    f"**{data_fim_mov.strftime('%d/%m/%Y')}**."
+    f"**{data_fim_mov.strftime('%d/%m/%Y')}** • "
+    f"Vendas consideradas no funil: **{desc_venda}**."
 )
 
 if df_periodo.empty:
@@ -200,7 +223,11 @@ reanalises = conta_reanalises(status_periodo)
 analises_total = conta_analises_total(status_periodo)
 aprovacoes = conta_aprovacoes(status_periodo)
 
-df_vendas_periodo = obter_vendas_unicas(df_periodo)
+# Usa o tipo de venda escolhido
+df_vendas_periodo = obter_vendas_unicas(
+    df_periodo,
+    status_venda=status_venda_considerado,
+)
 vendas = len(df_vendas_periodo)
 vgv_total = df_vendas_periodo["VGV"].sum() if not df_vendas_periodo.empty else 0.0
 
@@ -384,7 +411,11 @@ else:
 
         analises_3m = conta_analises_base(status_3m)  # só EM ANÁLISE
         aprov_3m = conta_aprovacoes(status_3m)
-        df_vendas_3m = obter_vendas_unicas(df_3m)
+        # Usa o tipo de venda escolhido aqui também
+        df_vendas_3m = obter_vendas_unicas(
+            df_3m,
+            status_venda=status_venda_considerado,
+        )
         vendas_3m = len(df_vendas_3m)
         vgv_3m = df_vendas_3m["VGV"].sum() if not df_vendas_3m.empty else 0.0
 
@@ -520,7 +551,10 @@ else:
                     ].copy()
                     total_meta = aprovacoes_necessarias
                 else:  # Vendas
-                    df_temp = obter_vendas_unicas(df_periodo).copy()
+                    df_temp = obter_vendas_unicas(
+                        df_periodo,
+                        status_venda=status_venda_considerado,
+                    ).copy()
                     total_meta = meta_vendas
 
                 if df_temp.empty or total_meta == 0:
