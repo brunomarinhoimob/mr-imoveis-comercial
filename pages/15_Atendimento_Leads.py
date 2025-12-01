@@ -182,7 +182,6 @@ df["SLA_MINUTOS"] = np.where(
 )
 
 
-# Funções utilitárias
 def format_minutes(total_min):
     if pd.isna(total_min):
         return "-"
@@ -433,6 +432,57 @@ st.download_button(
     file_name="resumo_atendimento_por_corretor.csv",
     mime="text/csv",
 )
+
+# -------- NOVA TABELA – LEADS DO CORRETOR SELECIONADO --------
+if corretor_sel != "Todos":
+    st.markdown("### 📂 Leads do corretor selecionado no período")
+
+    df_corretor = df_cor.copy()  # já está filtrado pelo corretor no df_periodo
+    if df_corretor.empty:
+        st.info("Nenhum lead encontrado para o corretor selecionado nesse período.")
+    else:
+        cols_det = [
+            "NOME_LEAD",
+            "CORRETOR_EXIBICAO",
+            "DATA_CAPTURA_DT",
+            "DATA_COM_CORRETOR_DT",
+            "SLA_INTERACOES_MIN",
+            "DATA_ULT_INTERACAO_DT",
+        ]
+        cols_det = [c for c in cols_det if c in df_corretor.columns]
+
+        df_det = df_corretor[cols_det].copy()
+
+        if "DATA_CAPTURA_DT" in df_det.columns:
+            df_det["DATA_CAPTURA_DT"] = df_det["DATA_CAPTURA_DT"].dt.strftime(
+                "%d/%m/%Y %H:%M"
+            )
+        if "DATA_COM_CORRETOR_DT" in df_det.columns:
+            df_det["DATA_COM_CORRETOR_DT"] = df_det["DATA_COM_CORRETOR_DT"].dt.strftime(
+                "%d/%m/%Y %H:%M"
+            )
+        if "DATA_ULT_INTERACAO_DT" in df_det.columns:
+            df_det["DATA_ULT_INTERACAO_DT"] = df_det[
+                "DATA_ULT_INTERACAO_DT"
+            ].dt.strftime("%d/%m/%Y %H:%M")
+
+        if "SLA_INTERACOES_MIN" in df_det.columns:
+            df_det["SLA_INTERACOES_MIN"] = df_det["SLA_INTERACOES_MIN"].apply(
+                format_minutes
+            )
+
+        df_det = df_det.rename(
+            columns={
+                "NOME_LEAD": "Lead",
+                "CORRETOR_EXIBICAO": "Corretor",
+                "DATA_CAPTURA_DT": "Data captura",
+                "DATA_COM_CORRETOR_DT": "Data 1º contato",
+                "SLA_INTERACOES_MIN": "SLA entre contatos",
+                "DATA_ULT_INTERACAO_DT": "Data última interação",
+            }
+        )
+
+        st.dataframe(df_det, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
 # TABELAS DETALHADAS – ATENDIDOS X NÃO ATENDIDOS
