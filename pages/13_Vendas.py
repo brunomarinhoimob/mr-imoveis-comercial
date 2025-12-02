@@ -179,11 +179,8 @@ def conta_aprovacoes(status_serie: pd.Series) -> int:
 
 def obter_vendas_unicas(df_scope: pd.DataFrame, status_vendas=None) -> pd.DataFrame:
     """
-    Uma venda por cliente (último status dentro da lista status_vendas).
-    status_vendas: lista de status que contam como venda
-        - ["VENDA GERADA", "VENDA INFORMADA"]
-        - ["VENDA GERADA"]
-        - ["VENDA INFORMADA"]
+    Uma venda por cliente (último status dentro da lista status_vendas,
+    considerando apenas registros cujo STATUS_BASE está em status_vendas).
     """
     if df_scope.empty:
         return df_scope.copy()
@@ -191,11 +188,13 @@ def obter_vendas_unicas(df_scope: pd.DataFrame, status_vendas=None) -> pd.DataFr
     if status_vendas is None:
         status_vendas = ["VENDA GERADA", "VENDA INFORMADA"]
 
+    # Filtra somente linhas com status relevantes
     s = df_scope["STATUS_BASE"].fillna("").astype(str).str.upper()
     df_v = df_scope[s.isin(status_vendas)].copy()
     if df_v.empty:
         return df_v
 
+    # CHAVE CLIENTE
     df_v["CHAVE_CLIENTE"] = (
         df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
         + " | "
@@ -332,7 +331,29 @@ if df_periodo.empty:
 # ---------------------------------------------------------
 # AGREGAÇÃO PRINCIPAL – VENDAS E KPIs
 # ---------------------------------------------------------
-df_vendas = obter_vendas_unicas(df_periodo, status_vendas=status_vendas_considerados)
+
+# Regra especial para "Só VENDA INFORMADA":
+# - Considerar o ÚLTIMO status do cliente no período
+# - Só entra se esse último status for VENDA INFORMADA
+if opcao_tipo_venda == "Só VENDA INFORMADA":
+    df_tmp = df_periodo.copy()
+
+    df_tmp["CHAVE_CLIENTE"] = (
+        df_tmp["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        + " | "
+        + df_tmp["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+    )
+
+    df_tmp = df_tmp.sort_values("DIA")
+    df_clientes_ult = df_tmp.groupby("CHAVE_CLIENTE").tail(1)
+
+    df_vendas = df_clientes_ult[
+        df_clientes_ult["STATUS_BASE"].fillna("").astype(str).str.upper() == "VENDA INFORMADA"
+    ].copy()
+else:
+    # Demais opções mantêm a lógica já usada (última venda por cliente dentro dos status escolhidos)
+    df_vendas = obter_vendas_unicas(df_periodo, status_vendas=status_vendas_considerados)
+
 qtd_vendas = len(df_vendas)
 vgv_total = df_vendas["VGV"].sum() if not df_vendas.empty else 0.0
 ticket_medio = vgv_total / qtd_vendas if qtd_vendas > 0 else 0.0
@@ -386,10 +407,10 @@ vendas_totais = vendas_geradas + vendas_informadas
 # Corretores ativos e produtivos no período (considerando apenas tipos de venda escolhidos)
 if "CORRETOR" in df_periodo.columns:
     corretores_ativos = df_periodo["CORRETOR"].nunique()
-    df_vendas_raw = df_periodo[
-        df_periodo["STATUS_BASE"].isin(status_vendas_considerados)
-    ]
-    corretores_com_venda = df_vendas_raw["CORRETOR"].nunique()
+    if df_vendas.empty:
+        corretores_com_venda = 0
+    else:
+        corretores_com_venda = df_vendas["CORRETOR"].nunique()
 else:
     corretores_ativos = 0
     corretores_com_venda = 0
