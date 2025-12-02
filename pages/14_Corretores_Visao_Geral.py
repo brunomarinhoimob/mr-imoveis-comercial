@@ -20,7 +20,7 @@ except Exception:
 
 st.title("🧑‍💼 Corretores – Visão Geral (somente corretores ativos no CRM)")
 st.caption(
-    "KPIs por corretor (análises, aprovações, vendas, leads), tempo sem movimento e faltas "
+    "KPIs por corretor (análises, aprovações, vendas, leads), tempo sem movimento e dias sem ação "
     "considerando apenas corretores ativos no CRM."
 )
 
@@ -217,7 +217,7 @@ df_leads["ULT_ATIVIDADE_CRM"] = pd.to_datetime(
 )
 
 # ---------------------------------------------------------
-# FILTROS LATERAIS
+# FILTROS (PERÍODO E TIPO DE VENDA)
 # ---------------------------------------------------------
 st.sidebar.title("Filtros – Corretores")
 
@@ -249,7 +249,11 @@ tipo_venda = st.sidebar.radio(
     index=0,
 )
 
-# Corretores ativos no CRM (base para tudo)
+st.caption(
+    f"Período selecionado: **{data_ini.strftime('%d/%m/%Y')}** até **{data_fim.strftime('%d/%m/%Y')}**"
+)
+
+# Corretores ativos no CRM (base inicial)
 corretores_ativos_crm = (
     df_leads["CORRETOR_CRM"]
     .dropna()
@@ -260,15 +264,6 @@ corretores_ativos_crm = (
 )
 corretores_ativos = sorted(
     [c for c in corretores_ativos_crm if c not in ["SEM CORRETOR"]]
-)
-
-corretor_sel = st.sidebar.selectbox(
-    "Corretor (visão individual)",
-    options=["Todos"] + corretores_ativos,
-)
-
-st.caption(
-    f"Período selecionado: **{data_ini.strftime('%d/%m/%Y')}** até **{data_fim.strftime('%d/%m/%Y')}**"
 )
 
 # ---------------------------------------------------------
@@ -400,13 +395,13 @@ else:
 st.dataframe(df_leads_count, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# 4) MOVIMENTO E FALTAS POR CORRETOR
+# 4) MOVIMENTO E DIAS SEM AÇÃO POR CORRETOR
 # ---------------------------------------------------------
-st.subheader("4️⃣ Movimento e faltas por corretor")
+st.subheader("4️⃣ Movimento e dias sem ação por corretor")
 
 hoje = date.today()
 
-# --------- ÚLTIMO MOVIMENTO NA PLANILHA (SEM groupby.max) ---------
+# ---- Último movimento na planilha (sem groupby.max) ----
 tmp_plan = (
     df_planilha[df_planilha["CORRETOR"].isin(corretores_ativos)]
     .dropna(subset=["DIA"])
@@ -417,7 +412,7 @@ df_ult_plan = tmp_plan.drop_duplicates(subset=["CORRETOR"], keep="last")[
     ["CORRETOR", "DIA"]
 ].rename(columns={"DIA": "ULT_MOV_PLAN"})
 
-# --------- ÚLTIMO MOVIMENTO NO CRM (SEM groupby.max) ---------
+# ---- Último movimento no CRM (sem groupby.max) ----
 df_leads_val = df_leads[df_leads["CORRETOR_CRM"].isin(corretores_ativos)].copy()
 df_leads_val["ULT_ATIVIDADE_CRM"] = pd.to_datetime(
     df_leads_val["ULT_ATIVIDADE_CRM"], errors="coerce"
@@ -458,7 +453,7 @@ df_ult_mov["DIAS_SEM_MOV"] = df_ult_mov["ULTIMO_MOVIMENTO"].apply(
     lambda d: (hoje - d).days if pd.notna(d) else None
 )
 
-# --------- PRESENÇA / FALTAS POR DIA ---------
+# ---- Presença / dias sem ação por dia ----
 df_pres_plan = (
     df_plan_periodo[["CORRETOR", "DIA"]].dropna().drop_duplicates().copy()
 )
@@ -537,7 +532,18 @@ for col in ["VGV", "TICKET_MEDIO", "TAXA_APROV_ANALISE", "TAXA_VENDA_ANALISE", "
     if col in df_base.columns:
         df_base[col] = df_base[col].fillna(0).astype(float)
 
+# 🔥 FILTRO: descartar corretores com mais de 30 dias sem movimento
+df_base = df_base[
+    (df_base["DIAS_SEM_MOV"].isna()) | (df_base["DIAS_SEM_MOV"] <= 30)
+].reset_index(drop=True)
+
+# lista final para seleção e exibição
+corretores_final = sorted(df_base["CORRETOR"].unique().tolist())
+
+# renomeia FALTAS -> Dias sem ação para exibição
 df_exibe = df_base.copy()
+df_exibe = df_exibe.rename(columns={"FALTAS": "Dias sem ação"})
+
 df_exibe["VGV"] = df_exibe["VGV"].apply(format_currency)
 df_exibe["Ticket médio"] = df_exibe["TICKET_MEDIO"].apply(format_currency)
 df_exibe["Taxa aprov./análises (%)"] = df_exibe["TAXA_APROV_ANALISE"].apply(
@@ -572,7 +578,7 @@ colunas_ordem = [
     "Taxa aprov./análises (%)",
     "Taxa vendas/análises (%)",
     "Taxa vendas/aprovações (%)",
-    "FALTAS",
+    "Dias sem ação",
     "TOTAL_DIAS",
     "Presença (%)",
     "Último movimento",
@@ -590,6 +596,11 @@ st.dataframe(
 # ---------------------------------------------------------
 # 6) VISÃO INDIVIDUAL – CARDS POR CORRETOR
 # ---------------------------------------------------------
+corretor_sel = st.sidebar.selectbox(
+    "Corretor (visão individual)",
+    options=["Todos"] + corretores_final,
+)
+
 if corretor_sel != "Todos" and corretor_sel in df_base["CORRETOR"].values:
     st.markdown("---")
     st.subheader(f"6️⃣ Visão individual – {corretor_sel}")
@@ -640,12 +651,12 @@ if corretor_sel != "Todos" and corretor_sel in df_base["CORRETOR"].values:
         int(dias_sem) if pd.notna(dias_sem) else "-",
     )
     c13.metric(
-        "Faltas no período",
+        "Dias sem ação",
         int(linha.get("FALTAS", 0)),
     )
 
     st.info(
         "Movimento considera qualquer atividade na planilha (análises, vendas, etc.) "
         "e qualquer atividade no CRM (captura, primeiro contato ou última interação). "
-        "Se em um dia não houve nenhuma dessas ações, o dia conta como **falta**."
+        "Se em um dia não houve nenhuma dessas ações, o dia conta como **dia sem ação**."
     )
