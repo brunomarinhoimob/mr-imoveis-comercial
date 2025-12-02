@@ -277,8 +277,6 @@ st.caption(
 df_plan_periodo = df_planilha[
     (df_planilha["DIA"] >= data_ini) & (df_planilha["DIA"] <= data_fim)
 ].copy()
-
-# só corretores ativos no CRM
 df_plan_periodo = df_plan_periodo[df_plan_periodo["CORRETOR"].isin(corretores_ativos)]
 
 df_leads_periodo = df_leads[
@@ -336,7 +334,6 @@ if not df_vendas_ref.empty:
     elif tipo_venda == "Apenas GERADAS":
         mask_venda = df_vendas_ult["STATUS_BASE"].eq("VENDA GERADA")
     else:  # Apenas INFORMADAS
-        # Só último status INFORMADA. Se teve GERADA depois, já não está mais aqui.
         mask_venda = df_vendas_ult["STATUS_BASE"].eq("VENDA INFORMADA")
 
     df_vendas_final = df_vendas_ult[mask_venda].copy()
@@ -409,38 +406,41 @@ st.subheader("4️⃣ Movimento e faltas por corretor")
 
 hoje = date.today()
 
-# Último movimento na planilha
-df_ult_plan = (
+# --------- ÚLTIMO MOVIMENTO NA PLANILHA (SEM groupby.max) ---------
+tmp_plan = (
     df_planilha[df_planilha["CORRETOR"].isin(corretores_ativos)]
-    .groupby("CORRETOR", dropna=False)["DIA"]
-    .max()
-    .reset_index()
-    .rename(columns={"DIA": "ULT_MOV_PLAN"})
+    .dropna(subset=["DIA"])
+    .copy()
 )
+tmp_plan = tmp_plan.sort_values(["CORRETOR", "DIA"])
+df_ult_plan = tmp_plan.drop_duplicates(subset=["CORRETOR"], keep="last")[
+    ["CORRETOR", "DIA"]
+].rename(columns={"DIA": "ULT_MOV_PLAN"})
 
-# Último movimento no CRM (tratando só datetime)
+# --------- ÚLTIMO MOVIMENTO NO CRM (SEM groupby.max) ---------
 df_leads_val = df_leads[df_leads["CORRETOR_CRM"].isin(corretores_ativos)].copy()
 df_leads_val["ULT_ATIVIDADE_CRM"] = pd.to_datetime(
     df_leads_val["ULT_ATIVIDADE_CRM"], errors="coerce"
 )
 
 if df_leads_val["ULT_ATIVIDADE_CRM"].notna().any():
-    df_ult_crm = (
-        df_leads_val.dropna(subset=["ULT_ATIVIDADE_CRM"])
-        .groupby("CORRETOR_CRM", dropna=False)["ULT_ATIVIDADE_CRM"]
-        .max()
-        .reset_index()
-        .rename(
-            columns={
-                "CORRETOR_CRM": "CORRETOR",
-                "ULT_ATIVIDADE_CRM": "ULT_MOV_CRM",
-            }
-        )
+    tmp_crm = df_leads_val.dropna(subset=["ULT_ATIVIDADE_CRM"]).copy()
+    tmp_crm["DATA_ULT"] = tmp_crm["ULT_ATIVIDADE_CRM"].dt.date
+    tmp_crm = tmp_crm.sort_values(["CORRETOR_CRM", "DATA_ULT"])
+    df_ult_crm = tmp_crm.drop_duplicates(
+        subset=["CORRETOR_CRM"], keep="last"
+    )[
+        ["CORRETOR_CRM", "DATA_ULT"]
+    ].rename(
+        columns={
+            "CORRETOR_CRM": "CORRETOR",
+            "DATA_ULT": "ULT_MOV_CRM",
+        }
     )
-    df_ult_crm["ULT_MOV_CRM"] = df_ult_crm["ULT_MOV_CRM"].dt.date
 else:
     df_ult_crm = pd.DataFrame(columns=["CORRETOR", "ULT_MOV_CRM"])
 
+# Junta últimas datas
 df_ult_mov = pd.merge(df_ult_plan, df_ult_crm, on="CORRETOR", how="outer")
 
 def pick_max(row):
@@ -458,7 +458,7 @@ df_ult_mov["DIAS_SEM_MOV"] = df_ult_mov["ULTIMO_MOVIMENTO"].apply(
     lambda d: (hoje - d).days if pd.notna(d) else None
 )
 
-# Presenças por dia (planilha + CRM)
+# --------- PRESENÇA / FALTAS POR DIA ---------
 df_pres_plan = (
     df_plan_periodo[["CORRETOR", "DIA"]].dropna().drop_duplicates().copy()
 )
@@ -488,7 +488,6 @@ df_pres_total = pd.concat(
     ignore_index=True,
 ).drop_duplicates(subset=["CORRETOR", "DIA"])
 
-# grade completa de CORRETOR x DIA (apenas corretores ativos)
 dias_range = pd.date_range(data_ini, data_fim, freq="D").date
 idx = pd.MultiIndex.from_product(
     [corretores_ativos, dias_range], names=["CORRETOR", "DIA"]
