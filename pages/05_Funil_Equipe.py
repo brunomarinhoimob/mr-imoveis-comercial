@@ -8,70 +8,57 @@ from app_dashboard import carregar_dados_planilha
 
 
 # ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA
+# FUNÇÕES AUXILIARES GERAIS
 # ---------------------------------------------------------
-st.set_page_config(
-    page_title="Funil MR Imóveis – Equipe",
-    page_icon="🧩",
-    layout="wide",
-)
+def mes_ano_ptbr_para_date(texto: str):
+    """
+    Converte 'novembro 2025' -> date(2025, 11, 1).
+    Se não conseguir, retorna NaT.
+    """
+    if not isinstance(texto, str):
+        return pd.NaT
 
-# ---------------------------------------------------------
-# CARREGA BASE GERAL
-# ---------------------------------------------------------
-df_global = carregar_dados_planilha()
+    t = texto.strip().lower()
+    if not t:
+        return pd.NaT
 
-if df_global.empty:
-    st.error("Não foi possível carregar os dados da planilha.")
-    st.stop()
+    partes = t.split()
+    if len(partes) != 2:
+        return pd.NaT
 
-# Garante DIA como datetime
-df_global["DIA"] = pd.to_datetime(df_global["DIA"], errors="coerce")
+    mes_nome, ano_str = partes[0], partes[1]
 
-# Verifica coluna de equipe
-if "EQUIPE" not in df_global.columns:
-    st.error("Coluna 'EQUIPE' não encontrada na base.")
-    st.stop()
+    mapa_meses = {
+        "janeiro": 1,
+        "fevereiro": 2,
+        "março": 3,
+        "marco": 3,
+        "abril": 4,
+        "maio": 5,
+        "junho": 6,
+        "julho": 7,
+        "agosto": 8,
+        "setembro": 9,
+        "outubro": 10,
+        "novembro": 11,
+        "dezembro": 12,
+    }
 
-# Lista de equipes
-lista_equipes = sorted(df_global["EQUIPE"].dropna().astype(str).unique())
-if not lista_equipes:
-    st.error("Nenhuma equipe encontrada na base.")
-    st.stop()
+    mes = mapa_meses.get(mes_nome)
+    if mes is None:
+        return pd.NaT
 
-
-# ---------------------------------------------------------
-# SIDEBAR – ESCOLHA DA EQUIPE E PERÍODO
-# ---------------------------------------------------------
-st.sidebar.title("Filtros da visão por equipe")
-
-equipe_sel = st.sidebar.selectbox("Equipe", lista_equipes)
-
-# Filtra base pela equipe escolhida
-df = df_global[df_global["EQUIPE"] == equipe_sel].copy()
-
-if df.empty:
-    st.warning(f"Não há registros para a equipe **{equipe_sel}**.")
-    st.stop()
-
-# Cabeçalho com logo + título (depois de saber a equipe)
-col_logo, col_title = st.columns([1, 4])
-with col_logo:
     try:
-        st.image("logo_mr.png", width=160)
+        ano = int(ano_str)
     except Exception:
-        st.write("")
-with col_title:
-    st.title("🧩 Funil de Vendas – Visão por Equipe")
-    st.caption(
-        f"Equipe selecionada: **{equipe_sel}** • "
-        "Produtividade, funil de análises → aprovações → vendas e previsibilidade."
-    )
+        return pd.NaT
+
+    try:
+        return date(ano, mes, 1)
+    except Exception:
+        return pd.NaT
 
 
-# ---------------------------------------------------------
-# FUNÇÕES AUXILIARES
-# ---------------------------------------------------------
 def conta_analises_total(status: pd.Series) -> int:
     s = status.fillna("").astype(str).str.upper()
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
@@ -145,70 +132,112 @@ def format_currency(valor: float) -> str:
 
 
 # ---------------------------------------------------------
-# DATA_BASE (MÊS COMERCIAL) PARA ESSA EQUIPE
+# CONFIGURAÇÃO DA PÁGINA
 # ---------------------------------------------------------
-col_data_base_original = None
-for cand in [
-    "DATA_BASE",
-    "DATA BASE",
-    "DATA BASE MÊS",
-    "DATA BASE MES",
-    "MÊS COMERCIAL",
-    "MES COMERCIAL",
-]:
-    if cand in df.columns:
-        col_data_base_original = cand
-        break
-
-if col_data_base_original is not None:
-    serie_bruta = df[col_data_base_original]
-    dt_base = pd.to_datetime(serie_bruta, dayfirst=True, errors="coerce")
-    if dt_base.isna().all():
-        dt_base = pd.to_datetime(serie_bruta, errors="coerce")
-    if dt_base.isna().all():
-        df["DATA_BASE"] = pd.to_datetime(df["DIA"], errors="coerce")
-    else:
-        df["DATA_BASE"] = dt_base
-else:
-    df["DATA_BASE"] = pd.to_datetime(df["DIA"], errors="coerce")
-
-dias_validos = df["DIA"].dropna()
-bases_validas = df["DATA_BASE"].dropna()
-
-# limites de data para a equipe
-hoje = date.today()
-if dias_validos.empty:
-    data_min_mov = hoje - timedelta(days=30)
-    data_max_mov = hoje
-else:
-    data_min_mov = dias_validos.min().date()
-    data_max_mov = dias_validos.max().date()
-
-# permitir datas futuras (até 1 ano pra frente)
-max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
-
-
-# ---------------------------------------------------------
-# PERÍODO – DATA DE MOVIMENTAÇÃO + TIPO DE VENDA
-# ---------------------------------------------------------
-data_ini_default_mov = max(data_min_mov, (data_max_mov - timedelta(days=30)))
-periodo_mov = st.sidebar.date_input(
-    "Período (data de movimentação)",
-    value=(data_ini_default_mov, data_max_mov),
-    min_value=data_min_mov,
-    max_value=max_futuro,
+st.set_page_config(
+    page_title="Funil MR Imóveis – Equipe",
+    page_icon="🧩",
+    layout="wide",
 )
 
-if isinstance(periodo_mov, tuple):
-    data_ini_mov, data_fim_mov = periodo_mov
+# ---------------------------------------------------------
+# CARREGA BASE GERAL
+# ---------------------------------------------------------
+df_global = carregar_dados_planilha()
+
+if df_global.empty:
+    st.error("Não foi possível carregar os dados da planilha.")
+    st.stop()
+
+# Garante DIA como datetime
+df_global["DIA"] = pd.to_datetime(df_global["DIA"], errors="coerce")
+
+# DATA BASE da planilha (texto "novembro 2025") -> date(ano, mes, 1)
+if "DATA BASE" in df_global.columns:
+    base_raw = df_global["DATA BASE"].astype(str).str.strip()
+    df_global["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
+    df_global["DATA_BASE_LABEL"] = df_global["DATA_BASE"].apply(
+        lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
+    )
 else:
-    data_ini_mov = periodo_mov
-    data_fim_mov = periodo_mov
+    # fallback: usa o próprio DIA como base (não é o ideal, mas não quebra)
+    df_global["DATA_BASE"] = df_global["DIA"]
+    df_global["DATA_BASE_LABEL"] = df_global["DIA"].apply(
+        lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
+    )
 
-if data_ini_mov > data_fim_mov:
-    data_ini_mov, data_fim_mov = data_fim_mov, data_ini_mov
+# Verifica coluna de equipe
+if "EQUIPE" not in df_global.columns:
+    st.error("Coluna 'EQUIPE' não encontrada na base.")
+    st.stop()
 
-# Filtro de tipo de venda (mesma lógica das outras páginas)
+# Lista de equipes
+lista_equipes = sorted(df_global["EQUIPE"].dropna().astype(str).unique())
+if not lista_equipes:
+    st.error("Nenhuma equipe encontrada na base.")
+    st.stop()
+
+
+# ---------------------------------------------------------
+# SIDEBAR – ESCOLHA DA EQUIPE E DATA BASE
+# ---------------------------------------------------------
+st.sidebar.title("Filtros da visão por equipe")
+
+equipe_sel = st.sidebar.selectbox("Equipe", lista_equipes)
+
+# Filtra base pela equipe escolhida
+df = df_global[df_global["EQUIPE"] == equipe_sel].copy()
+
+if df.empty:
+    st.warning(f"Não há registros para a equipe **{equipe_sel}**.")
+    st.stop()
+
+# Cabeçalho com logo + título (depois de saber a equipe)
+col_logo, col_title = st.columns([1, 4])
+with col_logo:
+    try:
+        st.image("logo_mr.png", width=160)
+    except Exception:
+        st.write("")
+with col_title:
+    st.title("🧩 Funil de Vendas – Visão por Equipe")
+    st.caption(
+        f"Equipe selecionada: **{equipe_sel}** • "
+        "Produtividade, funil de análises → aprovações → vendas e previsibilidade."
+    )
+
+# opções de DATA BASE só da equipe selecionada
+bases_validas = df["DATA_BASE"].dropna()
+if bases_validas.empty:
+    st.error("Essa equipe não possui DATA BASE válida na planilha.")
+    st.stop()
+
+df_bases = (
+    df[["DATA_BASE", "DATA_BASE_LABEL"]]
+    .dropna(subset=["DATA_BASE"])
+    .drop_duplicates(subset=["DATA_BASE_LABEL"])
+    .sort_values("DATA_BASE")
+)
+
+opcoes_bases = df_bases["DATA_BASE_LABEL"].tolist()
+default_bases = opcoes_bases[-2:] if len(opcoes_bases) >= 2 else opcoes_bases
+
+bases_selecionadas = st.sidebar.multiselect(
+    "Período por DATA BASE (mês comercial)",
+    options=opcoes_bases,
+    default=default_bases,
+)
+
+if not bases_selecionadas:
+    bases_selecionadas = opcoes_bases
+
+df_periodo = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
+
+if df_periodo.empty:
+    st.warning("Nenhum registro para essa equipe nas DATA BASE selecionadas.")
+    st.stop()
+
+# Tipo de venda (mesma lógica das outras páginas)
 opcao_venda = st.sidebar.radio(
     "Tipo de venda para o funil",
     ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
@@ -222,22 +251,32 @@ else:
     status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
     desc_venda = "VENDA GERADA + VENDA INFORMADA"
 
-mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
-df_periodo = df[mask_mov].copy()
+# intervalo de DIAS (mínimo/máximo DIA dentro das bases selecionadas)
+dias_sel = df_periodo["DIA"].dropna()
+if not dias_sel.empty:
+    data_ini_mov = dias_sel.min().date()
+    data_fim_mov = dias_sel.max().date()
+else:
+    hoje = date.today()
+    data_ini_mov = hoje
+    data_fim_mov = hoje
+
+# texto da base
+if len(bases_selecionadas) == 1:
+    base_str = bases_selecionadas[0]
+else:
+    base_str = f"{bases_selecionadas[0]} até {bases_selecionadas[-1]}"
 
 st.caption(
-    f"Equipe: **{equipe_sel}** • Período (movimentação): "
-    f"**{data_ini_mov.strftime('%d/%m/%Y')}** até **{data_fim_mov.strftime('%d/%m/%Y')}** • "
+    f"Equipe: **{equipe_sel}** • "
+    f"DATA BASE: **{base_str}** • "
+    f"Dias: **{data_ini_mov.strftime('%d/%m/%Y')}** até **{data_fim_mov.strftime('%d/%m/%Y')}** • "
     f"Vendas consideradas no funil: **{desc_venda}**."
 )
 
-if df_periodo.empty:
-    st.warning("Nenhum registro para essa equipe no período selecionado.")
-    st.stop()
-
 
 # ---------------------------------------------------------
-# FUNIL DA EQUIPE – PERÍODO
+# FUNIL DA EQUIPE – PERÍODO (usa dias derivados da DATA BASE)
 # ---------------------------------------------------------
 status_periodo = df_periodo["STATUS_BASE"].fillna("").astype(str).str.upper()
 
@@ -317,7 +356,7 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
             how="left",
         )
 
-        # filtra período + equipe
+        # filtra período + equipe (usando os dias derivados da DATA BASE)
         mask_periodo_leads = (
             (df_leads_merge["data_captura_date"] >= data_ini_mov)
             & (df_leads_merge["data_captura_date"] <= data_fim_mov)
@@ -637,8 +676,7 @@ else:
                     df_line["Real"] = cont_por_dia.values
                     df_line["Real"] = df_line["Real"].cumsum()
 
-                    # corta a linha Real depois do dia de hoje
-                    hoje_date = hoje
+                    hoje_date = date.today()
                     limite_real = min(hoje_date, data_fim_mov)
                     mask_future = df_line.index.date > limite_real
                     df_line.loc[mask_future, "Real"] = np.nan
