@@ -238,19 +238,15 @@ def carregar_dados_planilha() -> pd.DataFrame:
 
     if col_data_base:
         base_raw = df[col_data_base].astype(str).str.strip()
-        # Label exatamente como na planilha (só dando uma organizada)
         df["DATA_BASE_LABEL"] = base_raw.str.lower().str.title()
-        # Converte 'novembro 2025' -> 2025-11-01 p/ ordenar e filtrar internamente
         df["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
 
-        # Se não conseguir converter nenhum, cai pro DIA
         if df["DATA_BASE"].dropna().empty:
             df["DATA_BASE"] = df["DIA"]
             df["DATA_BASE_LABEL"] = df["DIA"].apply(
                 lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
             )
     else:
-        # Sem coluna de data base: usa DIA como base
         df["DATA_BASE"] = df["DIA"]
         df["DATA_BASE_LABEL"] = df["DIA"].apply(
             lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
@@ -461,7 +457,6 @@ if modo_periodo.startswith("Por DIA"):
 else:
     tipo_periodo = "DATA_BASE"
 
-    # monta lista de meses base ordenados
     bases_df = (
         df[["DATA_BASE", "DATA_BASE_LABEL"]]
         .dropna(subset=["DATA_BASE"])
@@ -524,13 +519,11 @@ if tipo_periodo == "DIA":
     ].copy()
 else:
     df_filtrado = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
-    # define intervalo real de dias daquele(s) mês(es) comercial(is)
     dias_sel = df_filtrado["DIA"].dropna()
     if not dias_sel.empty:
         data_ini = dias_sel.min()
         data_fim = dias_sel.max()
     else:
-        # fallback total
         data_ini = dias_validos.min()
         data_fim = dias_validos.max()
 
@@ -562,6 +555,16 @@ st.caption(
 )
 
 # ---------------------------------------------------------
+# SELETOR DE VENDAS (GERADAS + INFORMADAS vs SOMENTE GERADAS)
+# ---------------------------------------------------------
+filtro_vendas = st.radio(
+    "Tipo de vendas consideradas nos indicadores:",
+    ["GERADAS + INFORMADAS", "Somente GERADAS"],
+    index=0,
+    horizontal=True,
+)
+
+# ---------------------------------------------------------
 # CÁLCULOS PRINCIPAIS (PLANILHA)
 # ---------------------------------------------------------
 em_analise = (df_filtrado["STATUS_BASE"] == "EM ANÁLISE").sum()
@@ -571,6 +574,7 @@ reprovacoes = (df_filtrado["STATUS_BASE"] == "REPROVADO").sum()
 
 analises_total = em_analise + reanalise
 
+# Base de vendas: GERADA ou INFORMADA (todas as ocorrências)
 df_vendas_ref = df_filtrado[
     df_filtrado["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])
 ].copy()
@@ -583,14 +587,30 @@ if not df_vendas_ref.empty:
     )
 
     df_vendas_ref = df_vendas_ref.sort_values("DIA")
-    df_vendas_ult = df_vendas_ref.groupby("CHAVE_CLIENTE").tail(1)
+    # última ocorrência de cada cliente
+    df_vendas_ult_base = df_vendas_ref.groupby("CHAVE_CLIENTE").tail(1)
 
-    venda_gerada = (df_vendas_ult["STATUS_BASE"] == "VENDA GERADA").sum()
-    venda_informada = (df_vendas_ult["STATUS_BASE"] == "VENDA INFORMADA").sum()
-    vendas_total = int(venda_gerada + venda_informada)
+    # aplica filtro do botão
+    if filtro_vendas == "Somente GERADAS":
+        df_vendas_ult = df_vendas_ult_base[
+            df_vendas_ult_base["STATUS_BASE"] == "VENDA GERADA"
+        ].copy()
+    else:
+        df_vendas_ult = df_vendas_ult_base.copy()
 
-    vgv_total = df_vendas_ult["VGV"].sum()
-    maior_vgv = df_vendas_ult["VGV"].max() if vendas_total > 0 else 0
+    if not df_vendas_ult.empty:
+        venda_gerada = (df_vendas_ult["STATUS_BASE"] == "VENDA GERADA").sum()
+        venda_informada = (df_vendas_ult["STATUS_BASE"] == "VENDA INFORMADA").sum()
+        vendas_total = int(venda_gerada + venda_informada)
+
+        vgv_total = df_vendas_ult["VGV"].sum()
+        maior_vgv = df_vendas_ult["VGV"].max() if vendas_total > 0 else 0
+    else:
+        venda_gerada = 0
+        venda_informada = 0
+        vendas_total = 0
+        vgv_total = 0
+        maior_vgv = 0
 else:
     venda_gerada = 0
     venda_informada = 0
