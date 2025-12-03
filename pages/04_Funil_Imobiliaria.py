@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import date
 
-from app_dashboard import carregar_dados_planilha
+from app_dashboard import carregar_dados_planilha, mes_ano_ptbr_para_date
 
 
 # ---------------------------------------------------------
@@ -121,16 +121,24 @@ if df.empty:
     st.error("Não foi possível carregar os dados da planilha.")
     st.stop()
 
-# DIA e DATA_BASE em datetime, DATA_BASE_LABEL já vem do app_dashboard
+# DIA em datetime
 df["DIA"] = pd.to_datetime(df.get("DIA"), errors="coerce")
 
-if "DATA_BASE" in df.columns:
-    df["DATA_BASE"] = pd.to_datetime(df["DATA_BASE"], errors="coerce")
+# 🔴 FORÇA O USO DA COLUNA "DATA BASE" DA PLANILHA
+if "DATA BASE" in df.columns:
+    base_raw = df["DATA BASE"].astype(str).str.strip()
+    # Converte textos tipo "novembro 2025" em date(2025, 11, 1)
+    df["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
+    # Label para o seletor: mm/AAAA (11/2025, 12/2025, ...)
+    df["DATA_BASE_LABEL"] = df["DATA_BASE"].apply(
+        lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
+    )
 else:
+    # Fallback: usa DIA mesmo (não é o ideal, mas garante que funciona)
     df["DATA_BASE"] = df["DIA"]
-
-if "DATA_BASE_LABEL" not in df.columns:
-    df["DATA_BASE_LABEL"] = df["DATA_BASE"].dt.strftime("%m/%Y")
+    df["DATA_BASE_LABEL"] = df["DIA"].apply(
+        lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
+    )
 
 
 # ---------------------------------------------------------
@@ -185,7 +193,7 @@ if df_periodo.empty:
 
 # ---------------------------------------------------------
 # DEFININDO O INTERVALO DE DIAS A PARTIR DA DATA BASE
-# (usa exatamente a mesma lógica do app principal)
+# (mínimo e máximo da coluna DIA dentro das bases selecionadas)
 # ---------------------------------------------------------
 dias_sel = df_periodo["DIA"].dropna()
 if not dias_sel.empty:
