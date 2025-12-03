@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import date
 
-from app_dashboard import carregar_dados_planilha, mes_ano_ptbr_para_date
+from app_dashboard import carregar_dados_planilha
 
 
 # ---------------------------------------------------------
@@ -33,6 +33,55 @@ with col_title:
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES
 # ---------------------------------------------------------
+def mes_ano_ptbr_para_date(texto: str):
+    """
+    Converte 'novembro 2025' -> date(2025, 11, 1).
+    Se não conseguir, retorna NaT.
+    """
+    if not isinstance(texto, str):
+        return pd.NaT
+
+    t = texto.strip().lower()
+    if not t:
+        return pd.NaT
+
+    partes = t.split()
+    if len(partes) != 2:
+        return pd.NaT
+
+    mes_nome, ano_str = partes[0], partes[1]
+
+    mapa_meses = {
+        "janeiro": 1,
+        "fevereiro": 2,
+        "março": 3,
+        "marco": 3,
+        "abril": 4,
+        "maio": 5,
+        "junho": 6,
+        "julho": 7,
+        "agosto": 8,
+        "setembro": 9,
+        "outubro": 10,
+        "novembro": 11,
+        "dezembro": 12,
+    }
+
+    mes = mapa_meses.get(mes_nome)
+    if mes is None:
+        return pd.NaT
+
+    try:
+        ano = int(ano_str)
+    except Exception:
+        return pd.NaT
+
+    try:
+        return date(ano, mes, 1)
+    except Exception:
+        return pd.NaT
+
+
 def conta_analises_total(status: pd.Series) -> int:
     s = status.fillna("").astype(str).str.upper()
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
