@@ -103,7 +103,6 @@ st.markdown(
         background: var(--mr-bg-card);
     }
 
-    /* tentativas de estilizar cabeçalho/linhas (pode variar por versão) */
     .stDataFrame table thead tr th {
         background-color: #020617 !important;
         color: #e5e7eb !important;
@@ -122,7 +121,6 @@ st.markdown(
         background: #111827 !important;
     }
 
-    /* hover de tabelas HTML simples (st.table / pandas styler) */
     .dataframe tbody tr:hover {
         background: #111827 !important;
     }
@@ -200,6 +198,22 @@ def carregar_dados_planilha() -> pd.DataFrame:
         df["DIA"] = limpar_para_data(df["DIA"])
     else:
         df["DIA"] = pd.NaT
+
+    # DATA BASE (MÊS COMERCIAL)
+    possiveis_cols_base = [
+        "DATA BASE",
+        "DATA_BASE",
+        "DT BASE",
+        "DATA REF",
+        "DATA REFERÊNCIA",
+        "DATA REFERENCIA",
+    ]
+    col_data_base = next((c for c in possiveis_cols_base if c in df.columns), None)
+    if col_data_base:
+        df["DATA_BASE"] = limpar_para_data(df[col_data_base])
+    else:
+        # fallback: usa DIA como base se não existir coluna específica
+        df["DATA_BASE"] = df["DIA"]
 
     # EQUIPE / CORRETOR
     for col in ["EQUIPE", "CORRETOR"]:
@@ -384,19 +398,45 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
 # ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
 
-dias_validos = df["DIA"].dropna()
-data_min = dias_validos.min()
-data_max = dias_validos.max()
-
-# padrão: últimos 30 dias (ou menos se não tiver tudo isso)
-data_ini_default = max(data_min, data_max - timedelta(days=30))
-
-periodo = st.sidebar.date_input(
-    "Período",
-    value=(data_ini_default, data_max),
-    min_value=data_min,
-    max_value=data_max,
+# Qual coluna de período vamos usar: DIA ou DATA_BASE
+modo_periodo = st.sidebar.radio(
+    "Modo de filtro do período",
+    ["Por DIA (data do registro)", "Por DATA BASE (mês comercial)"],
+    index=0,
 )
+
+dias_validos = df["DIA"].dropna()
+bases_validas = df["DATA_BASE"].dropna()
+
+# Segurança caso venha tudo vazio (evita erro)
+if dias_validos.empty and bases_validas.empty:
+    st.error("Sem datas válidas na planilha para filtrar.")
+    st.stop()
+
+if modo_periodo.startswith("Por DIA"):
+    data_min = dias_validos.min()
+    data_max = dias_validos.max()
+    data_ini_default = max(data_min, data_max - timedelta(days=30))
+
+    periodo = st.sidebar.date_input(
+        "Período por DIA",
+        value=(data_ini_default, data_max),
+        min_value=data_min,
+        max_value=data_max,
+    )
+    filtro_coluna_data = "DIA"
+else:
+    data_min = bases_validas.min()
+    data_max = bases_validas.max()
+    data_ini_default = max(data_min, data_max - timedelta(days=30))
+
+    periodo = st.sidebar.date_input(
+        "Período por DATA BASE (mês comercial)",
+        value=(data_ini_default, data_max),
+        min_value=data_min,
+        max_value=data_max,
+    )
+    filtro_coluna_data = "DATA_BASE"
 
 data_ini, data_fim = periodo
 
@@ -432,11 +472,11 @@ if "df_leads" not in st.session_state:
     st.session_state["df_leads"] = df_leads
 
 # ---------------------------------------------------------
-# FILTRO PRINCIPAL NA PLANILHA
+# FILTRO PRINCIPAL NA PLANILHA (DIA ou DATA_BASE)
 # ---------------------------------------------------------
 df_filtrado = df[
-    (df["DIA"] >= data_ini) &
-    (df["DIA"] <= data_fim)
+    (df[filtro_coluna_data] >= data_ini) &
+    (df[filtro_coluna_data] <= data_fim)
 ].copy()
 
 if equipe_sel != "Todas":
@@ -451,8 +491,10 @@ registros_filtrados = len(df_filtrado)
 # TÍTULO
 # ---------------------------------------------------------
 st.title("📊 Dashboard Imobiliária – MR Imóveis")
+
+label_periodo = "Período (DIA)" if filtro_coluna_data == "DIA" else "Período (DATA BASE)"
 st.caption(
-    f"Período: {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')} • "
+    f"{label_periodo}: {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')} • "
     f"Registros filtrados: {registros_filtrados}"
 )
 
@@ -529,7 +571,7 @@ st.subheader("📈 Resumo de Leads (Supremo CRM)")
 df_leads_use = df_leads.copy()
 
 if not df_leads_use.empty and "data_captura_date" in df_leads_use.columns:
-    # Filtro por período
+    # Filtro por período (usa o mesmo intervalo escolhido, independente se foi DIA ou DATA_BASE)
     df_leads_use = df_leads_use.dropna(subset=["data_captura_date"])
     df_leads_use = df_leads_use[
         (df_leads_use["data_captura_date"] >= data_ini)
