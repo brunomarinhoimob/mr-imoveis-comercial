@@ -119,35 +119,16 @@ if df.empty:
     st.error("Não foi possível carregar os dados da planilha.")
     st.stop()
 
+# DIA e DATA_BASE em datetime, DATA_BASE_LABEL já vem do app_dashboard
 df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
 
-# ---------------------------------------------------------
-# DATA_BASE (MÊS COMERCIAL)
-# ---------------------------------------------------------
-col_data_base_original = None
-for cand in [
-    "DATA_BASE",
-    "DATA BASE",
-    "DATA BASE MÊS",
-    "DATA BASE MES",
-    "MÊS COMERCIAL",
-    "MES COMERCIAL",
-]:
-    if cand in df.columns:
-        col_data_base_original = cand
-        break
-
-if col_data_base_original is not None:
-    serie_bruta = df[col_data_base_original]
-    dt_base = pd.to_datetime(serie_bruta, dayfirst=True, errors="coerce")
-    if dt_base.isna().all():
-        dt_base = pd.to_datetime(serie_bruta, errors="coerce")
-    if dt_base.isna().all():
-        df["DATA_BASE"] = pd.to_datetime(df["DIA"], errors="coerce")
-    else:
-        df["DATA_BASE"] = dt_base
+if "DATA_BASE" in df.columns:
+    df["DATA_BASE"] = pd.to_datetime(df["DATA_BASE"], errors="coerce")
 else:
-    df["DATA_BASE"] = pd.to_datetime(df["DIA"], errors="coerce")
+    df["DATA_BASE"] = df["DIA"]
+
+if "DATA_BASE_LABEL" not in df.columns:
+    df["DATA_BASE_LABEL"] = df["DATA_BASE"].dt.strftime("%m/%Y")
 
 dias_validos = df["DIA"].dropna()
 bases_validas = df["DATA_BASE"].dropna()
@@ -165,26 +146,81 @@ else:
 max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
 
 # ---------------------------------------------------------
-# SIDEBAR – PERÍODO (DATA DE MOVIMENTAÇÃO) + TIPO DE VENDA
+# SIDEBAR – PERÍODO (DIA x DATA BASE) + TIPO DE VENDA
 # ---------------------------------------------------------
 st.sidebar.title("Filtros da visão imobiliária")
 
-data_ini_default_mov = max(data_min_mov, (data_max_mov - timedelta(days=30)))
-periodo_mov = st.sidebar.date_input(
-    "Período (data de movimentação)",
-    value=(data_ini_default_mov, data_max_mov),
-    min_value=data_min_mov,
-    max_value=max_futuro,
+modo_periodo = st.sidebar.radio(
+    "Modo de filtro do período",
+    ["Por DIA (data de movimentação)", "Por DATA BASE (mês comercial)"],
+    index=0,
 )
 
-if isinstance(periodo_mov, tuple):
-    data_ini_mov, data_fim_mov = periodo_mov
-else:
-    data_ini_mov = periodo_mov
-    data_fim_mov = periodo_mov
+tipo_periodo = "DIA"
+bases_selecionadas = []
+data_ini_mov = None
+data_fim_mov = None
 
-if data_ini_mov > data_fim_mov:
-    data_ini_mov, data_fim_mov = data_fim_mov, data_ini_mov
+if modo_periodo.startswith("Por DIA"):
+    tipo_periodo = "DIA"
+
+    data_ini_default_mov = max(data_min_mov, (data_max_mov - timedelta(days=30)))
+    periodo_mov = st.sidebar.date_input(
+        "Período (data de movimentação)",
+        value=(data_ini_default_mov, data_max_mov),
+        min_value=data_min_mov,
+        max_value=max_futuro,
+    )
+
+    if isinstance(periodo_mov, tuple):
+        data_ini_mov, data_fim_mov = periodo_mov
+    else:
+        data_ini_mov = periodo_mov
+        data_fim_mov = periodo_mov
+
+    if data_ini_mov > data_fim_mov:
+        data_ini_mov, data_fim_mov = data_fim_mov, data_ini_mov
+
+    # Filtra por DIA (movimentação)
+    mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
+    df_periodo = df[mask_mov].copy()
+
+else:
+    tipo_periodo = "DATA_BASE"
+
+    bases_df = (
+        df[["DATA_BASE", "DATA_BASE_LABEL"]]
+        .dropna(subset=["DATA_BASE"])
+        .drop_duplicates()
+        .sort_values("DATA_BASE")
+    )
+    opcoes = bases_df["DATA_BASE_LABEL"].tolist()
+
+    if not opcoes:
+        st.error("Sem datas base válidas na planilha para filtrar.")
+        st.stop()
+
+    default_labels = opcoes[-2:] if len(opcoes) >= 2 else opcoes
+
+    bases_selecionadas = st.sidebar.multiselect(
+        "Período por DATA BASE (mês comercial)",
+        options=opcoes,
+        default=default_labels,
+    )
+
+    if not bases_selecionadas:
+        bases_selecionadas = opcoes
+
+    df_periodo = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
+
+    # Define intervalo real de movimentação (DIA) dentro dos meses selecionados
+    dias_sel = df_periodo["DIA"].dropna()
+    if not dias_sel.empty:
+        data_ini_mov = dias_sel.min().date()
+        data_fim_mov = dias_sel.max().date()
+    else:
+        data_ini_mov = data_min_mov
+        data_fim_mov = data_max_mov
 
 # Filtro de tipo de venda (igual às páginas de ranking)
 opcao_venda = st.sidebar.radio(
@@ -200,12 +236,19 @@ else:
     status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
     desc_venda = "VENDA GERADA + VENDA INFORMADA"
 
-mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
-df_periodo = df[mask_mov].copy()
+# Caption do período
+if tipo_periodo == "DIA":
+    label_extra = ""
+else:
+    if len(bases_selecionadas) == 1:
+        base_str = bases_selecionadas[0]
+    else:
+        base_str = f"{bases_selecionadas[0]} até {bases_selecionadas[-1]}"
+    label_extra = f" • DATA BASE: {base_str}"
 
 st.caption(
     f"Período (movimentação): **{data_ini_mov.strftime('%d/%m/%Y')}** até "
-    f"**{data_fim_mov.strftime('%d/%m/%Y')}** • "
+    f"**{data_fim_mov.strftime('%d/%m/%Y')}**{label_extra} • "
     f"Vendas consideradas no funil: **{desc_venda}**."
 )
 
