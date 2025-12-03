@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import date, timedelta
+from datetime import date
 
 from app_dashboard import carregar_dados_planilha
 
@@ -26,7 +26,7 @@ with col_title:
     st.title("🔻 Funil de Vendas – Visão Imobiliária")
     st.caption(
         "Visão consolidada da MR Imóveis: produtividade da equipe, funil de análises → "
-        "aprovações → vendas e previsibilidade a partir do funil do período selecionado."
+        "aprovações → vendas e previsibilidade a partir do funil do período selecionado pela DATA BASE."
     )
 
 
@@ -132,48 +132,12 @@ else:
 if "DATA_BASE_LABEL" not in df.columns:
     df["DATA_BASE_LABEL"] = df["DATA_BASE"].dt.strftime("%m/%Y")
 
-dias_validos = df["DIA"].dropna()
-
-# Limites de datas de movimentação
-hoje = date.today()
-if dias_validos.empty:
-    data_min_mov = hoje - timedelta(days=30)
-    data_max_mov = hoje
-else:
-    data_min_mov = dias_validos.min().date()
-    data_max_mov = dias_validos.max().date()
-
-# Permitimos selecionar datas futuras até 1 ano à frente
-max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
-
-
 # ---------------------------------------------------------
-# SIDEBAR – DOIS SELETORES (DIA + DATA BASE)
+# SIDEBAR – APENAS SELETOR DE DATA BASE + TIPO DE VENDA
 # ---------------------------------------------------------
 st.sidebar.title("Filtros da visão imobiliária")
 
-# 1) Período por DIA (data de movimentação)
-data_ini_default_mov = max(data_min_mov, (data_max_mov - timedelta(days=30)))
-periodo_mov = st.sidebar.date_input(
-    "Período (data de movimentação)",
-    value=(data_ini_default_mov, data_max_mov),
-    min_value=data_min_mov,
-    max_value=max_futuro,
-)
-
-if isinstance(periodo_mov, tuple):
-    data_ini_mov, data_fim_mov = periodo_mov
-else:
-    data_ini_mov = periodo_mov
-    data_fim_mov = periodo_mov
-
-if data_ini_mov > data_fim_mov:
-    data_ini_mov, data_fim_mov = data_fim_mov, data_ini_mov
-
-mask_dia = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
-df_periodo = df[mask_dia].copy()
-
-# 2) Período por DATA BASE (mês comercial) – igual app principal, sem repetir mês
+# DATA BASE (mês comercial) – igual app principal, sem repetir mês
 bases_df = (
     df[["DATA_BASE", "DATA_BASE_LABEL"]]
     .dropna(subset=["DATA_BASE"])
@@ -198,9 +162,9 @@ bases_selecionadas = st.sidebar.multiselect(
 if not bases_selecionadas:
     bases_selecionadas = opcoes_bases
 
-df_periodo = df_periodo[df_periodo["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
+df_periodo = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
 
-# 3) Tipo de venda
+# Tipo de venda
 opcao_venda = st.sidebar.radio(
     "Tipo de venda para o funil",
     ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
@@ -214,21 +178,34 @@ else:
     status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
     desc_venda = "VENDA GERADA + VENDA INFORMADA"
 
-# Caption do período (DIA + DATA BASE)
+# ---------------------------------------------------------
+# DEFININDO O INTERVALO DE DIAS A PARTIR DA DATA BASE
+# ---------------------------------------------------------
+dias_sel = df_periodo["DIA"].dropna()
+
+if not dias_sel.empty:
+    data_ini_mov = dias_sel.min().date()
+    data_fim_mov = dias_sel.max().date()
+else:
+    # fallback: usa hoje se não tiver DIA na base filtrada
+    hoje = date.today()
+    data_ini_mov = hoje
+    data_fim_mov = hoje
+
+# Texto da data base
 if len(bases_selecionadas) == 1:
     base_str = bases_selecionadas[0]
 else:
     base_str = f"{bases_selecionadas[0]} até {bases_selecionadas[-1]}"
 
 st.caption(
-    f"Período (movimentação): **{data_ini_mov.strftime('%d/%m/%Y')}** até "
-    f"**{data_fim_mov.strftime('%d/%m/%Y')}** • "
     f"DATA BASE: **{base_str}** • "
+    f"Dias: **{data_ini_mov.strftime('%d/%m/%Y')}** até **{data_fim_mov.strftime('%d/%m/%Y')}** • "
     f"Vendas consideradas no funil: **{desc_venda}**."
 )
 
 if df_periodo.empty:
-    st.warning("Nenhum registro encontrado para o período selecionado.")
+    st.warning("Nenhum registro encontrado para o período selecionado pela DATA BASE.")
     st.stop()
 
 
@@ -290,7 +267,7 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
             total_leads_periodo / analises_em if analises_em > 0 else None
         )
 
-# BLOCO PRINCIPAL DO FUNIL – MESMO VISUAL DO PRIMEIRO PRINT
+# BLOCO PRINCIPAL DO FUNIL – KPIs
 lc1, lc2, lc3 = st.columns(3)
 with lc1:
     st.metric(
@@ -347,7 +324,7 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------
-# PRODUTIVIDADE – EQUIPE ATIVA (A MESMA DO PRIMEIRO PRINT)
+# PRODUTIVIDADE – EQUIPE ATIVA
 # ---------------------------------------------------------
 st.markdown("## 👥 Produtividade da equipe – período selecionado")
 
@@ -387,7 +364,7 @@ else:
         )
 
     st.caption(
-        f"Período considerado (data de movimentação): "
+        f"Período considerado (DIA dentro da DATA BASE selecionada): "
         f"{data_ini_mov.strftime('%d/%m/%Y')} até {data_fim_mov.strftime('%d/%m/%Y')}."
     )
 
@@ -399,12 +376,10 @@ st.markdown("---")
 # ---------------------------------------------------------
 st.markdown("## 🎯 Planejamento com base no funil do período (DATA BASE selecionada)")
 
-# Usa o próprio funil filtrado (df_periodo) para tirar as proporções
 if vendas > 0:
     analises_por_venda = analises_em / vendas if analises_em > 0 else 0.0
     aprovacoes_por_venda = aprovacoes / vendas if aprovacoes > 0 else 0.0
 
-    # Meta de vendas: padrão = vendas atuais do período
     meta_vendas = st.number_input(
         "Meta de vendas (imobiliária) para o próximo período",
         min_value=0,
@@ -434,11 +409,11 @@ if vendas > 0:
             )
 
     st.caption(
-        "Cálculos feitos com base no funil filtrado por DIA + DATA BASE acima. "
-        "Se você alterar o período ou a DATA BASE, as quantidades necessárias se recalculam automaticamente."
+        "Cálculos feitos com base no funil filtrado pela DATA BASE acima. "
+        "Quando você alterar a DATA BASE, os dias considerados e as quantidades necessárias se recalculam automaticamente."
     )
 else:
     st.info(
         "Ainda não há vendas no período selecionado para projetar a quantidade de análises e aprovações. "
-        "Ajuste o filtro de DATA BASE ou de movimentação para um período com vendas."
+        "Ajuste o filtro de DATA BASE para um período com vendas."
     )
