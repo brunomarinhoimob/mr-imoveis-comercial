@@ -161,7 +161,7 @@ modo_periodo = st.sidebar.radio(
 )
 
 tipo_periodo = "DIA"
-bases_selecionadas = []
+bases_selecionadas: list[str] = []
 data_ini_mov = None
 data_fim_mov = None
 
@@ -193,17 +193,16 @@ if modo_periodo.startswith("Por DIA"):
     df_periodo = df[mask_mov].copy()
 
 # ------------------------------
-# MODO POR DATA BASE
+# MODO POR DATA BASE (MESMA LÓGICA DO APP PRINCIPAL)
 # ------------------------------
 else:
     tipo_periodo = "DATA_BASE"
 
-    # Uma opção por mês comercial, em ordem cronológica
     bases_df = (
         df[["DATA_BASE", "DATA_BASE_LABEL"]]
         .dropna(subset=["DATA_BASE"])
+        .drop_duplicates()
         .sort_values("DATA_BASE")
-        .drop_duplicates(subset=["DATA_BASE_LABEL"])
     )
 
     opcoes = bases_df["DATA_BASE_LABEL"].tolist()
@@ -212,39 +211,18 @@ else:
         st.error("Sem datas base válidas na planilha para filtrar.")
         st.stop()
 
-    # Intervalo padrão: últimos 2 meses base (ou o único, se só tiver 1)
-    if len(opcoes) >= 2:
-        default_range = (opcoes[-2], opcoes[-1])
-    else:
-        default_range = (opcoes[0], opcoes[0])
+    default_labels = opcoes[-2:] if len(opcoes) >= 2 else opcoes
 
-    base_ini_label, base_fim_label = st.sidebar.select_slider(
+    bases_selecionadas = st.sidebar.multiselect(
         "Período por DATA BASE (mês comercial)",
         options=opcoes,
-        value=default_range,
+        default=default_labels,
     )
 
-    # Garante que o início seja sempre antes ou igual ao fim
-    idx_ini = opcoes.index(base_ini_label)
-    idx_fim = opcoes.index(base_fim_label)
-    if idx_ini > idx_fim:
-        idx_ini, idx_fim = idx_fim, idx_ini
-        base_ini_label, base_fim_label = opcoes[idx_ini], opcoes[idx_fim]
+    if not bases_selecionadas:
+        bases_selecionadas = opcoes
 
-    # Lista completa de meses dentro do intervalo (pra legendas)
-    bases_selecionadas = opcoes[idx_ini : idx_fim + 1]
-
-    # Datas base reais (usando a tabela deduplicada)
-    base_ini_date = bases_df.loc[
-        bases_df["DATA_BASE_LABEL"] == base_ini_label, "DATA_BASE"
-    ].iloc[0]
-    base_fim_date = bases_df.loc[
-        bases_df["DATA_BASE_LABEL"] == base_fim_label, "DATA_BASE"
-    ].iloc[0]
-
-    # Filtra pela DATA_BASE no intervalo
-    mask_base = (df["DATA_BASE"] >= base_ini_date) & (df["DATA_BASE"] <= base_fim_date)
-    df_periodo = df[mask_base].copy()
+    df_periodo = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
 
     # Define intervalo real de movimentação (DIA) dentro dos meses selecionados
     dias_sel = df_periodo["DIA"].dropna()
@@ -320,7 +298,9 @@ taxa_venda_aprov = (vendas / aprovacoes * 100) if aprovacoes > 0 else 0.0
 corretores_ativos_periodo = df_periodo["CORRETOR"].dropna().astype(str).nunique()
 ipc_periodo = (vendas / corretores_ativos_periodo) if corretores_ativos_periodo > 0 else None
 
-# LEADS – CRM SUPREMO (SESSION_STATE)
+# ---------------------------------------------------------
+# LEADS DO PERÍODO (CRM SUPREMO VIA SESSION_STATE)
+# ---------------------------------------------------------
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
 total_leads_periodo = None
@@ -350,7 +330,11 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
             total_leads_periodo / analises_em if analises_em > 0 else None
         )
 
-# KPIs de leads
+# ---------------------------------------------------------
+# BLOCO PRINCIPAL DO FUNIL
+# ---------------------------------------------------------
+st.markdown("## 🧭 Funil da Imobiliária – Período Selecionado")
+
 lc1, lc2, lc3 = st.columns(3)
 with lc1:
     st.metric(
@@ -374,7 +358,6 @@ with lc3:
     else:
         st.metric("Relação leads/análise (só EM)", "—")
 
-# KPIs de funil
 c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
     st.metric("Análises (só EM)", analises_em)
