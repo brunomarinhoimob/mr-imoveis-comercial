@@ -628,8 +628,15 @@ else:
                 ["Análises", "Aprovações", "Vendas"],
             )
 
-            # eixo de dias: de data_ini_mov até data_fim_mov (inclui data futura)
-            dr = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
+            # seletor de data final para a meta
+            data_fim_meta = st.date_input(
+                "Data final para atingir a meta",
+                value=data_fim_mov,
+                min_value=data_ini_mov,
+            )
+
+            # eixo de dias: de data_ini_mov até data_fim_meta
+            dr = pd.date_range(start=data_ini_mov, end=data_fim_meta, freq="D")
             dias_periodo = [d.date() for d in dr]
 
             if len(dias_periodo) == 0:
@@ -681,7 +688,9 @@ else:
                     df_line["Real"] = df_line["Real"].cumsum()
 
                     hoje_date = date.today()
-                    limite_real = min(hoje_date, data_fim_mov)
+                    ultimo_mov = df_temp["DIA_DATA"].max()
+                    limite_real = min(hoje_date, ultimo_mov, data_fim_meta)
+
                     mask_future = df_line.index.date > limite_real
                     df_line.loc[mask_future, "Real"] = np.nan
 
@@ -711,9 +720,9 @@ else:
                         .properties(height=320)
                     )
 
-                    # marca o ponto do dia de hoje, se estiver dentro do período
-                    hoje_dentro = (hoje_date >= data_ini_mov) and (
-                        hoje_date <= data_fim_mov
+                    # marca o ponto do dia de hoje (ou último movimento) se estiver dentro
+                    hoje_dentro = (limite_real >= data_ini_mov) and (
+                        limite_real <= data_fim_meta
                     )
                     if hoje_dentro:
                         df_real_reset = df_line.reset_index()
@@ -730,7 +739,8 @@ else:
 
                     st.altair_chart(chart, use_container_width=True)
                     st.caption(
-                        "Linha **Real** = indicador acumulado da equipe, parando no **dia de hoje**. "
+                        "Linha **Real** = indicador acumulado da equipe, parando no **dia de hoje** "
+                        "ou no último dia com movimento. "
                         "Linha **Meta** = ritmo necessário até a **data final escolhida** "
                         "para bater a meta da equipe."
                     )
