@@ -33,13 +33,11 @@ st.markdown(
         --mr-accent-red: #ef4444;
     }
 
-    /* fundo geral */
     .stApp {
         background: radial-gradient(circle at top left, #020617 0, #020617 40%, #020617 100%);
         color: var(--mr-text-main);
     }
 
-    /* container central */
     .main .block-container {
         max-width: 1400px;
         padding-top: 1.3rem;
@@ -47,7 +45,6 @@ st.markdown(
         margin: 0 auto;
     }
 
-    /* sidebar */
     section[data-testid="stSidebar"] {
         background: #020617;
         border-right: 1px solid var(--mr-border-subtle);
@@ -56,18 +53,15 @@ st.markdown(
         color: var(--mr-text-main) !important;
     }
 
-    /* títulos */
     h1, h2, h3, h4 {
         color: #e5e7eb;
         font-weight: 600;
     }
 
-    /* textos secundários */
     p, span, label {
         color: var(--mr-text-soft);
     }
 
-    /* métricas (st.metric) em cards premium */
     div[data-testid="stMetric"] {
         background: linear-gradient(145deg, var(--mr-bg-card-soft) 0%, #020617 100%);
         padding: 18px 16px;
@@ -87,14 +81,12 @@ st.markdown(
         color: #e5e7eb;
     }
 
-    /* separadores (---) */
     hr {
         border: none;
         border-top: 1px solid rgba(148,163,184,0.25);
         margin: 1.4rem 0;
     }
 
-    /* tabelas / dataframes */
     .stDataFrame {
         border-radius: 16px;
         overflow: hidden;
@@ -120,12 +112,10 @@ st.markdown(
     .stDataFrame table tbody tr:hover {
         background: #111827 !important;
     }
-
     .dataframe tbody tr:hover {
         background: #111827 !important;
     }
 
-    /* botões padrão */
     button[kind="primary"], button[data-baseweb="button"] {
         border-radius: 999px;
         background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 50%, #0ea5e9 100%);
@@ -139,21 +129,18 @@ st.markdown(
         box-shadow: 0 14px 30px rgba(37,99,235,0.6);
     }
 
-    /* alerts (st.info, st.warning, etc.) */
     .stAlert {
         border-radius: 12px;
         border: 1px solid rgba(148,163,184,0.35);
         background: rgba(15,23,42,0.85);
     }
 
-    /* inputs / selects / date */
     .stSelectbox > div, .stTextInput > div, .stDateInput > div {
         background: #020617;
         border-radius: 10px;
         border: 1px solid rgba(148,163,184,0.35);
     }
 
-    /* rodapé padrão do Streamlit escondido */
     footer {visibility: hidden;}
     </style>
     """,
@@ -182,11 +169,50 @@ def limpar_para_data(serie: pd.Series) -> pd.Series:
     return dt.dt.date
 
 
+def mes_ano_ptbr_para_date(valor: str):
+    """
+    Converte textos tipo 'novembro 2025' em date(2025, 11, 1).
+    Se não conseguir, retorna NaT.
+    """
+    if pd.isna(valor):
+        return pd.NaT
+    s = str(valor).strip().lower()
+    if not s:
+        return pd.NaT
+
+    meses = {
+        "janeiro": 1,
+        "fevereiro": 2,
+        "março": 3,
+        "marco": 3,
+        "abril": 4,
+        "maio": 5,
+        "junho": 6,
+        "julho": 7,
+        "agosto": 8,
+        "setembro": 9,
+        "outubro": 10,
+        "novembro": 11,
+        "dezembro": 12,
+    }
+
+    partes = s.split()
+    try:
+        mes_txt = partes[0]
+        ano = int(partes[-1])
+        mes_num = meses.get(mes_txt)
+        if mes_num is None:
+            return pd.NaT
+        return datetime(ano, mes_num, 1).date()
+    except Exception:
+        return pd.NaT
+
+
 @st.cache_data(ttl=300)
 def carregar_dados_planilha() -> pd.DataFrame:
     """
     Carrega e trata a base da planilha do Google Sheets.
-    Cache de 5 minutos para não ficar batendo toda hora na planilha.
+    Cache de 5 minutos.
     """
     df = pd.read_csv(CSV_URL)
     df.columns = [c.strip().upper() for c in df.columns]
@@ -199,7 +225,7 @@ def carregar_dados_planilha() -> pd.DataFrame:
     else:
         df["DIA"] = pd.NaT
 
-    # DATA BASE (MÊS COMERCIAL)
+    # DATA BASE (MÊS COMERCIAL) - TEXTO IGUAL À PLANILHA + REFERÊNCIA DE DATA
     possiveis_cols_base = [
         "DATA BASE",
         "DATA_BASE",
@@ -211,14 +237,24 @@ def carregar_dados_planilha() -> pd.DataFrame:
     col_data_base = next((c for c in possiveis_cols_base if c in df.columns), None)
 
     if col_data_base:
-        df["DATA_BASE"] = limpar_para_data(df[col_data_base])
-    else:
-        # fallback: usa DIA se não houver coluna específica
-        df["DATA_BASE"] = df["DIA"]
+        base_raw = df[col_data_base].astype(str).str.strip()
+        # Label exatamente como na planilha (só dando uma organizada)
+        df["DATA_BASE_LABEL"] = base_raw.str.lower().str.title()
+        # Converte 'novembro 2025' -> 2025-11-01 p/ ordenar e filtrar internamente
+        df["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
 
-    # SE A DATA_BASE FICAR TODA VAZIA (NaT), CAI PRA DIA
-    if df["DATA_BASE"].dropna().empty:
+        # Se não conseguir converter nenhum, cai pro DIA
+        if df["DATA_BASE"].dropna().empty:
+            df["DATA_BASE"] = df["DIA"]
+            df["DATA_BASE_LABEL"] = df["DIA"].apply(
+                lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
+            )
+    else:
+        # Sem coluna de data base: usa DIA como base
         df["DATA_BASE"] = df["DIA"]
+        df["DATA_BASE_LABEL"] = df["DIA"].apply(
+            lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
+        )
 
     # EQUIPE / CORRETOR
     for col in ["EQUIPE", "CORRETOR"]:
@@ -297,21 +333,13 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# LEADS – API SUPREMO (CACHE 1 HORA E COLUNAS NORMALIZADAS)
+# LEADS – API SUPREMO (CACHE 1 HORA)
 # ---------------------------------------------------------
 BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
 
 
 @st.cache_data(ttl=3600)
 def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFrame:
-    """
-    Carrega leads da API do Supremo.
-    Cache de 1 hora para evitar múltiplas chamadas pesadas.
-    Normaliza:
-      - data_captura -> datetime + data_captura_date
-      - nome_corretor_norm (maiúsculo)
-      - equipe_lead_norm, se existir coluna de equipe.
-    """
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
     dfs = []
@@ -357,11 +385,9 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
 
     df_all = pd.concat(dfs, ignore_index=True)
 
-    # Remove duplicados por ID (se existir)
     if "id" in df_all.columns:
         df_all = df_all.drop_duplicates(subset="id")
 
-    # Datas
     if "data_captura" in df_all.columns:
         df_all["data_captura"] = pd.to_datetime(
             df_all["data_captura"], errors="coerce"
@@ -370,7 +396,6 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
     else:
         df_all["data_captura_date"] = pd.NaT
 
-    # Nome do corretor (para filtro por corretor)
     if "nome_corretor" in df_all.columns:
         df_all["nome_corretor_norm"] = (
             df_all["nome_corretor"]
@@ -382,7 +407,6 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
     else:
         df_all["nome_corretor_norm"] = "NÃO INFORMADO"
 
-    # Equipe do lead, se existir
     possiveis_equipes = ["equipe", "nome_equipe", "equipe_nome", "nome_equipe_lead"]
     col_equipe = next((c for c in possiveis_equipes if c in df_all.columns), None)
     if col_equipe:
@@ -403,7 +427,6 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
 # ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
 
-# Qual coluna de período vamos usar: DIA ou DATA_BASE
 modo_periodo = st.sidebar.radio(
     "Modo de filtro do período",
     ["Por DIA (data do registro)", "Por DATA BASE (mês comercial)"],
@@ -413,16 +436,17 @@ modo_periodo = st.sidebar.radio(
 dias_validos = df["DIA"].dropna()
 bases_validas = df["DATA_BASE"].dropna()
 
-# fallback extra de segurança: se DATA_BASE estiver vazia, usa DIA
-if bases_validas.empty:
-    bases_validas = dias_validos
-
-# Segurança caso venha tudo vazio (evita erro)
 if dias_validos.empty and bases_validas.empty:
     st.error("Sem datas válidas na planilha para filtrar.")
     st.stop()
 
+tipo_periodo = "DIA"
+data_ini = None
+data_fim = None
+bases_selecionadas = []
+
 if modo_periodo.startswith("Por DIA"):
+    tipo_periodo = "DIA"
     data_min = dias_validos.min()
     data_max = dias_validos.max()
     data_ini_default = max(data_min, data_max - timedelta(days=30))
@@ -433,21 +457,34 @@ if modo_periodo.startswith("Por DIA"):
         min_value=data_min,
         max_value=data_max,
     )
-    filtro_coluna_data = "DIA"
+    data_ini, data_fim = periodo
 else:
-    data_min = bases_validas.min()
-    data_max = bases_validas.max()
-    data_ini_default = max(data_min, data_max - timedelta(days=30))
+    tipo_periodo = "DATA_BASE"
 
-    periodo = st.sidebar.date_input(
-        "Período por DATA BASE (mês comercial)",
-        value=(data_ini_default, data_max),
-        min_value=data_min,
-        max_value=data_max,
+    # monta lista de meses base ordenados
+    bases_df = (
+        df[["DATA_BASE", "DATA_BASE_LABEL"]]
+        .dropna(subset=["DATA_BASE"])
+        .drop_duplicates()
+        .sort_values("DATA_BASE")
     )
-    filtro_coluna_data = "DATA_BASE"
 
-data_ini, data_fim = periodo
+    opcoes = bases_df["DATA_BASE_LABEL"].tolist()
+
+    if not opcoes:
+        st.error("Sem datas base válidas na planilha para filtrar.")
+        st.stop()
+
+    default_labels = opcoes[-2:] if len(opcoes) >= 2 else opcoes
+
+    bases_selecionadas = st.sidebar.multiselect(
+        "Período por DATA BASE (mês comercial)",
+        options=opcoes,
+        default=default_labels,
+    )
+
+    if not bases_selecionadas:
+        bases_selecionadas = opcoes
 
 lista_equipes = sorted(df["EQUIPE"].unique())
 equipe_sel = st.sidebar.selectbox("Equipe", ["Todas"] + lista_equipes)
@@ -461,32 +498,41 @@ lista_corretor = sorted(base_cor["CORRETOR"].unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
 # ---------------------------------------------------------
-# BOTÃO PARA ATUALIZAR LEADS DO CRM MANUALMENTE
+# BOTÃO ATUALIZAR LEADS
 # ---------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.write("🔄 Atualização de Leads (CRM)")
 
 btn_atualizar_leads = st.sidebar.button("Atualizar Leads do CRM agora")
 
-# Se clicar, limpa o cache e o df_leads salvo na sessão.
 if btn_atualizar_leads:
     st.cache_data.clear()
     st.session_state.pop("df_leads", None)
 
-# Carrega os leads (já respeitando cache ou renovando se o botão foi clicado)
 df_leads = carregar_leads_direto()
 
-# Mantém em sessão para uso nas outras páginas (Vendas, Funis, etc.)
 if "df_leads" not in st.session_state:
     st.session_state["df_leads"] = df_leads
 
 # ---------------------------------------------------------
-# FILTRO PRINCIPAL NA PLANILHA (DIA ou DATA_BASE)
+# FILTRO PRINCIPAL NA PLANILHA
 # ---------------------------------------------------------
-df_filtrado = df[
-    (df[filtro_coluna_data] >= data_ini) &
-    (df[filtro_coluna_data] <= data_fim)
-].copy()
+if tipo_periodo == "DIA":
+    df_filtrado = df[
+        (df["DIA"] >= data_ini) &
+        (df["DIA"] <= data_fim)
+    ].copy()
+else:
+    df_filtrado = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
+    # define intervalo real de dias daquele(s) mês(es) comercial(is)
+    dias_sel = df_filtrado["DIA"].dropna()
+    if not dias_sel.empty:
+        data_ini = dias_sel.min()
+        data_fim = dias_sel.max()
+    else:
+        # fallback total
+        data_ini = dias_validos.min()
+        data_fim = dias_validos.max()
 
 if equipe_sel != "Todas":
     df_filtrado = df_filtrado[df_filtrado["EQUIPE"] == equipe_sel]
@@ -497,14 +543,22 @@ if corretor_sel != "Todos":
 registros_filtrados = len(df_filtrado)
 
 # ---------------------------------------------------------
-# TÍTULO
+# TÍTULO / CAPTION
 # ---------------------------------------------------------
 st.title("📊 Dashboard Imobiliária – MR Imóveis")
 
-label_periodo = "Período (DIA)" if filtro_coluna_data == "DIA" else "Período (DATA BASE)"
+if tipo_periodo == "DIA":
+    label_periodo = "Período (DIA)"
+    periodo_str = f"{data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
+else:
+    label_periodo = "Período (DATA BASE)"
+    if len(bases_selecionadas) == 1:
+        periodo_str = bases_selecionadas[0]
+    else:
+        periodo_str = f"{bases_selecionadas[0]} até {bases_selecionadas[-1]}"
+
 st.caption(
-    f"{label_periodo}: {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')} • "
-    f"Registros filtrados: {registros_filtrados}"
+    f"{label_periodo}: {periodo_str} • Registros filtrados: {registros_filtrados}"
 )
 
 # ---------------------------------------------------------
@@ -572,7 +626,7 @@ c9.metric("Vendas/Análises", f"{taxa_venda_analise:.1f}%")
 c10.metric("Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
 
 # ---------------------------------------------------------
-# LEADS – RESUMO (RESPEITANDO PERÍODO + EQUIPE + CORRETOR)
+# LEADS – RESUMO (CRM)
 # ---------------------------------------------------------
 st.markdown("---")
 st.subheader("📈 Resumo de Leads (Supremo CRM)")
@@ -580,20 +634,17 @@ st.subheader("📈 Resumo de Leads (Supremo CRM)")
 df_leads_use = df_leads.copy()
 
 if not df_leads_use.empty and "data_captura_date" in df_leads_use.columns:
-    # Filtro por período (usa o mesmo intervalo escolhido, independente se foi DIA ou DATA_BASE)
     df_leads_use = df_leads_use.dropna(subset=["data_captura_date"])
     df_leads_use = df_leads_use[
         (df_leads_use["data_captura_date"] >= data_ini)
         & (df_leads_use["data_captura_date"] <= data_fim)
     ]
 
-    # Filtro por equipe (se tiver coluna de equipe nos leads)
     if equipe_sel != "Todas" and "equipe_lead_norm" in df_leads_use.columns:
         df_leads_use = df_leads_use[
             df_leads_use["equipe_lead_norm"] == equipe_sel
         ]
 
-    # Filtro por corretor
     if corretor_sel != "Todos" and "nome_corretor_norm" in df_leads_use.columns:
         df_leads_use = df_leads_use[
             df_leads_use["nome_corretor_norm"] == corretor_sel
@@ -601,7 +652,6 @@ if not df_leads_use.empty and "data_captura_date" in df_leads_use.columns:
 
     total_leads_periodo = len(df_leads_use)
 
-    # Texto dinâmico da métrica principal
     if corretor_sel != "Todos":
         label_leads = "Leads do corretor (período filtrado)"
     elif equipe_sel != "Todas":
@@ -612,7 +662,6 @@ if not df_leads_use.empty and "data_captura_date" in df_leads_use.columns:
     cL1, cL2, cL3 = st.columns(3)
     cL1.metric(label_leads, total_leads_periodo)
 
-    # Corretores com leads nesse filtro
     if "nome_corretor_norm" in df_leads_use.columns and not df_leads_use.empty:
         qtd_corretor = df_leads_use["nome_corretor_norm"].nunique()
         cL2.metric("Corretores com leads no período", qtd_corretor)
