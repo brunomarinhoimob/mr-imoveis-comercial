@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -36,6 +36,45 @@ def limpar_para_data(serie: pd.Series) -> pd.Series:
     return dt.dt.date
 
 
+def mes_ano_ptbr_para_date(valor: str):
+    """
+    Converte textos tipo 'novembro 2025' em date(2025, 11, 1).
+    Se não conseguir, retorna NaT.
+    """
+    if pd.isna(valor):
+        return pd.NaT
+    s = str(valor).strip().lower()
+    if not s:
+        return pd.NaT
+
+    meses = {
+        "janeiro": 1,
+        "fevereiro": 2,
+        "março": 3,
+        "marco": 3,
+        "abril": 4,
+        "maio": 5,
+        "junho": 6,
+        "julho": 7,
+        "agosto": 8,
+        "setembro": 9,
+        "outubro": 10,
+        "novembro": 11,
+        "dezembro": 12,
+    }
+
+    partes = s.split()
+    try:
+        mes_txt = partes[0]
+        ano = int(partes[-1])
+        mes_num = meses.get(mes_txt)
+        if mes_num is None:
+            return pd.NaT
+        return datetime(ano, mes_num, 1).date()
+    except Exception:
+        return pd.NaT
+
+
 def carregar_dados() -> pd.DataFrame:
     df = pd.read_csv(CSV_URL)
     df.columns = [c.strip().upper() for c in df.columns]
@@ -47,6 +86,37 @@ def carregar_dados() -> pd.DataFrame:
         df["DIA"] = limpar_para_data(df["DIA"])
     else:
         df["DIA"] = pd.NaT
+
+    # DATA BASE (MÊS COMERCIAL) - TEXTO IGUAL À PLANILHA + REFERÊNCIA DE DATA
+    possiveis_cols_base = [
+        "DATA BASE",
+        "DATA_BASE",
+        "DT BASE",
+        "DATA REF",
+        "DATA REFERÊNCIA",
+        "DATA REFERENCIA",
+    ]
+    col_data_base = next((c for c in possiveis_cols_base if c in df.columns), None)
+
+    if col_data_base:
+        base_raw = df[col_data_base].astype(str).str.strip()
+        # Label exatamente como na planilha (apenas capitalização)
+        df["DATA_BASE_LABEL"] = base_raw.str.lower().str.title()
+        # Converte "novembro 2025" -> 2025-11-01 para ordenar/filtrar
+        df["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
+
+        # Se não conseguir converter nenhum, cai para DIA
+        if df["DATA_BASE"].dropna().empty:
+            df["DATA_BASE"] = df["DIA"]
+            df["DATA_BASE_LABEL"] = df["DIA"].apply(
+                lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
+            )
+    else:
+        # Sem coluna de data base: usa DIA como base
+        df["DATA_BASE"] = df["DIA"]
+        df["DATA_BASE_LABEL"] = df["DIA"].apply(
+            lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
+        )
 
     # EQUIPE / CORRETOR
     for col in ["EQUIPE", "CORRETOR"]:
@@ -132,7 +202,9 @@ if df.empty:
     st.stop()
 
 dias_validos = df["DIA"].dropna()
-if dias_validos.empty:
+bases_validas = df["DATA_BASE"].dropna()
+
+if dias_validos.empty and bases_validas.empty:
     st.error("Não foi possível identificar datas válidas na planilha.")
     st.stop()
 
@@ -141,22 +213,60 @@ if dias_validos.empty:
 # ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
 
-data_min = dias_validos.min()
-data_max = dias_validos.max()
-
-data_ini_default = max(data_min, data_max - timedelta(days=30))
-
-periodo = st.sidebar.date_input(
-    "Período (DIA)",
-    value=(data_ini_default, data_max),
-    min_value=data_min,
-    max_value=data_max,
+modo_periodo = st.sidebar.radio(
+    "Modo de filtro do período",
+    ["Por DIA (data do registro)", "Por DATA BASE (mês comercial)"],
+    index=0,
 )
 
-if isinstance(periodo, (tuple, list)) and len(periodo) == 2:
-    data_ini, data_fim = periodo
+tipo_periodo = "DIA"
+data_ini = None
+data_fim = None
+bases_selecionadas = []
+
+if modo_periodo.startswith("Por DIA"):
+    tipo_periodo = "DIA"
+    data_min = dias_validos.min()
+    data_max = dias_validos.max()
+    data_ini_default = max(data_min, data_max - timedelta(days=30))
+
+    periodo = st.sidebar.date_input(
+        "Período (DIA)",
+        value=(data_ini_default, data_max),
+        min_value=data_min,
+        max_value=data_max,
+    )
+
+    if isinstance(periodo, (tuple, list)) and len(periodo) == 2:
+        data_ini, data_fim = periodo
+    else:
+        data_ini, data_fim = data_ini_default, data_max
 else:
-    data_ini, data_fim = data_ini_default, data_max
+    tipo_periodo = "DATA_BASE"
+
+    bases_df = (
+        df[["DATA_BASE", "DATA_BASE_LABEL"]]
+        .dropna(subset=["DATA_BASE"])
+        .drop_duplicates()
+        .sort_values("DATA_BASE")
+    )
+
+    opcoes = bases_df["DATA_BASE_LABEL"].tolist()
+
+    if not opcoes:
+        st.error("Sem datas base válidas na planilha para filtrar.")
+        st.stop()
+
+    default_labels = opcoes[-2:] if len(opcoes) >= 2 else opcoes
+
+    bases_selecionadas = st.sidebar.multiselect(
+        "Período por DATA BASE (mês comercial)",
+        options=opcoes,
+        default=default_labels,
+    )
+
+    if not bases_selecionadas:
+        bases_selecionadas = opcoes
 
 # MESMA LÓGICA DO RANKING POR CORRETOR: filtro de tipo de venda
 opcao_venda = st.sidebar.radio(
@@ -172,15 +282,38 @@ else:
     status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
     desc_venda = "VENDA GERADA + VENDA INFORMADA"
 
-df_ref = df[
-    (df["DIA"] >= data_ini) &
-    (df["DIA"] <= data_fim)
-].copy()
+# ---------------------------------------------------------
+# FILTRAGEM PRINCIPAL (PERÍODO)
+# ---------------------------------------------------------
+if tipo_periodo == "DIA":
+    df_ref = df[
+        (df["DIA"] >= data_ini) &
+        (df["DIA"] <= data_fim)
+    ].copy()
+else:
+    df_ref = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
+    # calcula intervalo real de dias desse(s) meses para exibir
+    dias_sel = df_ref["DIA"].dropna()
+    if not dias_sel.empty:
+        data_ini = dias_sel.min()
+        data_fim = dias_sel.max()
+    else:
+        data_ini = dias_validos.min()
+        data_fim = dias_validos.max()
 
 registros_ref = len(df_ref)
 
+# Texto do período para caption
+if tipo_periodo == "DIA":
+    periodo_str = f"{data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
+else:
+    if len(bases_selecionadas) == 1:
+        periodo_str = bases_selecionadas[0]
+    else:
+        periodo_str = f"{bases_selecionadas[0]} até {bases_selecionadas[-1]}"
+
 st.caption(
-    f"Período: {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')} • "
+    f"Período: {periodo_str} • "
     f"Registros considerados: {registros_ref} • "
     f"Vendas consideradas no ranking: {desc_venda}"
 )
@@ -345,7 +478,7 @@ st.altair_chart(chart, use_container_width=True)
 st.markdown(
     "<hr><p style='text-align:center;color:#666;'>"
     "Ranking por equipe baseado em análises, aprovações, vendas (1 por cliente) e VGV, "
-    "filtrado pelo período selecionado e pelo tipo de venda escolhido na barra lateral."
+    "filtrado por DIA ou por DATA BASE (mês comercial) e pelo tipo de venda escolhido na barra lateral."
     "</p>",
     unsafe_allow_html=True,
 )
