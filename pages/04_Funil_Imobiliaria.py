@@ -138,7 +138,6 @@ if "DATA_BASE_LABEL" not in df.columns:
 # ---------------------------------------------------------
 st.sidebar.title("Filtros da visão imobiliária")
 
-# DATA BASE (mês comercial) – igual app principal, sem repetir mês
 bases_df = (
     df[["DATA_BASE", "DATA_BASE_LABEL"]]
     .dropna(subset=["DATA_BASE"])
@@ -186,51 +185,16 @@ if df_periodo.empty:
 
 # ---------------------------------------------------------
 # DEFININDO O INTERVALO DE DIAS A PARTIR DA DATA BASE
+# (usa exatamente a mesma lógica do app principal)
 # ---------------------------------------------------------
-# Tentamos usar colunas específicas de início/fim de base, se existirem
-possiveis_inicio = [
-    "DATA_BASE_INICIO",
-    "DATA_INICIO_BASE",
-    "INICIO_BASE",
-    "DIA_INICIO_BASE",
-    "PERIODO_INICIO",
-]
-possiveis_fim = [
-    "DATA_BASE_FIM",
-    "DATA_FIM_BASE",
-    "FIM_BASE",
-    "DIA_FIM_BASE",
-    "PERIODO_FIM",
-]
-
-col_inicio = next((c for c in possiveis_inicio if c in df.columns), None)
-col_fim = next((c for c in possiveis_fim if c in df.columns), None)
-
-if col_inicio and col_fim:
-    # Converte essas colunas pra datetime
-    df[col_inicio] = pd.to_datetime(df[col_inicio], errors="coerce")
-    df[col_fim] = pd.to_datetime(df[col_fim], errors="coerce")
-
-    limites = (
-        df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)]
-        .groupby("DATA_BASE_LABEL")
-        .agg(inicio=(col_inicio, "min"), fim=(col_fim, "max"))
-        .sort_index()
-    )
-
-    # Usa o primeiro início e o último fim das bases selecionadas
-    data_ini_mov = limites["inicio"].iloc[0].date()
-    data_fim_mov = limites["fim"].iloc[-1].date()
+dias_sel = df_periodo["DIA"].dropna()
+if not dias_sel.empty:
+    data_ini_mov = dias_sel.min().date()
+    data_fim_mov = dias_sel.max().date()
 else:
-    # fallback: usa min/max da coluna DIA dentro das bases selecionadas
-    dias_sel = df_periodo["DIA"].dropna()
-    if not dias_sel.empty:
-        data_ini_mov = dias_sel.min().date()
-        data_fim_mov = dias_sel.max().date()
-    else:
-        hoje = date.today()
-        data_ini_mov = hoje
-        data_fim_mov = hoje
+    hoje = date.today()
+    data_ini_mov = hoje
+    data_fim_mov = hoje
 
 # Texto da data base
 if len(bases_selecionadas) == 1:
