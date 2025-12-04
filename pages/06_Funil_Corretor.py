@@ -2,632 +2,300 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-from datetime import date, timedelta
+from datetime import date
+from app_dashboard import carregar_dados_planilha
+
 
 # ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA
+# FUNÇÕES AUXILIARES
+# ---------------------------------------------------------
+def mes_ano_ptbr_para_date(texto: str):
+    """Converte 'novembro 2025' -> date(2025, 11, 1)."""
+    if not isinstance(texto, str):
+        return pd.NaT
+    t = texto.strip().lower()
+    partes = t.split()
+    if len(partes) != 2:
+        return pd.NaT
+    mes_nome, ano_str = partes
+    mapa = {
+        "janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3,
+        "abril": 4, "maio": 5, "junho": 6, "julho": 7,
+        "agosto": 8, "setembro": 9, "outubro": 10,
+        "novembro": 11, "dezembro": 12,
+    }
+    mes = mapa.get(mes_nome)
+    if not mes:
+        return pd.NaT
+    try:
+        return date(int(ano_str), mes, 1)
+    except:
+        return pd.NaT
+
+
+def conta_analises_base(s): return (s == "EM ANÁLISE").sum()
+def conta_reanalises(s): return (s == "REANÁLISE").sum()
+def conta_aprovacoes(s): return (s == "APROVADO").sum()
+
+
+def obter_vendas_unicas(df_scope, status_venda=None):
+    if df_scope.empty:
+        return df_scope.copy()
+
+    if status_venda is None:
+        status_venda = ["VENDA GERADA", "VENDA INFORMADA"]
+
+    df2 = df_scope[df_scope["STATUS_BASE"].isin(status_venda)].copy()
+    if df2.empty:
+        return df2
+
+    if "NOME_CLIENTE_BASE" not in df2.columns:
+        df2["NOME_CLIENTE_BASE"] = df2["CLIENTE"].fillna("").astype(str).str.upper().str.strip()
+    if "CPF_CLIENTE_BASE" not in df2.columns:
+        df2["CPF_CLIENTE_BASE"] = ""
+
+    df2["CHAVE_CLIENTE"] = (
+        df2["NOME_CLIENTE_BASE"].astype(str).str.upper().str.strip()
+        + " | "
+        + df2["CPF_CLIENTE_BASE"].astype(str).str.strip()
+    )
+
+    df2 = df2.sort_values("DIA")
+    return df2.groupby("CHAVE_CLIENTE").tail(1).copy()
+
+
+def format_currency(v):
+    try:
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except:
+        return "R$ 0,00"
+
+
+# ---------------------------------------------------------
+# CONFIG DA PÁGINA
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Funil por Corretor – MR Imóveis",
+    page_title="Funil do Corretor",
     page_icon="🧑‍💼",
     layout="wide",
 )
 
-# Logo MR Imóveis na lateral
-try:
-    st.sidebar.image("logo_mr.png", use_container_width=True)
-except Exception:
-    pass
-
-st.title("🧑‍💼 Funil por Corretor – MR Imóveis")
-
-st.caption(
-    "Veja o funil individual de cada corretor (análises → aprovações → vendas) "
-    "e planeje quantas análises/aprovações ele precisará para bater a meta de vendas."
-)
-
-# ---------------------------------------------------------
-# CONFIG: LINK DA PLANILHA  (MESMO DO APP PRINCIPAL)
-# ---------------------------------------------------------
-SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
-GID_ANALISES = "1574157905"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
+st.title("🧑‍💼 Funil Individual do Corretor")
+st.caption("Análises, aprovações, vendas, meta e acompanhamento por período + DATA BASE.")
 
 
 # ---------------------------------------------------------
-# FUNÇÃO AUXILIAR PARA LIMPAR DATA
+# CARREGA BASE
 # ---------------------------------------------------------
-def limpar_para_data(serie):
-    dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
-    return dt.dt.date
-
-
-# ---------------------------------------------------------
-# CARREGAR E PREPARAR DADOS (PLANILHA)
-# ---------------------------------------------------------
-@st.cache_data(ttl=60)
-def carregar_dados():
-    df = pd.read_csv(CSV_URL)
-
-    # Padroniza colunas
-    df.columns = [c.strip().upper() for c in df.columns]
-
-    # DATA / DIA
-    if "DATA" in df.columns:
-        df["DIA"] = limpar_para_data(df["DATA"])
-    elif "DIA" in df.columns:
-        df["DIA"] = limpar_para_data(df["DIA"])
-    else:
-        df["DIA"] = pd.NaT
-
-    # EQUIPE / CORRETOR
-    for col in ["EQUIPE", "CORRETOR"]:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .fillna("NÃO INFORMADO")
-                .astype(str)
-                .str.upper()
-                .str.strip()
-            )
-        else:
-            df[col] = "NÃO INFORMADO"
-
-    # SITUAÇÃO BASE
-    possiveis_cols_situacao = [
-        "SITUAÇÃO",
-        "SITUAÇÃO ATUAL",
-        "STATUS",
-        "SITUACAO",
-        "SITUACAO ATUAL",
-    ]
-    col_situacao = None
-    for c in possiveis_cols_situacao:
-        if c in df.columns:
-            col_situacao = c
-            break
-
-    df["STATUS_BASE"] = ""
-    if col_situacao:
-        status = df[col_situacao].fillna("").astype(str).str.upper()
-
-        df.loc[status.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
-        df.loc[status.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
-        df.loc[status.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
-        df.loc[status.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
-        df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
-        df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
-
-    # VGV (via coluna OBSERVAÇÕES) – sempre em REAL
-    if "OBSERVAÇÕES" in df.columns:
-        df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0.0)
-    else:
-        df["VGV"] = 0.0
-
-    return df
-
-
-df = carregar_dados()
-
+df = carregar_dados_planilha()
 if df.empty:
-    st.error("Não foi possível carregar dados da planilha. Verifique o link/gid.")
+    st.error("Erro ao carregar planilha.")
     st.stop()
 
+df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
+
+# DATA BASE
+if "DATA BASE" in df.columns:
+    df["DATA_BASE"] = df["DATA BASE"].astype(str).apply(mes_ano_ptbr_para_date)
+    df["DATA_BASE_LABEL"] = df["DATA_BASE"].apply(lambda d: d.strftime("%m/%Y") if pd.notnull(d) else "")
+else:
+    df["DATA_BASE"] = df["DIA"]
+    df["DATA_BASE_LABEL"] = df["DIA"].dt.strftime("%m/%Y")
+
+# Lista corretores
+corretores = sorted(df["CORRETOR"].dropna().astype(str).unique())
+
+corretor_sel = st.sidebar.selectbox("Selecione o corretor", corretores)
+
+df_cor = df[df["CORRETOR"] == corretor_sel].copy()
+if df_cor.empty:
+    st.warning("Nenhum dado do corretor.")
+    st.stop()
 
 # ---------------------------------------------------------
-# LEADS DO SUPREMO
+# SELECTOR DATA BASE
 # ---------------------------------------------------------
-df_leads = st.session_state.get("df_leads", pd.DataFrame())
-
-
-# ---------------------------------------------------------
-# FUNÇÕES AUXILIARES DO FUNIL
-# ---------------------------------------------------------
-def conta_analises(s):
-    """Análises totais (EM + RE) – volume."""
-    return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
-
-
-def conta_analises_base(s):
-    """Análises para base de conversão – SOMENTE EM ANÁLISE."""
-    return (s == "EM ANÁLISE").sum()
-
-
-def conta_reanalises(s):
-    """Quantidade de REANÁLISE."""
-    return (s == "REANÁLISE").sum()
-
-
-def conta_aprovacoes(s):
-    return (s == "APROVADO").sum()
-
-
-def conta_vendas(s, status_venda=None):
-    """
-    Conta vendas considerando a lista de status informada.
-    Se status_venda for None, considera VENDA GERADA + VENDA INFORMADA.
-    """
-    if status_venda is None:
-        status_venda = ["VENDA GERADA", "VENDA INFORMADA"]
-    return s.isin(status_venda).sum()
-
-
-# ---------------------------------------------------------
-# SIDEBAR – FILTROS
-# ---------------------------------------------------------
-st.sidebar.title("Filtros 🔎")
-
-# Tipo de venda considerado no funil
-opcao_venda = st.sidebar.radio(
-    "Tipo de venda para o funil",
-    ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
-    index=0,
+bases_validas = (
+    df_cor[["DATA_BASE", "DATA_BASE_LABEL"]]
+    .dropna(subset=["DATA_BASE"])
+    .drop_duplicates()
+    .sort_values("DATA_BASE")
 )
 
-if opcao_venda == "Só VENDA GERADA":
-    status_venda_considerado = ["VENDA GERADA"]
-    desc_venda = "apenas VENDA GERADA"
-else:
-    status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
-    desc_venda = "VENDA GERADA + VENDA INFORMADA"
+opcoes_bases = bases_validas["DATA_BASE_LABEL"].tolist()
+default_bases = opcoes_bases[-2:] if len(opcoes_bases) >= 2 else opcoes_bases
 
-dias_validos = pd.Series(df["DIA"].dropna())
-
-hoje = date.today()
-
-if not dias_validos.empty:
-    data_min = dias_validos.min()
-    data_max = dias_validos.max()
-else:
-    data_max = hoje
-    data_min = hoje - timedelta(days=30)
-
-# 🎯 janela padrão: últimos 30 dias até a última data da base
-data_ini_default = max(data_min, data_max - timedelta(days=30))
-
-# permite escolher datas futuras (até 1 ano pra frente)
-max_futuro = max(data_max, hoje) + timedelta(days=365)
-
-periodo = st.sidebar.date_input(
-    "Período (para ver o funil do corretor)",
-    value=(data_ini_default, data_max),
-    min_value=data_min,
-    max_value=max_futuro,
+bases_selecionadas = st.sidebar.multiselect(
+    "DATA BASE do corretor",
+    options=opcoes_bases,
+    default=default_bases
 )
 
-if isinstance(periodo, tuple):
-    data_ini, data_fim = periodo
-else:
-    data_ini, data_fim = data_ini_default, periodo
+if not bases_selecionadas:
+    bases_selecionadas = opcoes_bases
 
-# Filtro de corretor
-lista_corretor = sorted(df["CORRETOR"].dropna().unique())
-corretor_sel = st.sidebar.selectbox(
-    "Corretor",
-    ["Selecione um corretor"] + lista_corretor,
+df_periodo = df_cor[df_cor["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
+if df_periodo.empty:
+    st.warning("Nenhum registro do corretor no período.")
+    st.stop()
+
+# Tipo de venda
+radio_venda = st.sidebar.radio(
+    "Tipo de venda",
+    ("VENDA GERADA + INFORMADA", "Só VENDA GERADA")
 )
+status_venda_considerado = ["VENDA GERADA"] if radio_venda == "Só VENDA GERADA" else ["VENDA GERADA", "VENDA INFORMADA"]
+
 
 # ---------------------------------------------------------
-# APLICA FILTRO DE PERÍODO
+# INTERVALO REAL PELOS DIAS DA PLANILHA
 # ---------------------------------------------------------
-df_periodo = df.copy()
-dia_series_all = limpar_para_data(df_periodo["DIA"])
-mask_data_all = (dia_series_all >= data_ini) & (dia_series_all <= data_fim)
-df_periodo = df_periodo[mask_data_all]
+dias_validos = df_periodo["DIA"].dropna()
 
-registros_filtrados = len(df_periodo)
+if len(dias_validos) > 0:
+    data_ini_mov = dias_validos.min().date()
+    data_fim_mov = dias_validos.max().date()
+else:
+    hoje = date.today()
+    data_ini_mov, data_fim_mov = hoje, hoje
+
+if len(bases_selecionadas) == 1:
+    base_txt = bases_selecionadas[0]
+else:
+    base_txt = f"{bases_selecionadas[0]} até {bases_selecionadas[-1]}"
 
 st.caption(
-    f"Período filtrado: **{data_ini.strftime('%d/%m/%Y')}** até "
-    f"**{data_fim.strftime('%d/%m/%Y')}** • "
-    f"Registros considerados: **{registros_filtrados}** (todas as equipes) • "
-    f"Vendas consideradas no funil: **{desc_venda}**."
+    f"Corretor: **{corretor_sel}** • DATA BASE: **{base_txt}** • "
+    f"Dias: **{data_ini_mov.strftime('%d/%m/%Y')}** → **{data_fim_mov.strftime('%d/%m/%Y')}**"
 )
 
-if corretor_sel == "Selecione um corretor":
-    st.info("Selecione um corretor na barra lateral para ver o funil individual.")
-    st.stop()
 
 # ---------------------------------------------------------
-# FUNIL DO CORRETOR NO PERÍODO SELECIONADO
+# KPIs DO CORRETOR
 # ---------------------------------------------------------
-st.markdown(f"## 🧑‍💼 Funil do Corretor: **{corretor_sel}**")
+st.markdown("## 📌 Funil do período (corretor)")
 
-df_cor_periodo = df_periodo[df_periodo["CORRETOR"] == corretor_sel].copy()
+status = df_periodo["STATUS_BASE"].fillna("").astype(str).str.upper()
+
+analises_em = conta_analises_base(status)
+reanalises = conta_reanalises(status)
+aprovacoes = conta_aprovacoes(status)
+
+df_vendas = obter_vendas_unicas(df_periodo, status_vendas=status_venda_considerado)
+vendas = len(df_vendas)
+vgv = df_vendas["VGV"].sum() if not df_vendas.empty else 0
+
+# EXIBE KPIs
+col1, col2, col3 = st.columns(3)
+col1.metric("Análises (EM)", analises_em)
+col2.metric("Aprovações", aprovacoes)
+col3.metric("Vendas", vendas)
+
+col4, col5 = st.columns(2)
+col4.metric("Reanálises", reanalises)
+col5.metric("VGV total", format_currency(vgv))
+
+st.markdown("---")
+
 
 # ---------------------------------------------------------
-# LEADS DO CORRETOR NO PERÍODO (USANDO df_leads DO SESSION_STATE)
+# PLANEJAMENTO (META)
 # ---------------------------------------------------------
-total_leads_corretor_periodo = None
-if not df_leads.empty and "data_captura" in df_leads.columns:
-    df_leads_use = df_leads.dropna(subset=["data_captura"]).copy()
-    df_leads_use["data_captura"] = pd.to_datetime(
-        df_leads_use["data_captura"], errors="coerce"
+st.markdown("## 🎯 Planejamento baseado no funil do corretor")
+
+if vendas > 0:
+    analises_por_venda = analises_em / vendas if analises_em > 0 else 0
+    aprovacoes_por_venda = aprovacoes / vendas if aprovacoes > 0 else 0
+
+    meta_vendas = st.number_input(
+        "Meta de vendas do corretor",
+        min_value=0,
+        step=1,
+        value=vendas
     )
-    df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
 
-    # Normaliza nome do corretor vindo do CRM
-    if "nome_corretor" in df_leads_use.columns:
-        df_leads_use["nome_corretor_norm"] = (
-            df_leads_use["nome_corretor"].astype(str).str.upper().str.strip()
+    if meta_vendas > 0:
+        analises_necessarias = int(np.ceil(analises_por_venda * meta_vendas))
+        aprovacoes_necessarias = int(np.ceil(aprovacoes_por_venda * meta_vendas))
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Meta de vendas", meta_vendas)
+        c2.metric("Análises necessárias", analises_necessarias)
+        c3.metric("Aprovações necessárias", aprovacoes_necessarias)
+
+        st.caption("Valores calculados com base no funil REAL do corretor no período.")
+
+        # ---------------------------------------------------------
+        # 📊 GRÁFICO META x REAL (INDICADOR INDIVIDUAL)
+        # ---------------------------------------------------------
+        st.markdown("### 📊 Acompanhamento da meta – corretor")
+
+        indicador = st.selectbox("Indicador", ["Análises", "Aprovações", "Vendas"])
+
+        periodo_acomp = st.date_input(
+            "Período do acompanhamento",
+            value=(data_ini_mov, data_fim_mov)
         )
 
-        alvo = corretor_sel.upper().strip()
+        data_ini_sel, data_fim_sel = periodo_acomp
 
-        mask_periodo_leads = (
-            (df_leads_use["data_captura_date"] >= data_ini)
-            & (df_leads_use["data_captura_date"] <= data_fim)
-        )
+        dr = pd.date_range(start=data_ini_sel, end=data_fim_sel)
+        dias_meta = [d.date() for d in dr]
 
-        df_leads_cor = df_leads_use[mask_periodo_leads].copy()
-        # filtro simples por contains no nome do corretor
-        df_leads_cor = df_leads_cor[
-            df_leads_cor["nome_corretor_norm"].str.contains(alvo, na=False)
+        df_periodo["DIA_DATA"] = df_periodo["DIA"].dt.date
+
+        # Filtra somente dentro do período do gráfico
+        df_range = df_periodo[
+            (df_periodo["DIA_DATA"] >= data_ini_sel)
+            & (df_periodo["DIA_DATA"] <= data_fim_sel)
         ]
 
-        total_leads_corretor_periodo = len(df_leads_cor)
-
-if df_cor_periodo.empty:
-    st.warning(
-        f"O corretor **{corretor_sel}** não possui registros na planilha "
-        "para o período selecionado."
-    )
-else:
-    # Separando análises
-    status_cor_periodo = df_cor_periodo["STATUS_BASE"].fillna("").astype(str).str.upper()
-
-    analises_em_cor = conta_analises_base(status_cor_periodo)   # só EM
-    reanalises_cor = conta_reanalises(status_cor_periodo)       # só RE
-    analises_total_cor = conta_analises(status_cor_periodo)     # EM + RE
-
-    aprov_cor = conta_aprovacoes(status_cor_periodo)
-    vendas_cor = conta_vendas(status_cor_periodo, status_venda=status_venda_considerado)
-    vgv_cor = df_cor_periodo["VGV"].sum()
-
-    taxa_aprov_cor = (aprov_cor / analises_em_cor * 100) if analises_em_cor > 0 else 0
-    taxa_venda_analises_cor = (
-        vendas_cor / analises_em_cor * 100
-    ) if analises_em_cor > 0 else 0
-    taxa_venda_aprov_cor = (
-        vendas_cor / aprov_cor * 100
-    ) if aprov_cor > 0 else 0
-
-    # 🔢 Média de leads por análise (para esse corretor no período)
-    media_leads_por_analise = None
-    if (
-        total_leads_corretor_periodo is not None
-        and total_leads_corretor_periodo > 0
-        and analises_em_cor > 0
-    ):
-        media_leads_por_analise = total_leads_corretor_periodo / analises_em_cor
-
-    # Cards principais – agora com LEADS do corretor
-    c0, c1, c2, c3, c4, c5 = st.columns(6)
-    with c0:
-        if total_leads_corretor_periodo is None:
-            st.metric("Leads (CRM – período)", "-")
+        if indicador == "Análises":
+            df_temp = df_range[df_range["STATUS_BASE"] == "EM ANÁLISE"]
+            total_meta = analises_necessarias
+        elif indicador == "Aprovações":
+            df_temp = df_range[df_range["STATUS_BASE"] == "APROVADO"]
+            total_meta = aprovacoes_necessarias
         else:
-            st.metric("Leads (CRM – período)", total_leads_corretor_periodo)
+            df_temp = obter_vendas_unicas(df_range, status_venda_considerado)
+            total_meta = meta_vendas
 
-    with c1:
-        st.metric("Análises (só EM)", analises_em_cor)
-    with c2:
-        st.metric("Reanálises", reanalises_cor)
-    with c3:
-        st.metric("Análises (EM + RE)", analises_total_cor)
-    with c4:
-        st.metric("Aprovações", aprov_cor)
-    with c5:
-        st.metric("Vendas (Total)", vendas_cor)
-
-    # Segunda linha de cards – incluindo média de leads por análise
-    c6, c7, c8, c9 = st.columns(4)
-    with c6:
-        st.metric(
-            "VGV do corretor (período)",
-            f"R$ {vgv_cor:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+        # Cálculo de acumulado REAL
+        cont_por_dia = (
+            df_temp.groupby("DIA_DATA")
+            .size()
+            .reindex(dias_meta, fill_value=0)
         )
-    with c7:
-        st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov_cor:.1f}%")
-    with c8:
-        st.metric("Taxa Vendas/Análises (só EM)", f"{taxa_venda_analises_cor:.1f}%")
-    with c9:
-        if media_leads_por_analise is not None:
-            st.metric("Média leads por análise", f"{media_leads_por_analise:.1f}")
-        else:
-            st.metric("Média leads por análise", "—")
 
-    # Terceira linha – taxa vendas/aprovações
-    c10, = st.columns(1)
-    with c10:
-        st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov_cor:.1f}%")
+        df_line = pd.DataFrame({
+            "DIA": pd.to_datetime(dias_meta),
+            "Real": np.cumsum(cont_por_dia.values)
+        })
 
-    # Tabela do funil do corretor (usando só EM como base)
-    df_funil_cor = pd.DataFrame(
-        {
-            "Etapa": ["Análises (só EM)", "Aprovações", "Vendas"],
-            "Quantidade": [analises_em_cor, aprov_cor, vendas_cor],
-            "Conversão da etapa anterior (%)": [
-                100.0 if analises_em_cor > 0 else 0.0,
-                taxa_aprov_cor if analises_em_cor > 0 else 0.0,
-                taxa_venda_aprov_cor if aprov_cor > 0 else 0.0,
-            ],
-        }
-    )
+        # Linha Real PARA no último dia com movimento
+        if not df_temp.empty:
+            ultimo_mov = df_temp["DIA_DATA"].max()
+            df_line.loc[df_line["DIA"].dt.date > ultimo_mov, "Real"] = np.nan
 
-    # 🔽 TABELA EM CIMA, GRÁFICO EMBAIXO
-    st.markdown("### 📋 Tabela do Funil do Corretor (período)")
-    st.dataframe(
-        df_funil_cor.style.format(
-            {"Conversão da etapa anterior (%)": "{:.1f}%".format}
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
+        # Linha Meta linear
+        df_line["Meta"] = np.linspace(0, total_meta, len(df_line))
 
-    st.markdown("### 📊 Gráfico do Funil do Corretor (período)")
-    chart_funil_cor = (
-        alt.Chart(df_funil_cor)
-        .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
-        .encode(
-            x=alt.X("Quantidade:Q", title="Quantidade"),
-            y=alt.Y(
-                "Etapa:N",
-                sort=["Análises (só EM)", "Aprovações", "Vendas"],
-                title="Etapa",
-            ),
-            tooltip=[
-                "Etapa",
-                "Quantidade",
-                alt.Tooltip(
-                    "Conversão da etapa anterior (%)",
-                    title="Conversão",
-                    format=".1f",
-                ),
-            ],
+        df_plot = df_line.melt("DIA", var_name="Série", value_name="Valor")
+
+        chart = (
+            alt.Chart(df_plot)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("DIA:T", title="Dia"),
+                y=alt.Y("Valor:Q", title="Quantidade acumulada"),
+                color=alt.Color("Série:N", title=""),
+            )
+            .properties(height=350)
         )
-        .properties(height=300)
-    )
-    st.altair_chart(chart_funil_cor, use_container_width=True)
 
-# ---------------------------------------------------------
-# PLANEJAMENTO INDIVIDUAL – BASEADO NOS ÚLTIMOS 3 MESES DO CORRETOR
-# ---------------------------------------------------------
-st.markdown("---")
-st.markdown("## 📈 Planejamento de Vendas do Corretor (base últimos 3 meses)")
+        st.altair_chart(chart, use_container_width=True)
 
-# Usa a base TOTAL filtrada pelo corretor
-df_cor_full = df[df["CORRETOR"] == corretor_sel].copy()
-
-if df_cor_full.empty or df_cor_full["DIA"].isna().all():
-    st.info(
-        f"O corretor **{corretor_sel}** ainda não possui histórico suficiente "
-        "para cálculo dos últimos 3 meses."
-    )
 else:
-    dt_cor_all = pd.to_datetime(df_cor_full["DIA"], errors="coerce")
-    ref_date_cor = dt_cor_all.max()
+    st.info("Corretor sem vendas no período — não é possível projetar meta.")
 
-    if pd.isna(ref_date_cor):
-        st.info("Não foi possível identificar a data de referência do corretor na base.")
-    else:
-        limite_3m_cor = ref_date_cor - pd.DateOffset(months=3)
-        mask_3m_cor = (dt_cor_all >= limite_3m_cor) & (dt_cor_all <= ref_date_cor)
-        df_cor_3m = df_cor_full[mask_3m_cor].copy()
 
-        if df_cor_3m.empty:
-            st.info(
-                f"O corretor **{corretor_sel}** não possui registros nos últimos 3 meses "
-                f"(janela usada: {limite_3m_cor.date().strftime('%d/%m/%Y')} "
-                f"até {ref_date_cor.date().strftime('%d/%m/%Y')})."
-            )
-        else:
-            status_cor_3m = df_cor_3m["STATUS_BASE"].fillna("").astype(str).str.upper()
-
-            analises_cor_3m_base = conta_analises_base(status_cor_3m)  # só EM
-            aprov_cor_3m = conta_aprovacoes(status_cor_3m)
-            vendas_cor_3m = conta_vendas(
-                status_cor_3m,
-                status_venda=status_venda_considerado,
-            )
-
-            if vendas_cor_3m > 0:
-                media_analise_por_venda_cor = (
-                    analises_cor_3m_base / vendas_cor_3m
-                    if analises_cor_3m_base > 0 else 0
-                )
-                media_aprov_por_venda_cor = (
-                    aprov_cor_3m / vendas_cor_3m if aprov_cor_3m > 0 else 0
-                )
-            else:
-                media_analise_por_venda_cor = 0
-                media_aprov_por_venda_cor = 0
-
-            h1, h2, h3 = st.columns(3)
-            with h1:
-                st.metric("Análises (3m – só EM)", analises_cor_3m_base)
-            with h2:
-                st.metric("Aprovações (3m – corretor)", aprov_cor_3m)
-            with h3:
-                st.metric("Vendas (3m – corretor)", vendas_cor_3m)
-
-            h4, h5 = st.columns(2)
-            with h4:
-                st.metric(
-                    "Média de ANÁLISES por venda (3m, só EM)",
-                    f"{media_analise_por_venda_cor:.1f}" if vendas_cor_3m > 0 else "—",
-                )
-            with h5:
-                st.metric(
-                    "Média de APROVAÇÕES por venda (3m)",
-                    f"{media_aprov_por_venda_cor:.1f}" if vendas_cor_3m > 0 else "—",
-                )
-
-            st.caption(
-                f"Janela histórica usada para o corretor **{corretor_sel}**: "
-                f"de {limite_3m_cor.date().strftime('%d/%m/%Y')} "
-                f"até {ref_date_cor.date().strftime('%d/%m/%Y')} • "
-                f"Vendas consideradas: {desc_venda}."
-            )
-
-            st.markdown(
-                "### 🎯 Quantas análises/aprovações esse corretor precisa para bater a meta de vendas?"
-            )
-
-            vendas_planejadas_cor = st.number_input(
-                f"Meta de vendas no mês para {corretor_sel}",
-                min_value=0,
-                value=3,
-                step=1,
-                key="vendas_planejadas_corretor",
-            )
-
-            if vendas_planejadas_cor > 0 and vendas_cor_3m > 0:
-                analises_cor_necessarias = media_analise_por_venda_cor * vendas_planejadas_cor
-                aprovacoes_cor_necessarias = media_aprov_por_venda_cor * vendas_planejadas_cor
-
-                analises_cor_necessarias_int = int(np.ceil(analises_cor_necessarias))
-                aprovacoes_cor_necessarias_int = int(np.ceil(aprovacoes_cor_necessarias))
-
-                c_cor1, c_cor2, c_cor3 = st.columns(3)
-                with c_cor1:
-                    st.metric("Meta de vendas (corretor)", vendas_planejadas_cor)
-                with c_cor2:
-                    st.metric(
-                        "Análises necessárias (aprox.)",
-                        f"{analises_cor_necessarias_int} análises",
-                        help=(
-                            f"Cálculo: {media_analise_por_venda_cor:.2f} análises/venda "
-                            f"× {vendas_planejadas_cor}"
-                        ),
-                    )
-                with c_cor3:
-                    st.metric(
-                        "Aprovações necessárias (aprox.)",
-                        f"{aprovacoes_cor_necessarias_int} aprovações",
-                        help=(
-                            f"Cálculo: {media_aprov_por_venda_cor:.2f} aprovações/venda "
-                            f"× {vendas_planejadas_cor}"
-                        ),
-                    )
-
-                st.caption(
-                    "Os números são aproximados e arredondados para cima, "
-                    "baseados no histórico real desse corretor nos últimos 3 meses."
-                )
-
-                # -------------------------------------------------
-                # 📊 GRÁFICO – ACOMPANHAMENTO DA META DO CORRETOR
-                # -------------------------------------------------
-                if not df_cor_periodo.empty:
-                    st.markdown("### 📊 Acompanhamento da meta do corretor no período selecionado")
-
-                    indicador_meta = st.selectbox(
-                        "Indicador para comparar com a meta do corretor",
-                        ["Análises", "Aprovações", "Vendas"],
-                        key="indicador_meta_corretor",
-                    )
-
-                    # eixo de dias = todo o período filtrado (pode ter datas futuras)
-                    dr = pd.date_range(start=data_ini, end=data_fim, freq="D")
-                    dias_periodo = [d.date() for d in dr]
-
-                    if len(dias_periodo) == 0:
-                        st.info("Não há datas válidas no período filtrado para montar o gráfico.")
-                    else:
-                        idx = pd.to_datetime(dias_periodo)
-                        df_line = pd.DataFrame(index=idx)
-                        df_line.index.name = "DIA"
-
-                        status_cor = df_cor_periodo["STATUS_BASE"].fillna("").astype(str).str.upper()
-
-                        if indicador_meta == "Análises":
-                            df_temp = df_cor_periodo[status_cor == "EM ANÁLISE"].copy()
-                            total_meta = analises_cor_necessarias_int
-                        elif indicador_meta == "Aprovações":
-                            df_temp = df_cor_periodo[status_cor == "APROVADO"].copy()
-                            total_meta = aprovacoes_cor_necessarias_int
-                        else:  # Vendas
-                            df_temp = df_cor_periodo[
-                                status_cor.isin(status_venda_considerado)
-                            ].copy()
-                            total_meta = vendas_planejadas_cor
-
-                        if df_temp.empty or total_meta == 0:
-                            st.info(
-                                "Não há dados suficientes ou a meta está zerada para o indicador escolhido."
-                            )
-                        else:
-                            df_temp["DIA_DATA"] = pd.to_datetime(
-                                df_temp["DIA"], errors="coerce"
-                            ).dt.date
-                            cont_por_dia = (
-                                df_temp.groupby("DIA_DATA")
-                                .size()
-                                .reindex(dias_periodo, fill_value=0)
-                            )
-
-                            # Linha Real acumulada
-                            df_line["Real"] = cont_por_dia.values
-                            df_line["Real"] = df_line["Real"].cumsum()
-
-                            # Corta a linha Real depois do dia de hoje
-                            hoje_date = hoje
-                            limite_real = min(hoje_date, data_fim)
-                            mask_future = df_line.index.date > limite_real
-                            df_line.loc[mask_future, "Real"] = np.nan
-
-                            # Meta distribuída até o fim do período
-                            df_line["Meta"] = np.linspace(
-                                0, total_meta, num=len(df_line), endpoint=True
-                            )
-
-                            df_plot = (
-                                df_line.reset_index()
-                                .melt("DIA", var_name="Série", value_name="Valor")
-                            )
-
-                            chart_meta_cor = (
-                                alt.Chart(df_plot)
-                                .mark_line(point=True)
-                                .encode(
-                                    x=alt.X("DIA:T", title="Dia (movimentação)"),
-                                    y=alt.Y("Valor:Q", title="Quantidade acumulada"),
-                                    color=alt.Color("Série:N", title=""),
-                                    tooltip=[
-                                        alt.Tooltip("DIA:T", title="Dia"),
-                                        alt.Tooltip("Série:N", title="Série"),
-                                        alt.Tooltip("Valor:Q", title="Quantidade"),
-                                    ],
-                                )
-                                .properties(height=320)
-                            )
-
-                            # ponto marcando o dia de hoje, se estiver dentro do período
-                            hoje_dentro = (hoje_date >= data_ini) and (hoje_date <= data_fim)
-                            if hoje_dentro:
-                                df_real_reset = df_line.reset_index()
-                                df_real_hoje = df_real_reset[
-                                    df_real_reset["DIA"].dt.date == limite_real
-                                ]
-                                if not df_real_hoje.empty:
-                                    ponto_hoje = (
-                                        alt.Chart(df_real_hoje)
-                                        .mark_point(size=80)
-                                        .encode(x="DIA:T", y="Real:Q")
-                                    )
-                                    chart_meta_cor = chart_meta_cor + ponto_hoje
-
-                            st.altair_chart(chart_meta_cor, use_container_width=True)
-                            st.caption(
-                                "Linha **Real** mostra o acumulado diário do indicador escolhido "
-                                "para esse corretor, parando no **dia de hoje**. "
-                                "Linha **Meta** vai até a **data final escolhida** e mostra o "
-                                "ritmo necessário para bater a meta definida."
-                            )
-
-            elif vendas_planejadas_cor > 0 and vendas_cor_3m == 0:
-                st.info(
-                    f"O corretor **{corretor_sel}** ainda não possui vendas registradas "
-                    "nos últimos 3 meses para calcular as médias por venda."
-                )
