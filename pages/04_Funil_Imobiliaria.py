@@ -216,6 +216,40 @@ status_final_por_cliente = (
 )
 status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
 
+# 👇 GARANTE QUE EXISTA CHAVE_CLIENTE MESMO SE O app_dashboard DO SERVIDOR NÃO CRIAR
+if "NOME_CLIENTE_BASE" not in df.columns:
+    possiveis_nome = ["NOME_CLIENTE_BASE", "NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+    col_nome = next((c for c in possiveis_nome if c in df.columns), None)
+    if col_nome:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+    else:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+
+if "CPF_CLIENTE_BASE" not in df.columns:
+    possiveis_cpf = ["CPF_CLIENTE_BASE", "CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
+    col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
+    if col_cpf:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
+    else:
+        df["CPF_CLIENTE_BASE"] = ""
+
+if "CHAVE_CLIENTE" not in df.columns:
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+    )
 
 # ---------------------------------------------------------
 # SIDEBAR – APENAS SELETOR DE DATA BASE + TIPO DE VENDA
