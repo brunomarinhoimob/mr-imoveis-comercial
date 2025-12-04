@@ -106,10 +106,14 @@ def conta_aprovacoes(status: pd.Series) -> int:
 def obter_vendas_unicas(
     df_scope: pd.DataFrame,
     status_venda=None,
+    status_final_map: pd.Series | None = None,
 ) -> pd.DataFrame:
     """
     Retorna uma venda por cliente (último status).
     Se tiver VENDA INFORMADA e depois VENDA GERADA, fica só a GERADA.
+
+    Se status_final_map for informado (CHAVE_CLIENTE -> STATUS_FINAL_CLIENTE),
+    remove clientes cujo último status global seja DESISTIU.
     """
     if df_scope.empty:
         return df_scope.copy()
@@ -122,7 +126,7 @@ def obter_vendas_unicas(
     if df_v.empty:
         return df_v
 
-    # Garante colunas de cliente
+    # Garante colunas de cliente / chave
     if "NOME_CLIENTE_BASE" not in df_v.columns:
         if "CLIENTE" in df_v.columns:
             df_v["NOME_CLIENTE_BASE"] = (
@@ -138,19 +142,33 @@ def obter_vendas_unicas(
     if "CPF_CLIENTE_BASE" not in df_v.columns:
         df_v["CPF_CLIENTE_BASE"] = ""
 
-    df_v["CHAVE_CLIENTE"] = (
-        df_v["NOME_CLIENTE_BASE"]
-        .fillna("NÃO INFORMADO")
-        .astype(str)
-        .str.upper()
-        .str.strip()
-        + " | "
-        + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
-    )
+    if "CHAVE_CLIENTE" not in df_v.columns:
+        df_v["CHAVE_CLIENTE"] = (
+            df_v["NOME_CLIENTE_BASE"]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+            + " | "
+            + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+        )
+
+    # 👇 NOVO: aplica regra global do DESISTIU, se mapa foi passado
+    if status_final_map is not None:
+        df_v = df_v.merge(
+            status_final_map,
+            on="CHAVE_CLIENTE",
+            how="left",
+        )
+        df_v = df_v[df_v["STATUS_FINAL_CLIENTE"] != "DESISTIU"]
+
+    if df_v.empty:
+        return df_v
 
     # Ordena por DIA para pegar o último status do cliente
     if "DIA" in df_v.columns:
         df_v = df_v.sort_values("DIA")
+
     df_ult = df_v.groupby("CHAVE_CLIENTE").tail(1).copy()
     return df_ult
 
@@ -189,6 +207,14 @@ else:
     df["DATA_BASE_LABEL"] = df["DIA"].apply(
         lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
     )
+
+# 👇 NOVO: STATUS FINAL GLOBAL DO CLIENTE (HISTÓRICO COMPLETO)
+# Usa CHAVE_CLIENTE que já vem do carregar_dados_planilha
+df_ordenado_global = df.sort_values("DIA")
+status_final_por_cliente = (
+    df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
+)
+status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
 
 
 # ---------------------------------------------------------
@@ -282,6 +308,7 @@ aprovacoes = conta_aprovacoes(status_periodo)
 df_vendas_periodo = obter_vendas_unicas(
     df_periodo,
     status_venda=status_venda_considerado,
+    status_final_map=status_final_por_cliente,  # 👈 aplica regra DESISTIU
 )
 vendas = len(df_vendas_periodo)
 vgv_total = df_vendas_periodo["VGV"].sum() if not df_vendas_periodo.empty else 0.0
@@ -489,7 +516,7 @@ if vendas > 0:
                 value=(data_ini_mov, data_fim_mov),
             )
 
-            if isinstance(periodo_meta, tuple) and len(periodo_meta) == 2:
+            if isinstance(periodo_meta, (tuple, list)) and len(periodo_meta) == 2:
                 data_ini_sel, data_fim_sel = periodo_meta
             else:
                 data_ini_sel = data_ini_mov
@@ -532,6 +559,7 @@ if vendas > 0:
                         df_temp = obter_vendas_unicas(
                             df_range,
                             status_venda=status_venda_considerado,
+                            status_final_map=status_final_por_cliente,  # 👈 regra DESISTIU também no gráfico
                         ).copy()
                         total_meta = meta_vendas
 
