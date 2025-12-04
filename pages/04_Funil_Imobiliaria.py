@@ -140,7 +140,15 @@ def obter_vendas_unicas(
             df_v["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
 
     if "CPF_CLIENTE_BASE" not in df_v.columns:
-        df_v["CPF_CLIENTE_BASE"] = ""
+        if "CPF" in df_v.columns:
+            df_v["CPF_CLIENTE_BASE"] = (
+                df_v["CPF"]
+                .fillna("")
+                .astype(str)
+                .str.replace(r"\D", "", regex=True)
+            )
+        else:
+            df_v["CPF_CLIENTE_BASE"] = ""
 
     if "CHAVE_CLIENTE" not in df_v.columns:
         df_v["CHAVE_CLIENTE"] = (
@@ -208,12 +216,55 @@ else:
         lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
     )
 
+# 👇 NOVO: GARANTE QUE EXISTA CHAVE_CLIENTE MESMO SE O app_dashboard ESTIVER ANTIGO
+if "NOME_CLIENTE_BASE" not in df.columns:
+    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+    col_nome = next((c for c in possiveis_nome if c in df.columns), None)
+    if col_nome:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+    else:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+
+if "CPF_CLIENTE_BASE" not in df.columns:
+    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
+    col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
+    if col_cpf:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
+    else:
+        df["CPF_CLIENTE_BASE"] = ""
+
+if "CHAVE_CLIENTE" not in df.columns:
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+    )
+
 # 👇 NOVO: STATUS FINAL GLOBAL DO CLIENTE (HISTÓRICO COMPLETO)
-# Usa CHAVE_CLIENTE que já vem do carregar_dados_planilha
 df_ordenado_global = df.sort_values("DIA")
-status_final_por_cliente = (
-    df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
-)
+if "STATUS_BASE" in df_ordenado_global.columns:
+    status_final_por_cliente = (
+        df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
+    )
+else:
+    # fallback seguro se por algum motivo STATUS_BASE não existir
+    status_final_por_cliente = pd.Series(
+        data="",
+        index=df_ordenado_global["CHAVE_CLIENTE"],
+        dtype=str,
+        name="STATUS_FINAL_CLIENTE",
+    )
 status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
 
 
@@ -269,7 +320,6 @@ if df_periodo.empty:
 
 # ---------------------------------------------------------
 # DEFININDO O INTERVALO DE DIAS A PARTIR DA DATA BASE
-# (mínimo e máximo da coluna DIA dentro das bases selecionadas)
 # ---------------------------------------------------------
 dias_sel = df_periodo["DIA"].dropna()
 if not dias_sel.empty:
@@ -458,7 +508,7 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------
-# PLANEJAMENTO BASEADO NO FUNIL DO PERÍODO (CONECTADO À DATA BASE)
+# PLANEJAMENTO BASEADO NO FUNIL DO PERÍODO
 # ---------------------------------------------------------
 st.markdown("## 🎯 Planejamento com base no funil do período (DATA BASE selecionada)")
 
@@ -501,7 +551,7 @@ if vendas > 0:
         )
 
         # -------------------------------------------------
-        # GRÁFICO – META x REAL COM INTERVALO LIVRE (IMOBILIÁRIA)
+        # GRÁFICO – META x REAL COM INTERVALO LIVRE
         # -------------------------------------------------
         if not df_periodo.empty:
             st.markdown("### 📊 Acompanhamento da meta da imobiliária no intervalo escolhido")
