@@ -284,6 +284,8 @@ def carregar_dados_planilha() -> pd.DataFrame:
         df.loc[s.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
         df.loc[s.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
+        # 👇 NOVO – mapeia qualquer coisa com DESIST (DESISTIU, DESISTÊNCIA etc.)
+        df.loc[s.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
 
     # VGV
     if "OBSERVAÇÕES" in df.columns:
@@ -319,6 +321,13 @@ def carregar_dados_planilha() -> pd.DataFrame:
             .str.replace(r"\D", "", regex=True)
         )
 
+    # 👇 NOVO – CHAVE_CLIENTE global (nome + CPF) para todas as regras
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("")
+    )
+
     return df
 
 
@@ -327,6 +336,13 @@ df = carregar_dados_planilha()
 if df.empty:
     st.error("Erro ao carregar planilha.")
     st.stop()
+
+# 👇 NOVO – STATUS FINAL DO CLIENTE (HISTÓRICO COMPLETO DA PLANILHA)
+df_ordenado_global = df.sort_values("DIA")
+status_final_por_cliente = (
+    df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
+)
+status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
 
 # ---------------------------------------------------------
 # LEADS – API SUPREMO (CACHE 1 HORA)
@@ -580,31 +596,52 @@ df_vendas_ref = df_filtrado[
 ].copy()
 
 if not df_vendas_ref.empty:
-    df_vendas_ref["CHAVE_CLIENTE"] = (
-        df_vendas_ref["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
-        + " | "
-        + df_vendas_ref["CPF_CLIENTE_BASE"].fillna("")
+    # garante CHAVE_CLIENTE
+    if "CHAVE_CLIENTE" not in df_vendas_ref.columns:
+        df_vendas_ref["CHAVE_CLIENTE"] = (
+            df_vendas_ref["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+            + " | "
+            + df_vendas_ref["CPF_CLIENTE_BASE"].fillna("")
+        )
+
+    # 👇 NOVO – junta STATUS_FINAL_CLIENTE (histórico completo) e aplica regra DESISTIU
+    df_vendas_ref = df_vendas_ref.merge(
+        status_final_por_cliente,
+        on="CHAVE_CLIENTE",
+        how="left",
     )
 
-    df_vendas_ref = df_vendas_ref.sort_values("DIA")
-    # última ocorrência de cada cliente
-    df_vendas_ult_base = df_vendas_ref.groupby("CHAVE_CLIENTE").tail(1)
+    # remove todas as vendas dos clientes cujo status final é DESISTIU
+    df_vendas_ref = df_vendas_ref[
+        df_vendas_ref["STATUS_FINAL_CLIENTE"] != "DESISTIU"
+    ]
 
-    # aplica filtro do botão
-    if filtro_vendas == "Somente GERADAS":
-        df_vendas_ult = df_vendas_ult_base[
-            df_vendas_ult_base["STATUS_BASE"] == "VENDA GERADA"
-        ].copy()
-    else:
-        df_vendas_ult = df_vendas_ult_base.copy()
+    if not df_vendas_ref.empty:
+        df_vendas_ref = df_vendas_ref.sort_values("DIA")
+        # última ocorrência de cada cliente
+        df_vendas_ult_base = df_vendas_ref.groupby("CHAVE_CLIENTE").tail(1)
 
-    if not df_vendas_ult.empty:
-        venda_gerada = (df_vendas_ult["STATUS_BASE"] == "VENDA GERADA").sum()
-        venda_informada = (df_vendas_ult["STATUS_BASE"] == "VENDA INFORMADA").sum()
-        vendas_total = int(venda_gerada + venda_informada)
+        # aplica filtro do botão
+        if filtro_vendas == "Somente GERADAS":
+            df_vendas_ult = df_vendas_ult_base[
+                df_vendas_ult_base["STATUS_BASE"] == "VENDA GERADA"
+            ].copy()
+        else:
+            df_vendas_ult = df_vendas_ult_base.copy()
 
-        vgv_total = df_vendas_ult["VGV"].sum()
-        maior_vgv = df_vendas_ult["VGV"].max() if vendas_total > 0 else 0
+        if not df_vendas_ult.empty:
+            venda_gerada = (df_vendas_ult["STATUS_BASE"] == "VENDA GERADA").sum()
+            venda_informada = (df_vendas_ult["STATUS_BASE"] == "VENDA INFORMADA").sum()
+            vendas_total = int(venda_gerada + venda_informada)
+
+            vgv_total = df_vendas_ult["VGV"].sum()
+            maior_vgv = df_vendas_ult["VGV"].max() if vendas_total > 0 else 0
+        else:
+            venda_gerada = 0
+            venda_informada = 0
+            vendas_total = 0
+            vgv_total = 0
+            maior_vgv = 0
     else:
         venda_gerada = 0
         venda_informada = 0
