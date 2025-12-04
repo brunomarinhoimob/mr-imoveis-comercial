@@ -150,6 +150,8 @@ def carregar_dados() -> pd.DataFrame:
         df.loc[s.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
         df.loc[s.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
+        # 👇 NOVO – tudo que tiver "DESIST" vira DESISTIU
+        df.loc[s.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
 
     # VGV
     if "OBSERVAÇÕES" in df.columns:
@@ -185,6 +187,13 @@ def carregar_dados() -> pd.DataFrame:
             .str.replace(r"\D", "", regex=True)
         )
 
+    # 👇 NOVO – CHAVE_CLIENTE global (nome + CPF)
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("")
+    )
+
     return df
 
 
@@ -207,6 +216,15 @@ bases_validas = df["DATA_BASE"].dropna()
 if dias_validos.empty and bases_validas.empty:
     st.error("Não foi possível identificar datas válidas na planilha.")
     st.stop()
+
+# ---------------------------------------------------------
+# NOVO – STATUS FINAL DO CLIENTE (HISTÓRICO COMPLETO)
+# ---------------------------------------------------------
+df_ordenado_global = df.sort_values("DIA")
+status_final_por_cliente = (
+    df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
+)
+status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
 
 # ---------------------------------------------------------
 # SIDEBAR – FILTRO DE PERÍODO + TIPO DE VENDA
@@ -334,19 +352,38 @@ analises_por_eq = df_analises.groupby("EQUIPE").size().rename("ANALISES")
 df_aprov = df_ref[df_ref["STATUS_BASE"] == "APROVADO"]
 aprov_por_eq = df_aprov.groupby("EQUIPE").size().rename("APROVACOES")
 
-# Vendas (1 por cliente) + VGV com tipo de venda filtrado
+# ---------------------------------------------------------
+# Vendas (1 por cliente) + VGV – COM REGRA DO DESISTIU
+# ---------------------------------------------------------
 df_vendas = df_ref[df_ref["STATUS_BASE"].isin(status_venda_considerado)].copy()
 
 if not df_vendas.empty:
-    df_vendas["CHAVE_CLIENTE"] = (
-        df_vendas["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
-        + " | "
-        + df_vendas["CPF_CLIENTE_BASE"].fillna("")
+    # garante CHAVE_CLIENTE
+    if "CHAVE_CLIENTE" not in df_vendas.columns:
+        df_vendas["CHAVE_CLIENTE"] = (
+            df_vendas["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+            + " | "
+            + df_vendas["CPF_CLIENTE_BASE"].fillna("")
+        )
+
+    # junta STATUS_FINAL_CLIENTE do histórico completo
+    df_vendas = df_vendas.merge(
+        status_final_por_cliente,
+        on="CHAVE_CLIENTE",
+        how="left",
     )
-    df_vendas = df_vendas.sort_values("DIA")
-    df_vendas_ult = df_vendas.groupby("CHAVE_CLIENTE").tail(1)
+
+    # remove clientes cujo último status global é DESISTIU
+    df_vendas = df_vendas[df_vendas["STATUS_FINAL_CLIENTE"] != "DESISTIU"]
+
+    if not df_vendas.empty:
+        df_vendas = df_vendas.sort_values("DIA")
+        # 1 registro por cliente (último do período)
+        df_vendas_ult = df_vendas.groupby("CHAVE_CLIENTE").tail(1)
+    else:
+        df_vendas_ult = pd.DataFrame()
 else:
-    df_vendas_ult = df_vendas.copy()
+    df_vendas_ult = pd.DataFrame()
 
 vendas_por_eq = (
     df_vendas_ult.groupby("EQUIPE").size().rename("VENDAS")
@@ -478,7 +515,7 @@ st.altair_chart(chart, use_container_width=True)
 st.markdown(
     "<hr><p style='text-align:center;color:#666;'>"
     "Ranking por equipe baseado em análises, aprovações, vendas (1 por cliente) e VGV, "
-    "filtrado por DIA ou por DATA BASE (mês comercial) e pelo tipo de venda escolhido na barra lateral."
+    "já considerando que clientes com último status DESISTIU têm suas vendas anuladas."
     "</p>",
     unsafe_allow_html=True,
 )
