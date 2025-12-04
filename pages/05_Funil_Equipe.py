@@ -2,19 +2,16 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-from datetime import date, timedelta
+from datetime import date
 
 from app_dashboard import carregar_dados_planilha
 
 
 # ---------------------------------------------------------
-# FUNÇÕES AUXILIARES GERAIS
+# FUNÇÕES AUXILIARES
 # ---------------------------------------------------------
 def mes_ano_ptbr_para_date(texto: str):
-    """
-    Converte 'novembro 2025' -> date(2025, 11, 1).
-    Se não conseguir, retorna NaT.
-    """
+    """Converte 'novembro 2025' -> date(2025, 11, 1)."""
     if not isinstance(texto, str):
         return pd.NaT
 
@@ -82,8 +79,6 @@ def conta_aprovacoes(status: pd.Series) -> int:
 def obter_vendas_unicas(df_scope: pd.DataFrame, status_venda=None) -> pd.DataFrame:
     """
     Considera no máximo 1 venda por cliente (último status de venda).
-    `status_venda` define quais status contam como venda
-    (ex.: ["VENDA GERADA"] ou ["VENDA GERADA", "VENDA INFORMADA"]).
     """
     if df_scope.empty:
         return df_scope.copy()
@@ -96,7 +91,6 @@ def obter_vendas_unicas(df_scope: pd.DataFrame, status_venda=None) -> pd.DataFra
     if df_v.empty:
         return df_v
 
-    # Nome / CPF base
     if "NOME_CLIENTE_BASE" not in df_v.columns:
         if "CLIENTE" in df_v.columns:
             df_v["NOME_CLIENTE_BASE"] = (
@@ -132,7 +126,7 @@ def format_currency(valor: float) -> str:
 
 
 # ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA
+# CONFIG DA PÁGINA
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Funil MR Imóveis – Equipe",
@@ -149,10 +143,8 @@ if df_global.empty:
     st.error("Não foi possível carregar os dados da planilha.")
     st.stop()
 
-# Garante DIA como datetime
 df_global["DIA"] = pd.to_datetime(df_global["DIA"], errors="coerce")
 
-# DATA BASE da planilha (texto "novembro 2025") -> date(ano, mes, 1)
 if "DATA BASE" in df_global.columns:
     base_raw = df_global["DATA BASE"].astype(str).str.strip()
     df_global["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
@@ -160,39 +152,32 @@ if "DATA BASE" in df_global.columns:
         lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
     )
 else:
-    # fallback: usa o próprio DIA como base (não é o ideal, mas não quebra)
     df_global["DATA_BASE"] = df_global["DIA"]
     df_global["DATA_BASE_LABEL"] = df_global["DIA"].apply(
         lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
     )
 
-# Verifica coluna de equipe
 if "EQUIPE" not in df_global.columns:
     st.error("Coluna 'EQUIPE' não encontrada na base.")
     st.stop()
 
-# Lista de equipes
 lista_equipes = sorted(df_global["EQUIPE"].dropna().astype(str).unique())
 if not lista_equipes:
     st.error("Nenhuma equipe encontrada na base.")
     st.stop()
 
-
 # ---------------------------------------------------------
-# SIDEBAR – ESCOLHA DA EQUIPE E DATA BASE
+# SIDEBAR – FILTROS
 # ---------------------------------------------------------
 st.sidebar.title("Filtros da visão por equipe")
 
 equipe_sel = st.sidebar.selectbox("Equipe", lista_equipes)
 
-# Filtra base pela equipe escolhida
 df = df_global[df_global["EQUIPE"] == equipe_sel].copy()
-
 if df.empty:
     st.warning(f"Não há registros para a equipe **{equipe_sel}**.")
     st.stop()
 
-# Cabeçalho com logo + título (depois de saber a equipe)
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
     try:
@@ -206,10 +191,8 @@ with col_title:
         "Produtividade, funil de análises → aprovações → vendas e previsibilidade."
     )
 
-# opções de DATA BASE só da equipe selecionada
 bases_validas_dt = pd.to_datetime(df["DATA_BASE"], errors="coerce")
 bases_validas = bases_validas_dt.dropna()
-
 if bases_validas.empty:
     st.error("Essa equipe não possui DATA BASE válida na planilha.")
     st.stop()
@@ -229,23 +212,19 @@ bases_selecionadas = st.sidebar.multiselect(
     options=opcoes_bases,
     default=default_bases,
 )
-
 if not bases_selecionadas:
     bases_selecionadas = opcoes_bases
 
 df_periodo = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
-
 if df_periodo.empty:
     st.warning("Nenhum registro para essa equipe nas DATA BASE selecionadas.")
     st.stop()
 
-# Tipo de venda (mesma lógica das outras páginas)
 opcao_venda = st.sidebar.radio(
     "Tipo de venda para o funil",
     ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
     index=0,
 )
-
 if opcao_venda == "Só VENDA GERADA":
     status_venda_considerado = ["VENDA GERADA"]
     desc_venda = "apenas VENDA GERADA"
@@ -253,7 +232,6 @@ else:
     status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
     desc_venda = "VENDA GERADA + VENDA INFORMADA"
 
-# intervalo de DIAS (mínimo/máximo DIA dentro das bases selecionadas)
 dias_sel = df_periodo["DIA"].dropna()
 if not dias_sel.empty:
     data_ini_mov = dias_sel.min().date()
@@ -263,7 +241,6 @@ else:
     data_ini_mov = hoje
     data_fim_mov = hoje
 
-# texto da base
 if len(bases_selecionadas) == 1:
     base_str = bases_selecionadas[0]
 else:
@@ -276,9 +253,8 @@ st.caption(
     f"Vendas consideradas no funil: **{desc_venda}**."
 )
 
-
 # ---------------------------------------------------------
-# FUNIL DA EQUIPE – PERÍODO (usa dias derivados da DATA BASE)
+# FUNIL – PERÍODO (DATA BASE SELECIONADA)
 # ---------------------------------------------------------
 status_periodo = df_periodo["STATUS_BASE"].fillna("").astype(str).str.upper()
 
@@ -301,12 +277,10 @@ taxa_venda_aprov = (vendas / aprovacoes * 100) if aprovacoes > 0 else 0.0
 corretores_ativos_periodo = df_periodo["CORRETOR"].dropna().astype(str).nunique()
 ipc_periodo = (vendas / corretores_ativos_periodo) if corretores_ativos_periodo > 0 else None
 
-
 # ---------------------------------------------------------
-# LEADS DO PERÍODO (CRM) – CRUZANDO COM A PLANILHA PRA ACHAR A EQUIPE
+# LEADS CRM (SE TIVER)
 # ---------------------------------------------------------
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
-
 total_leads_periodo = None
 conv_leads_analise_pct = None
 leads_por_analise = None
@@ -320,7 +294,6 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
     df_leads_use = df_leads_use.dropna(subset=["data_captura"])
     df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
 
-    # tenta achar uma coluna de corretor no df_leads
     cols_lower = {c.lower(): c for c in df_leads_use.columns}
     possiveis_corretor_lead = [
         "corretor",
@@ -335,7 +308,6 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
     )
 
     if col_corretor_lead is not None:
-        # mapa corretor -> equipe vindo da planilha
         mapa_cor = (
             df_global[["CORRETOR", "EQUIPE"]]
             .dropna()
@@ -358,7 +330,6 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
             how="left",
         )
 
-        # filtra período + equipe (usando os dias derivados da DATA BASE)
         mask_periodo_leads = (
             (df_leads_merge["data_captura_date"] >= data_ini_mov)
             & (df_leads_merge["data_captura_date"] <= data_fim_mov)
@@ -377,9 +348,7 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
             )
     else:
         leads_msg = (
-            "Não encontrei nenhuma coluna de corretor nos dados de leads do CRM. "
-            "Sem saber o corretor responsável pelo lead, não dá pra cruzar com a planilha "
-            "pra descobrir a equipe."
+            "Não encontrei nenhuma coluna de corretor nos dados de leads do CRM."
         )
 else:
     if df_leads.empty:
@@ -390,13 +359,11 @@ else:
 if leads_msg:
     st.info(leads_msg)
 
-
 # ---------------------------------------------------------
-# BLOCO PRINCIPAL – FUNIL DA EQUIPE NO PERÍODO
+# BLOCO PRINCIPAL – KPIs DO FUNIL
 # ---------------------------------------------------------
 st.markdown("## 🧭 Funil da Equipe – Período Selecionado")
 
-# linha de métricas de LEADS x ANÁLISE
 lc1, lc2, lc3 = st.columns(3)
 with lc1:
     st.metric(
@@ -408,7 +375,6 @@ with lc2:
         st.metric(
             "Leads → Análises (só EM)",
             f"{conv_leads_analise_pct:.1f}%",
-            help="Percentual de leads da equipe, no período, que viraram análise (só EM ANÁLISE).",
         )
     else:
         st.metric("Leads → Análises (só EM)", "—")
@@ -417,12 +383,10 @@ with lc3:
         st.metric(
             "Relação leads/análise (só EM)",
             f"{leads_por_analise:.1f} leads/análise",
-            help="Em média, quantos leads essa equipe precisa para sair 1 análise (só EM ANÁLISE).",
         )
     else:
         st.metric("Relação leads/análise (só EM)", "—")
 
-# métricas do funil
 c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
     st.metric("Análises (só EM)", analises_em)
@@ -450,14 +414,12 @@ with c10:
     st.metric(
         "IPC do período (vendas/corretor)",
         f"{ipc_periodo:.2f}" if ipc_periodo is not None else "—",
-        help="Vendas únicas por corretor dessa equipe no período.",
     )
 
 st.markdown("---")
 
-
 # ---------------------------------------------------------
-# PRODUTIVIDADE DA EQUIPE – PERÍODO
+# PRODUTIVIDADE – PERÍODO
 # ---------------------------------------------------------
 st.markdown("## 👥 Produtividade da equipe – período selecionado")
 
@@ -484,7 +446,6 @@ else:
         st.metric(
             "% equipe produtiva (período)",
             f"{equipe_produtiva_pct:.1f}%",
-            help="Corretor produtivo = pelo menos 1 venda única no período.",
         )
     with c13:
         st.metric("Vendas (período – únicas)", vendas)
@@ -496,9 +457,8 @@ else:
 
 st.markdown("---")
 
-
 # ---------------------------------------------------------
-# HISTÓRICO 3 MESES – DATA_BASE (EQUIPE)
+# HISTÓRICO 3 MESES E PLANEJAMENTO
 # ---------------------------------------------------------
 st.markdown("## 📈 Funil histórico da equipe – últimos 3 meses (DATA BASE)")
 
@@ -509,10 +469,9 @@ meta_vendas = 0
 if bases_validas.empty:
     st.info("Não há DATA BASE válida para calcular o histórico de 3 meses.")
 else:
-    data_ref_base = bases_validas.max()               # Timestamp
+    data_ref_base = bases_validas.max()
     inicio_3m = data_ref_base - pd.DateOffset(months=3)
 
-    # usa DATA_BASE convertida pra datetime pra comparar
     col_base_dt = pd.to_datetime(df["DATA_BASE"], errors="coerce")
     mask_3m = (col_base_dt >= inicio_3m) & (col_base_dt <= data_ref_base)
     df_3m = df[mask_3m].copy()
@@ -586,7 +545,6 @@ else:
             min_value=0,
             step=1,
             value=int(vendas_3m / 3) if vendas_3m > 0 else 5,
-            help="Use a meta de vendas da equipe (mês/período desejado).",
         )
 
         if meta_vendas > 0 and vendas_3m > 0:
@@ -604,7 +562,7 @@ else:
             with c25:
                 st.metric(
                     "Aprovações necessárias (aprox.)",
-                    f"{aprovações_necessarias} aprovações",
+                    f"{aprovacoes_necessarias} aprovações",
                 )
 
             st.caption(
@@ -618,7 +576,7 @@ else:
             )
 
         # -------------------------------------------------
-        # GRÁFICO – META x REAL (EQUIPE) COM INTERVALO LIVRE
+        # GRÁFICO – META x REAL COM INTERVALO LIVRE
         # -------------------------------------------------
         if meta_vendas > 0 and vendas_3m > 0 and not df_periodo.empty:
             st.markdown("### 📊 Acompanhamento da meta no intervalo escolhido")
@@ -628,13 +586,11 @@ else:
                 ["Análises", "Aprovações", "Vendas"],
             )
 
-            # seletor de faixa de datas (intervalo livre)
             periodo_meta = st.date_input(
                 "Período do acompanhamento da meta",
                 value=(data_ini_mov, data_fim_mov),
             )
 
-            # garante que veio uma tupla (início, fim)
             if isinstance(periodo_meta, tuple) and len(periodo_meta) == 2:
                 data_ini_sel, data_fim_sel = periodo_meta
             else:
@@ -646,14 +602,12 @@ else:
                     "A data inicial do acompanhamento não pode ser maior que a data final."
                 )
             else:
-                # range de dias do acompanhamento (livre)
                 dr = pd.date_range(start=data_ini_sel, end=data_fim_sel, freq="D")
                 dias_meta = [d.date() for d in dr]
 
                 if len(dias_meta) == 0:
                     st.info("Não há datas válidas no período para montar o gráfico.")
                 else:
-                    # base filtrada pelo intervalo de acompanhamento
                     df_periodo["DIA_DATA"] = pd.to_datetime(df_periodo["DIA"]).dt.date
                     df_range = df_periodo[
                         (df_periodo["DIA_DATA"] >= data_ini_sel)
@@ -698,7 +652,6 @@ else:
                             .reindex(dias_meta, fill_value=0)
                         )
 
-                        # linha Real acumulada (só dentro do intervalo selecionado)
                         idx = pd.to_datetime(dias_meta)
                         df_line = pd.DataFrame(index=idx)
                         df_line.index.name = "DIA"
@@ -706,13 +659,12 @@ else:
                         df_line["Real"] = cont_por_dia.values
                         df_line["Real"] = df_line["Real"].cumsum()
 
-                        # 👇 aqui entra teu pedido: linha REAL para no último dia com movimento
+                        # Real para no último dia com movimento
                         ultimo_mov = df_temp["DIA_DATA"].max()
                         if pd.notnull(ultimo_mov):
                             mask_future_real = df_line.index.date > ultimo_mov
                             df_line.loc[mask_future_real, "Real"] = np.nan
 
-                        # linha Meta linear de 0 até total_meta no intervalo escolhido
                         df_line["Meta"] = np.linspace(
                             0, total_meta, num=len(df_line), endpoint=True
                         )
@@ -729,11 +681,6 @@ else:
                                 x=alt.X("DIA:T", title="Dia"),
                                 y=alt.Y("Valor:Q", title="Quantidade acumulada"),
                                 color=alt.Color("Série:N", title=""),
-                                tooltip=[
-                                    alt.Tooltip("DIA:T", title="Dia"),
-                                    alt.Tooltip("Série:N", title="Série"),
-                                    alt.Tooltip("Valor:Q", title="Quantidade"),
-                                ],
                             )
                             .properties(height=320)
                         )
@@ -743,5 +690,5 @@ else:
                             "Linha **Real** = indicador acumulado da equipe **apenas dentro do intervalo escolhido**, "
                             "parando no último dia com movimentação. "
                             "Linha **Meta** = ritmo necessário, do início ao fim do intervalo, "
-                            "para atingir o total de análises/aprovações/vendas calculado com base nos últimos 3 meses."
+                            "para atingir o total calculado com base nos últimos 3 meses."
                         )
