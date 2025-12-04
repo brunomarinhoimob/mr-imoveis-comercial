@@ -161,7 +161,7 @@ def obter_vendas_unicas(
             + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
         )
 
-    # 👇 NOVO: aplica regra global do DESISTIU, se mapa foi passado
+    # Aplica regra global do DESISTIU, se mapa foi passado
     if status_final_map is not None:
         df_v = df_v.merge(
             status_final_map,
@@ -200,23 +200,27 @@ if df.empty:
 # DIA em datetime
 df["DIA"] = pd.to_datetime(df.get("DIA"), errors="coerce")
 
-# 🔴 FORÇA O USO DA COLUNA "DATA BASE" DA PLANILHA
+# Normaliza STATUS_BASE em maiúsculo e padroniza DESISTIU
+if "STATUS_BASE" in df.columns:
+    df["STATUS_BASE"] = df["STATUS_BASE"].fillna("").astype(str).str.upper()
+    df.loc[df["STATUS_BASE"].str.contains("DESIST", na=False), "STATUS_BASE"] = "DESISTIU"
+else:
+    df["STATUS_BASE"] = ""
+
+# USA "DATA BASE" DA PLANILHA
 if "DATA BASE" in df.columns:
     base_raw = df["DATA BASE"].astype(str).str.strip()
-    # Converte textos tipo "novembro 2025" em date(2025, 11, 1)
     df["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
-    # Label para o seletor: mm/AAAA (11/2025, 12/2025, ...)
     df["DATA_BASE_LABEL"] = df["DATA_BASE"].apply(
         lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
     )
 else:
-    # Fallback: usa DIA mesmo (não é o ideal, mas garante que funciona)
     df["DATA_BASE"] = df["DIA"]
     df["DATA_BASE_LABEL"] = df["DIA"].apply(
         lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
     )
 
-# 👇 NOVO: GARANTE QUE EXISTA CHAVE_CLIENTE MESMO SE O app_dashboard ESTIVER ANTIGO
+# Garante que existam NOME_CLIENTE_BASE, CPF_CLIENTE_BASE e CHAVE_CLIENTE
 if "NOME_CLIENTE_BASE" not in df.columns:
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     col_nome = next((c for c in possiveis_nome if c in df.columns), None)
@@ -251,25 +255,17 @@ if "CHAVE_CLIENTE" not in df.columns:
         + df["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
     )
 
-# 👇 NOVO: STATUS FINAL GLOBAL DO CLIENTE (HISTÓRICO COMPLETO)
+# STATUS FINAL GLOBAL DO CLIENTE (histórico completo)
 df_ordenado_global = df.sort_values("DIA")
-if "STATUS_BASE" in df_ordenado_global.columns:
-    status_final_por_cliente = (
-        df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
-    )
-else:
-    # fallback seguro se por algum motivo STATUS_BASE não existir
-    status_final_por_cliente = pd.Series(
-        data="",
-        index=df_ordenado_global["CHAVE_CLIENTE"],
-        dtype=str,
-        name="STATUS_FINAL_CLIENTE",
-    )
+status_final_por_cliente = (
+    df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
+)
+status_final_por_cliente = status_final_por_cliente.astype(str).str.upper()
 status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
 
 
 # ---------------------------------------------------------
-# SIDEBAR – APENAS SELETOR DE DATA BASE + TIPO DE VENDA
+# SIDEBAR – SELETOR DE DATA BASE + TIPO DE VENDA
 # ---------------------------------------------------------
 st.sidebar.title("Filtros da visão imobiliária")
 
@@ -319,7 +315,7 @@ if df_periodo.empty:
 
 
 # ---------------------------------------------------------
-# DEFININDO O INTERVALO DE DIAS A PARTIR DA DATA BASE
+# INTERVALO DE DIAS A PARTIR DA DATA BASE
 # ---------------------------------------------------------
 dias_sel = df_periodo["DIA"].dropna()
 if not dias_sel.empty:
@@ -508,7 +504,7 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------
-# PLANEJAMENTO BASEADO NO FUNIL DO PERÍODO
+# PLANEJAMENTO COM BASE NO FUNIL
 # ---------------------------------------------------------
 st.markdown("## 🎯 Planejamento com base no funil do período (DATA BASE selecionada)")
 
@@ -551,7 +547,7 @@ if vendas > 0:
         )
 
         # -------------------------------------------------
-        # GRÁFICO – META x REAL COM INTERVALO LIVRE
+        # GRÁFICO – META x REAL
         # -------------------------------------------------
         if not df_periodo.empty:
             st.markdown("### 📊 Acompanhamento da meta da imobiliária no intervalo escolhido")
@@ -609,7 +605,7 @@ if vendas > 0:
                         df_temp = obter_vendas_unicas(
                             df_range,
                             status_venda=status_venda_considerado,
-                            status_final_map=status_final_por_cliente,  # 👈 regra DESISTIU também no gráfico
+                            status_final_map=status_final_por_cliente,  # regra DESISTIU também no gráfico
                         ).copy()
                         total_meta = meta_vendas
 
