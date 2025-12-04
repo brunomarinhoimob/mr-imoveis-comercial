@@ -140,7 +140,15 @@ def obter_vendas_unicas(
             df_v["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
 
     if "CPF_CLIENTE_BASE" not in df_v.columns:
-        df_v["CPF_CLIENTE_BASE"] = ""
+        if "CPF" in df_v.columns:
+            df_v["CPF_CLIENTE_BASE"] = (
+                df_v["CPF"]
+                .fillna("")
+                .astype(str)
+                .str.replace(r"\D", "", regex=True)
+            )
+        else:
+            df_v["CPF_CLIENTE_BASE"] = ""
 
     if "CHAVE_CLIENTE" not in df_v.columns:
         df_v["CHAVE_CLIENTE"] = (
@@ -153,7 +161,7 @@ def obter_vendas_unicas(
             + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
         )
 
-    # 👇 NOVO: aplica regra global do DESISTIU, se mapa foi passado
+    # Aplica regra global do DESISTIU, se mapa foi passado
     if status_final_map is not None:
         df_v = df_v.merge(
             status_final_map,
@@ -208,48 +216,50 @@ else:
         lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
     )
 
+# 👇 GARANTE QUE EXISTA CHAVE_CLIENTE MESMO SE O app_dashboard DO SERVIDOR NÃO CRIAR
+if "CHAVE_CLIENTE" not in df.columns:
+    # tenta reaproveitar colunas já existentes ou cria a partir de CLIENTE/CPF
+    if "NOME_CLIENTE_BASE" not in df.columns:
+        possiveis_nome = ["NOME_CLIENTE_BASE", "NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+        col_nome = next((c for c in possiveis_nome if c in df.columns), None)
+        if col_nome:
+            df["NOME_CLIENTE_BASE"] = (
+                df[col_nome]
+                .fillna("NÃO INFORMADO")
+                .astype(str)
+                .str.upper()
+                .str.strip()
+            )
+        else:
+            df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+
+    if "CPF_CLIENTE_BASE" not in df.columns:
+        possiveis_cpf = ["CPF_CLIENTE_BASE", "CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
+        col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
+        if col_cpf:
+            df["CPF_CLIENTE_BASE"] = (
+                df[col_cpf]
+                .fillna("")
+                .astype(str)
+                .str.replace(r"\D", "", regex=True)
+            )
+        else:
+            df["CPF_CLIENTE_BASE"] = ""
+
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+    )
+
 # 👇 NOVO: STATUS FINAL GLOBAL DO CLIENTE (HISTÓRICO COMPLETO)
-# Usa CHAVE_CLIENTE que já vem do carregar_dados_planilha
+# Usa CHAVE_CLIENTE que já vem do carregar_dados_planilha (ou do bloco acima)
 df_ordenado_global = df.sort_values("DIA")
 status_final_por_cliente = (
     df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
 )
 status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
 
-# 👇 GARANTE QUE EXISTA CHAVE_CLIENTE MESMO SE O app_dashboard DO SERVIDOR NÃO CRIAR
-if "NOME_CLIENTE_BASE" not in df.columns:
-    possiveis_nome = ["NOME_CLIENTE_BASE", "NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
-    col_nome = next((c for c in possiveis_nome if c in df.columns), None)
-    if col_nome:
-        df["NOME_CLIENTE_BASE"] = (
-            df[col_nome]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-    else:
-        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
-
-if "CPF_CLIENTE_BASE" not in df.columns:
-    possiveis_cpf = ["CPF_CLIENTE_BASE", "CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
-    col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
-    if col_cpf:
-        df["CPF_CLIENTE_BASE"] = (
-            df[col_cpf]
-            .fillna("")
-            .astype(str)
-            .str.replace(r"\D", "", regex=True)
-        )
-    else:
-        df["CPF_CLIENTE_BASE"] = ""
-
-if "CHAVE_CLIENTE" not in df.columns:
-    df["CHAVE_CLIENTE"] = (
-        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
-        + " | "
-        + df["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
-    )
 
 # ---------------------------------------------------------
 # SIDEBAR – APENAS SELETOR DE DATA BASE + TIPO DE VENDA
@@ -303,7 +313,6 @@ if df_periodo.empty:
 
 # ---------------------------------------------------------
 # DEFININDO O INTERVALO DE DIAS A PARTIR DA DATA BASE
-# (mínimo e máximo da coluna DIA dentro das bases selecionadas)
 # ---------------------------------------------------------
 dias_sel = df_periodo["DIA"].dropna()
 if not dias_sel.empty:
@@ -492,7 +501,7 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------
-# PLANEJAMENTO BASEADO NO FUNIL DO PERÍODO (CONECTADO À DATA BASE)
+# PLANEJAMENTO COM BASE NO FUNIL
 # ---------------------------------------------------------
 st.markdown("## 🎯 Planejamento com base no funil do período (DATA BASE selecionada)")
 
@@ -535,7 +544,7 @@ if vendas > 0:
         )
 
         # -------------------------------------------------
-        # GRÁFICO – META x REAL COM INTERVALO LIVRE (IMOBILIÁRIA)
+        # GRÁFICO – META x REAL
         # -------------------------------------------------
         if not df_periodo.empty:
             st.markdown("### 📊 Acompanhamento da meta da imobiliária no intervalo escolhido")
@@ -593,7 +602,7 @@ if vendas > 0:
                         df_temp = obter_vendas_unicas(
                             df_range,
                             status_venda=status_venda_considerado,
-                            status_final_map=status_final_por_cliente,  # 👈 regra DESISTIU também no gráfico
+                            status_final_map=status_final_por_cliente,  # regra DESISTIU também no gráfico
                         ).copy()
                         total_meta = meta_vendas
 
