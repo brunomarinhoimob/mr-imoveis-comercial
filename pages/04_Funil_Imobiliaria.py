@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import altair as alt
 from datetime import date
 
 from app_dashboard import carregar_dados_planilha
@@ -434,6 +435,10 @@ st.markdown("---")
 # ---------------------------------------------------------
 st.markdown("## 🎯 Planejamento com base no funil do período (DATA BASE selecionada)")
 
+analises_necessarias = 0
+aprovacoes_necessarias = 0
+meta_vendas = 0
+
 if vendas > 0:
     analises_por_venda = analises_em / vendas if analises_em > 0 else 0.0
     aprovacoes_por_venda = aprovacoes / vendas if aprovacoes > 0 else 0.0
@@ -444,9 +449,6 @@ if vendas > 0:
         step=1,
         value=int(vendas),
     )
-
-    analises_necessarias = 0
-    aprovacoes_necessarias = 0
 
     if meta_vendas > 0:
         analises_necessarias = int(np.ceil(analises_por_venda * meta_vendas))
@@ -466,10 +468,128 @@ if vendas > 0:
                 f"{aprovacoes_necessarias} aprovações",
             )
 
-    st.caption(
-        "Cálculos feitos com base no funil filtrado pela DATA BASE acima. "
-        "Quando você alterar a DATA BASE, os dias considerados e as quantidades necessárias se recalculam automaticamente."
-    )
+        st.caption(
+            "Cálculos feitos com base no funil filtrado pela DATA BASE acima. "
+            "Quando você alterar a DATA BASE, os dias considerados e as quantidades necessárias se recalculam automaticamente."
+        )
+
+        # -------------------------------------------------
+        # GRÁFICO – META x REAL COM INTERVALO LIVRE (IMOBILIÁRIA)
+        # -------------------------------------------------
+        if not df_periodo.empty:
+            st.markdown("### 📊 Acompanhamento da meta da imobiliária no intervalo escolhido")
+
+            indicador = st.selectbox(
+                "Indicador para comparar com a meta",
+                ["Análises", "Aprovações", "Vendas"],
+            )
+
+            periodo_meta = st.date_input(
+                "Período do acompanhamento da meta",
+                value=(data_ini_mov, data_fim_mov),
+            )
+
+            if isinstance(periodo_meta, tuple) and len(periodo_meta) == 2:
+                data_ini_sel, data_fim_sel = periodo_meta
+            else:
+                data_ini_sel = data_ini_mov
+                data_fim_sel = data_fim_mov
+
+            if data_ini_sel > data_fim_sel:
+                st.error("A data inicial do acompanhamento não pode ser maior que a data final.")
+            else:
+                dr = pd.date_range(start=data_ini_sel, end=data_fim_sel, freq="D")
+                dias_meta = [d.date() for d in dr]
+
+                if len(dias_meta) == 0:
+                    st.info("Não há datas válidas no período para montar o gráfico.")
+                else:
+                    df_periodo["DIA_DATA"] = pd.to_datetime(df_periodo["DIA"]).dt.date
+                    df_range = df_periodo[
+                        (df_periodo["DIA_DATA"] >= data_ini_sel)
+                        & (df_periodo["DIA_DATA"] <= data_fim_sel)
+                    ].copy()
+
+                    if indicador == "Análises":
+                        df_temp = df_range[
+                            df_range["STATUS_BASE"]
+                            .fillna("")
+                            .astype(str)
+                            .str.upper()
+                            == "EM ANÁLISE"
+                        ].copy()
+                        total_meta = analises_necessarias
+                    elif indicador == "Aprovações":
+                        df_temp = df_range[
+                            df_range["STATUS_BASE"]
+                            .fillna("")
+                            .astype(str)
+                            .str.upper()
+                            == "APROVADO"
+                        ].copy()
+                        total_meta = aprovacoes_necessarias
+                    else:
+                        df_temp = obter_vendas_unicas(
+                            df_range,
+                            status_venda=status_venda_considerado,
+                        ).copy()
+                        total_meta = meta_vendas
+
+                    if df_temp.empty or total_meta == 0:
+                        st.info(
+                            "Não há dados suficientes nesse intervalo "
+                            "ou a meta está zerada para o indicador escolhido."
+                        )
+                    else:
+                        df_temp["DIA_DATA"] = pd.to_datetime(df_temp["DIA"]).dt.date
+                        cont_por_dia = (
+                            df_temp.groupby("DIA_DATA")
+                            .size()
+                            .reindex(dias_meta, fill_value=0)
+                        )
+
+                        idx = pd.to_datetime(dias_meta)
+                        df_line = pd.DataFrame(index=idx)
+                        df_line.index.name = "DIA"
+
+                        df_line["Real"] = cont_por_dia.values
+                        df_line["Real"] = df_line["Real"].cumsum()
+
+                        # Linha REAL para no último dia com movimento
+                        ultimo_mov = df_temp["DIA_DATA"].max()
+                        if pd.notnull(ultimo_mov):
+                            mask_future_real = df_line.index.date > ultimo_mov
+                            df_line.loc[mask_future_real, "Real"] = np.nan
+
+                        # Linha META: linear de 0 até total_meta no intervalo selecionado
+                        df_line["Meta"] = np.linspace(
+                            0, total_meta, num=len(df_line), endpoint=True
+                        )
+
+                        df_plot = (
+                            df_line.reset_index()
+                            .melt("DIA", var_name="Série", value_name="Valor")
+                        )
+
+                        chart = (
+                            alt.Chart(df_plot)
+                            .mark_line(point=True)
+                            .encode(
+                                x=alt.X("DIA:T", title="Dia"),
+                                y=alt.Y("Valor:Q", title="Quantidade acumulada"),
+                                color=alt.Color("Série:N", title=""),
+                            )
+                            .properties(height=320)
+                        )
+
+                        st.altair_chart(chart, use_container_width=True)
+                        st.caption(
+                            "Linha **Real** = indicador acumulado da imobiliária **apenas dentro do intervalo escolhido**, "
+                            "parando no último dia com movimentação. "
+                            "Linha **Meta** = ritmo necessário, do início ao fim do intervalo, "
+                            "para atingir o total de análises/aprovações/vendas calculado com base no funil do período."
+                        )
+
 else:
     st.info(
         "Ainda não há vendas no período selecionado para projetar a quantidade de análises e aprovações. "
