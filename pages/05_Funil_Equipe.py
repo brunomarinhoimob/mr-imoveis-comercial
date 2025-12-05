@@ -76,9 +76,17 @@ def conta_aprovacoes(status: pd.Series) -> int:
     return (s == "APROVADO").sum()
 
 
-def obter_vendas_unicas(df_scope: pd.DataFrame, status_venda=None) -> pd.DataFrame:
+def obter_vendas_unicas(
+    df_scope: pd.DataFrame,
+    status_venda=None,
+    status_final_map: pd.Series | None = None,
+) -> pd.DataFrame:
     """
     Considera no máximo 1 venda por cliente (último status de venda).
+    Se tiver VENDA INFORMADA e depois VENDA GERADA, fica só a GERADA.
+
+    Se status_final_map for informado (CHAVE_CLIENTE -> STATUS_FINAL_CLIENTE),
+    remove clientes cujo último status global seja DESISTIU.
     """
     if df_scope.empty:
         return df_scope.copy()
@@ -91,6 +99,7 @@ def obter_vendas_unicas(df_scope: pd.DataFrame, status_venda=None) -> pd.DataFra
     if df_v.empty:
         return df_v
 
+    # Garante colunas de cliente / chave
     if "NOME_CLIENTE_BASE" not in df_v.columns:
         if "CLIENTE" in df_v.columns:
             df_v["NOME_CLIENTE_BASE"] = (
@@ -104,17 +113,38 @@ def obter_vendas_unicas(df_scope: pd.DataFrame, status_venda=None) -> pd.DataFra
             df_v["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
 
     if "CPF_CLIENTE_BASE" not in df_v.columns:
-        df_v["CPF_CLIENTE_BASE"] = ""
+        if "CPF" in df_v.columns:
+            df_v["CPF_CLIENTE_BASE"] = (
+                df_v["CPF"]
+                .fillna("")
+                .astype(str)
+                .str.replace(r"\D", "", regex=True)
+            )
+        else:
+            df_v["CPF_CLIENTE_BASE"] = ""
 
-    df_v["CHAVE_CLIENTE"] = (
-        df_v["NOME_CLIENTE_BASE"]
-        .fillna("NÃO INFORMADO")
-        .astype(str)
-        .str.upper()
-        .str.strip()
-        + " | "
-        + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
-    )
+    if "CHAVE_CLIENTE" not in df_v.columns:
+        df_v["CHAVE_CLIENTE"] = (
+            df_v["NOME_CLIENTE_BASE"]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+            + " | "
+            + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+        )
+
+    # Aplica regra global do DESISTIU, se o mapa foi passado
+    if status_final_map is not None:
+        df_v = df_v.merge(
+            status_final_map,
+            on="CHAVE_CLIENTE",
+            how="left",
+        )
+        df_v = df_v[df_v["STATUS_FINAL_CLIENTE"] != "DESISTIU"]
+
+    if df_v.empty:
+        return df_v
 
     df_v = df_v.sort_values("DIA")
     df_ult = df_v.groupby("CHAVE_CLIENTE").tail(1).copy()
@@ -145,6 +175,7 @@ if df_global.empty:
 
 df_global["DIA"] = pd.to_datetime(df_global["DIA"], errors="coerce")
 
+# DATA BASE
 if "DATA BASE" in df_global.columns:
     base_raw = df_global["DATA BASE"].astype(str).str.strip()
     df_global["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
@@ -157,6 +188,63 @@ else:
         lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
     )
 
+# 🔁 Normaliza STATUS_BASE e padroniza DESISTIU
+df_global["STATUS_BASE"] = (
+    df_global.get("STATUS_BASE", "")
+    .fillna("")
+    .astype(str)
+    .str.upper()
+)
+df_global.loc[
+    df_global["STATUS_BASE"].str.contains("DESIST", na=False),
+    "STATUS_BASE",
+] = "DESISTIU"
+
+# 🔑 Garante NOME / CPF / CHAVE_CLIENTE GLOBALMENTE
+possiveis_nome = ["NOME_CLIENTE_BASE", "NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+possiveis_cpf = ["CPF_CLIENTE_BASE", "CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
+
+col_nome = next((c for c in possiveis_nome if c in df_global.columns), None)
+col_cpf = next((c for c in possiveis_cpf if c in df_global.columns), None)
+
+if col_nome:
+    df_global["NOME_CLIENTE_BASE"] = (
+        df_global[col_nome]
+        .fillna("NÃO INFORMADO")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+else:
+    df_global["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+
+if col_cpf:
+    df_global["CPF_CLIENTE_BASE"] = (
+        df_global[col_cpf]
+        .fillna("")
+        .astype(str)
+        .str.replace(r"\D", "", regex=True)
+    )
+else:
+    df_global["CPF_CLIENTE_BASE"] = ""
+
+df_global["CHAVE_CLIENTE"] = (
+    df_global["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+    + " | "
+    + df_global["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+)
+
+# 🧮 STATUS FINAL GLOBAL DO CLIENTE (histórico completo)
+df_ordenado_global = df_global.sort_values("DIA")
+status_final_por_cliente = (
+    df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
+)
+status_final_por_cliente = status_final_por_cliente.astype(str).str.upper()
+status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
+
+# ---------------------------------------------------------
+# EQUIPE
+# ---------------------------------------------------------
 if "EQUIPE" not in df_global.columns:
     st.error("Coluna 'EQUIPE' não encontrada na base.")
     st.stop()
@@ -266,6 +354,7 @@ aprovacoes = conta_aprovacoes(status_periodo)
 df_vendas_periodo = obter_vendas_unicas(
     df_periodo,
     status_venda=status_venda_considerado,
+    status_final_map=status_final_por_cliente,  # 👈 aplica regra DESISTIU
 )
 vendas = len(df_vendas_periodo)
 vgv_total = df_vendas_periodo["VGV"].sum() if not df_vendas_periodo.empty else 0.0
@@ -490,6 +579,7 @@ else:
         df_vendas_3m = obter_vendas_unicas(
             df_3m,
             status_venda=status_venda_considerado,
+            status_final_map=status_final_por_cliente,  # 👈 DESISTIU também no 3m
         )
         vendas_3m = len(df_vendas_3m)
         vgv_3m = df_vendas_3m["VGV"].sum() if not df_vendas_3m.empty else 0.0
@@ -636,6 +726,7 @@ else:
                         df_temp = obter_vendas_unicas(
                             df_range,
                             status_venda=status_venda_considerado,
+                            status_final_map=status_final_por_cliente,  # 👈 DESISTIU no gráfico também
                         ).copy()
                         total_meta = meta_vendas
 
@@ -692,3 +783,4 @@ else:
                             "Linha **Meta** = ritmo necessário, do início ao fim do intervalo, "
                             "para atingir o total calculado com base nos últimos 3 meses."
                         )
+
