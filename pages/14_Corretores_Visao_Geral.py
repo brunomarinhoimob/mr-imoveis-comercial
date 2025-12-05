@@ -92,6 +92,8 @@ def carregar_planilha():
             & ~s.str.contains("REANALISE"),
             "STATUS_BASE",
         ] = "EM ANÁLISE"
+        # 🔴 Marca DESISTIU
+        df.loc[s.str.contains("DESIST", na=False), "STATUS_BASE"] = "DESISTIU"
     else:
         df["STATUS_BASE"] = "NÃO INFORMADO"
 
@@ -121,6 +123,13 @@ def carregar_planilha():
     else:
         df["CPF_CLIENTE_BASE"] = ""
 
+    # 🔑 CHAVE_CLIENTE global
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+    )
+
     # VGV
     if "OBSERVAÇÕES" in df.columns:
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0)
@@ -134,6 +143,18 @@ df_planilha = carregar_planilha()
 if df_planilha.empty:
     st.error("Erro ao carregar a planilha de análises/vendas.")
     st.stop()
+
+# Normaliza STATUS_BASE pra garantir DESISTIU maiúsculo
+df_planilha["STATUS_BASE"] = df_planilha["STATUS_BASE"].fillna("").astype(str).str.upper()
+df_planilha.loc[df_planilha["STATUS_BASE"].str.contains("DESIST", na=False), "STATUS_BASE"] = "DESISTIU"
+
+# 🔥 STATUS FINAL GLOBAL POR CLIENTE (regra do DESISTIU)
+df_ordenado_global = df_planilha.sort_values("DIA")
+status_final_por_cliente = (
+    df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
+)
+status_final_por_cliente = status_final_por_cliente.astype(str).str.upper()
+status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
 
 # ---------------------------------------------------------
 # BASE CRM – df_leads DO SESSION_STATE
@@ -307,19 +328,38 @@ df_analises = (
     .reset_index()
 )
 
-# Vendas (com regra de venda informada x gerada)
+# 🔥 Vendas (com regra DESISTIU global)
 df_vendas_ref = df_plan_periodo[
     df_plan_periodo["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])
 ].copy()
 
 if not df_vendas_ref.empty:
+    # garante CHAVE_CLIENTE
+    if "CHAVE_CLIENTE" not in df_vendas_ref.columns:
+        df_vendas_ref["CHAVE_CLIENTE"] = (
+            df_vendas_ref["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+            + " | "
+            + df_vendas_ref["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+        )
+
+    # junta STATUS_FINAL_CLIENTE (global)
+    df_vendas_ref = df_vendas_ref.merge(
+        status_final_por_cliente,
+        on="CHAVE_CLIENTE",
+        how="left",
+    )
+
+    # remove clientes cujo status final global é DESISTIU
+    df_vendas_ref = df_vendas_ref[df_vendas_ref["STATUS_FINAL_CLIENTE"] != "DESISTIU"]
+
+if not df_vendas_ref.empty:
+    df_vendas_ref = df_vendas_ref.sort_values("DIA")
     df_vendas_ref["CHAVE_CLIENTE"] = (
         df_vendas_ref["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
         + " | "
         + df_vendas_ref["CPF_CLIENTE_BASE"].fillna("")
     )
 
-    df_vendas_ref = df_vendas_ref.sort_values("DIA")
     df_vendas_ult = df_vendas_ref.groupby("CHAVE_CLIENTE", as_index=False).tail(1)
 
     if tipo_venda == "GERADAS + INFORMADAS":
