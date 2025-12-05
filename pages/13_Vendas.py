@@ -26,7 +26,7 @@ with col_title:
     st.title("💰 Painel de Vendas – MR Imóveis")
     st.caption(
         "Visão consolidada das vendas da imobiliária: VGV, ranking por equipe/corretor, "
-        "evolução diária e mix por construtora/empreendimento."
+        "evolução diária e mix por construtora/empreendimento, já com a regra do DESISTIU aplicada."
     )
 
 # ---------------------------------------------------------
@@ -152,8 +152,8 @@ def carregar_dados() -> pd.DataFrame:
         df.loc[status_upper.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
         df.loc[status_upper.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[status_upper.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
-        # aprovado apenas quando for APROVAÇÃO
         df.loc[status_upper.str.contains(r"\bAPROVAÇÃO\b"), "STATUS_BASE"] = "APROVADO"
+        df.loc[status_upper.str.contains("DESIST", na=False), "STATUS_BASE"] = "DESISTIU"
 
     # OBSERVAÇÕES / VGV
     if "OBSERVAÇÕES" in df.columns:
@@ -193,6 +193,13 @@ def carregar_dados() -> pd.DataFrame:
             .str.replace(r"\D", "", regex=True)
         )
 
+    # Garante CHAVE_CLIENTE global
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
+    )
+
     return df
 
 
@@ -212,10 +219,15 @@ def conta_aprovacoes(status_serie: pd.Series) -> int:
     return s.str.contains(r"\bAPROVADO\b").sum()
 
 
-def obter_vendas_unicas(df_scope: pd.DataFrame, status_vendas=None) -> pd.DataFrame:
+def obter_vendas_unicas(
+    df_scope: pd.DataFrame,
+    status_vendas=None,
+    status_final_map: pd.Series | None = None,
+) -> pd.DataFrame:
     """
-    Uma venda por cliente (último status dentro da lista status_vendas,
-    considerando apenas registros cujo STATUS_BASE está em status_vendas).
+    Uma venda por cliente (último status dentro da lista status_vendas),
+    considerando apenas registros cujo STATUS_BASE está em status_vendas
+    E aplicando a regra global do DESISTIU via status_final_map.
     """
     if df_scope.empty:
         return df_scope.copy()
@@ -223,18 +235,28 @@ def obter_vendas_unicas(df_scope: pd.DataFrame, status_vendas=None) -> pd.DataFr
     if status_vendas is None:
         status_vendas = ["VENDA GERADA", "VENDA INFORMADA"]
 
-    # Filtra somente linhas com status relevantes
     s = df_scope["STATUS_BASE"].fillna("").astype(str).str.upper()
     df_v = df_scope[s.isin(status_vendas)].copy()
     if df_v.empty:
         return df_v
 
-    # CHAVE CLIENTE
     df_v["CHAVE_CLIENTE"] = (
         df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
         + " | "
         + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
     )
+
+    # Regra DESISTIU global: descarta clientes cujo status final seja DESISTIU
+    if status_final_map is not None:
+        df_v = df_v.merge(
+            status_final_map,
+            on="CHAVE_CLIENTE",
+            how="left",
+        )
+        df_v = df_v[df_v["STATUS_FINAL_CLIENTE"] != "DESISTIU"]
+
+    if df_v.empty:
+        return df_v
 
     df_v = df_v.sort_values("DIA")
     df_ult = df_v.groupby("CHAVE_CLIENTE").tail(1).copy()
@@ -262,6 +284,18 @@ if "DATA BASE" in df.columns:
 else:
     df["DATA_BASE"] = df["DIA"].dt.date
     df["DATA_BASE_LABEL"] = df["DIA"].dt.strftime("%m/%Y")
+
+# Normaliza STATUS_BASE / DESISTIU
+df["STATUS_BASE"] = df["STATUS_BASE"].fillna("").astype(str).str.upper()
+df.loc[df["STATUS_BASE"].str.contains("DESIST", na=False), "STATUS_BASE"] = "DESISTIU"
+
+# STATUS FINAL GLOBAL POR CLIENTE (regra do DESISTIU)
+df_ordenado_global = df.sort_values("DIA")
+status_final_por_cliente = (
+    df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
+)
+status_final_por_cliente = status_final_por_cliente.astype(str).str.upper()
+status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
 
 # ---------------------------------------------------------
 # SIDEBAR – FILTROS GERAIS
@@ -320,11 +354,12 @@ if opcao_tipo_venda == "Só VENDA GERADA":
     status_vendas_considerados = ["VENDA GERADA"]
     desc_tipo_venda = "Só VENDA GERADA"
 elif opcao_tipo_venda == "Só VENDA INFORMADA":
-    status_vendas_considerados = ["VENDA INFORMADA"]
-    desc_tipo_venda = "Só VENDA INFORMADA"
+    # Vamos buscar as vendas únicas (GER + INF) e depois filtrar só INF
+    status_vendas_considerados = ["VENDA GERADA", "VENDA INFORMADA"]
+    desc_tipo_venda = "Só VENDA INFORMADA (último status de venda)"
 else:
     status_vendas_considerados = ["VENDA GERADA", "VENDA INFORMADA"]
-    desc_tipo_venda = "VENDA GERADA + INFORMADA"
+    desc_tipo_venda = "VENDA GERADA + INFORMADA (último status de venda)"
 
 # Filtro por equipe / corretor
 lista_equipe = (
@@ -392,30 +427,26 @@ st.caption(
 )
 
 # ---------------------------------------------------------
-# AGREGAÇÃO PRINCIPAL – VENDAS E KPIs
+# AGREGAÇÃO PRINCIPAL – VENDAS E KPIs (COM DESISTIU)
 # ---------------------------------------------------------
 
-# Regra especial para "Só VENDA INFORMADA":
-# - Considerar o ÚLTIMO status do cliente no período
-# - Só entra se esse último status for VENDA INFORMADA
-if opcao_tipo_venda == "Só VENDA INFORMADA":
-    df_tmp = df_periodo.copy()
+# Sempre pegamos as vendas únicas (GER + INF) aplicando regra DESISTIU global
+df_vendas_base = obter_vendas_unicas(
+    df_periodo,
+    status_vendas=["VENDA GERADA", "VENDA INFORMADA"],
+    status_final_map=status_final_por_cliente,
+)
 
-    df_tmp["CHAVE_CLIENTE"] = (
-        df_tmp["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
-        + " | "
-        + df_tmp["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
-    )
-
-    df_tmp = df_tmp.sort_values("DIA")
-    df_clientes_ult = df_tmp.groupby("CHAVE_CLIENTE").tail(1)
-
-    df_vendas = df_clientes_ult[
-        df_clientes_ult["STATUS_BASE"].fillna("").astype(str).str.upper() == "VENDA INFORMADA"
-    ].copy()
+if df_vendas_base.empty:
+    df_vendas = df_vendas_base.copy()
 else:
-    # Demais opções mantêm a lógica já usada (última venda por cliente dentro dos status escolhidos)
-    df_vendas = obter_vendas_unicas(df_periodo, status_vendas=status_vendas_considerados)
+    status_upper_base = df_vendas_base["STATUS_BASE"].fillna("").astype(str).str.upper()
+    if opcao_tipo_venda == "Só VENDA GERADA":
+        df_vendas = df_vendas_base[status_upper_base == "VENDA GERADA"].copy()
+    elif opcao_tipo_venda == "Só VENDA INFORMADA":
+        df_vendas = df_vendas_base[status_upper_base == "VENDA INFORMADA"].copy()
+    else:
+        df_vendas = df_vendas_base.copy()
 
 qtd_vendas = len(df_vendas)
 vgv_total = df_vendas["VGV"].sum() if not df_vendas.empty else 0.0
@@ -432,7 +463,6 @@ total_leads_periodo = None
 leads_por_venda = None
 
 if df_leads is not None and not df_leads.empty:
-    # padrão do app_dashboard: data_captura_date
     col_data_lead = None
     if "data_captura_date" in df_leads.columns:
         col_data_lead = "data_captura_date"
@@ -457,7 +487,6 @@ perc_meta = (qtd_vendas / meta_vendas * 100) if meta_vendas > 0 else 0.0
 # ---------------------------------------------------------
 # CÁLCULOS DE VENDAS E EQUIPE PRODUTIVA
 # ---------------------------------------------------------
-# Vendas geradas / informadas (considerando vendas únicas no período filtrado)
 if df_vendas.empty:
     vendas_geradas = 0
     vendas_informadas = 0
@@ -467,7 +496,6 @@ else:
     vendas_informadas = (status_vendas_df == "VENDA INFORMADA").sum()
 vendas_totais = vendas_geradas + vendas_informadas
 
-# Corretores ativos e produtivos no período (considerando apenas tipos de venda escolhidos)
 if "CORRETOR" in df_periodo.columns:
     corretores_ativos = df_periodo["CORRETOR"].nunique()
     if df_vendas.empty:
@@ -516,7 +544,6 @@ with c8:
         "-" if leads_por_venda is None else f"{leads_por_venda:.1f}",
     )
 
-# Novos cards de vendas
 c9, c10, c11 = st.columns(3)
 with c9:
     st.metric("Vendas geradas", vendas_geradas)
@@ -525,7 +552,6 @@ with c10:
 with c11:
     st.metric("Vendas totais (GER + INF)", vendas_totais)
 
-# Equipe produtiva
 c12, c13, c14 = st.columns(3)
 with c12:
     st.metric("Corretores ativos no período", corretores_ativos)
@@ -541,8 +567,7 @@ st.markdown("## 📈 Evolução diária das vendas")
 if df_vendas.empty:
     st.info("Ainda não há vendas no período selecionado.")
 else:
-    # calendário completo do período selecionado
-    dr = pd.dateRange = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
+    dr = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
     dias_periodo = [d.date() for d in dr]
 
     if len(dias_periodo) == 0:
@@ -585,7 +610,6 @@ st.markdown("## 🥇 Ranking de Vendas por Equipe e Corretor")
 if df_vendas.empty:
     st.info("Ainda não há vendas para montar o ranking.")
 else:
-    # Ranking por equipe
     df_rank_eq = (
         df_vendas.groupby("EQUIPE")
         .agg(QTDE=("STATUS_BASE", "count"), VGV=("VGV", "sum"))
@@ -593,7 +617,6 @@ else:
     )
     df_rank_eq = df_rank_eq.sort_values("VGV", ascending=False)
 
-    # Ranking por corretor
     df_rank_cor = (
         df_vendas.groupby(["EQUIPE", "CORRETOR"])
         .agg(QTDE=("STATUS_BASE", "count"), VGV=("VGV", "sum"))
@@ -663,7 +686,6 @@ df_tab = df_vendas.copy()
 if df_tab.empty:
     st.info("Não há vendas para exibir.")
 else:
-    # Seleciona apenas colunas relevantes pra evitar nomes duplicados
     colunas_preferidas = [
         "DIA",
         "NOME_CLIENTE_BASE",
@@ -695,7 +717,7 @@ else:
     )
 
     if "Data" in df_tab.columns:
-        df_tab = df_tab.sort_values("Data", ascending=False)
+        df_tab = df_tab.sort_values("Data", descending=False)
 
     st.dataframe(
         df_tab.style.format({"VGV": "R$ {:,.2f}".format}),
