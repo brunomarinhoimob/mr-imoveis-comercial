@@ -7,31 +7,83 @@ from pathlib import Path
 # CAMINHOS
 # ----------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-LOGO_PATH = PROJECT_ROOT / "logo_mr.png"
+LOGO_PATH = PROJECT_ROOT / "logo_mr.png"  # sua logo está na raiz do projeto
 
 # ----------------------------------------------------
-# ESTILO GLOBAL (fundo escuro, centralizado)
+# ESTILO GLOBAL (fundo claro + card escuro central)
 # ----------------------------------------------------
 st.markdown(
     """
     <style>
+        /* Fundo da área principal (deixa cara de feed/Instagram) */
         .stApp {
-            background-color: #050608;
+            background-color: #f3f4f6;
         }
+
         .block-container {
             padding-top: 4rem;
+            padding-bottom: 4rem;
+        }
+
+        /* Card da home */
+        .home-card {
+            background-color: #090909;
+            border-radius: 32px;
+            padding: 40px 34px;
+            max-width: 460px;
+            margin: 0 auto;
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
+        }
+
+        .home-logo {
+            margin-bottom: 28px;
+        }
+
+        .home-quote {
+            font-size: 20px;
+            font-weight: 600;
+            color: #f5f5f5;
+            text-align: left;
+            line-height: 1.3;
+            margin-bottom: 32px;
+        }
+
+        .home-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            font-size: 14px;
+            color: #d0d0d0;
+        }
+
+        .home-footer b {
+            color: #ffffff;
+        }
+
+        /* Responsivo: em telas menores, footer quebra em duas linhas */
+        @media (max-width: 768px) {
+            .home-footer {
+                flex-direction: column;
+                align-items: flex-start;
+            }
         }
     </style>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 # ----------------------------------------------------
 # FUNÇÃO PARA BUSCAR MÊS COMERCIAL
 # ----------------------------------------------------
 def obter_mes_comercial():
+    """
+    Tenta pegar a última data_base da planilha e transformar em mês/ano.
+    Se não encontrar ou der erro, retorna 'Indefinido'.
+    """
     try:
-        # 🔧 AJUSTE AQUI SE A PLANILHA ESTIVER EM OUTRO LUGAR
+        # 🔧 AJUSTE AQUI O NOME/CAMINHO DA PLANILHA QUANDO SOUBER QUAL É
+        # Exemplo: PROJECT_ROOT / "base_vendas.xlsx"
         df = pd.read_excel(PROJECT_ROOT / "base_vendas.xlsx")
         df["data_base"] = pd.to_datetime(df["data_base"], errors="coerce")
         ultima_data = df["data_base"].max()
@@ -46,58 +98,45 @@ mes_comercial = obter_mes_comercial()
 ultima_atualizacao = datetime.now().strftime("%d/%m/%Y • %H:%M")
 
 # ----------------------------------------------------
-# LAYOUT: CARD CENTRALIZADO
+# LAYOUT: CARD ESTILO OPÇÃO 2
 # ----------------------------------------------------
-# 3 colunas para centralizar o card
+
+# colunas só pra garantir que fique centralizado
 col_esq, col_meio, col_dir = st.columns([1, 2, 1])
 
 with col_meio:
-    st.markdown(
-        """
-        <div style="
-            background-color: #111111;
-            border-radius: 28px;
-            padding: 40px 30px;
-            text-align: center;
-            box-shadow: 0px 0px 25px rgba(0,0,0,0.45);
-        ">
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="home-card">', unsafe_allow_html=True)
 
     # LOGO MR
-    try:
-        st.image(str(LOGO_PATH), width=260)
-    except Exception:
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), width=220, output_format="PNG", use_container_width=False)
+    else:
         st.markdown(
-            "<p style='color:#ff4b4b; font-size:14px;'><b>Logo MR não encontrada.</b></p>",
+            "<p style='color:#ff4b4b; font-size:13px; margin-bottom:20px;'><b>Logo MR não encontrada em logo_mr.png</b></p>",
             unsafe_allow_html=True,
         )
 
-    # FRASE
+    # FRASE (um pouco menor pra logo dominar)
     st.markdown(
         """
-        <p style="
-            font-size: 20px;
-            color: #e8e8e8;
-            font-weight: 500;
-            margin-top: 20px;
-            margin-bottom: 10px;
-            line-height: 1.35;
-        ">
+        <div class="home-quote">
             Nenhum de nós é tão bom quanto todos nós juntos.
-        </p>
+        </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # INFOS
+    # RODAPÉ (mês comercial + última atualização)
     st.markdown(
         f"""
-        <p style="margin-top: 30px; font-size: 16px; color: #cfcfcf; line-height: 1.6;">
-            <b>Mês comercial:</b> {mes_comercial}<br>
-            <b>Última atualização:</b> {ultima_atualizacao}
-        </p>
+        <div class="home-footer">
+            <div>
+                <b>Mês comercial:</b><br>{mes_comercial}
+            </div>
+            <div>
+                <b>Última atualização:</b><br>{ultima_atualizacao}
+            </div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
