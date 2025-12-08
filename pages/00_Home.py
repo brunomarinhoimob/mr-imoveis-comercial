@@ -4,18 +4,10 @@ from datetime import datetime
 from pathlib import Path
 
 # ----------------------------------------------------
-# CAMINHO DA LOGO (ROBUSTO)
+# CAMINHO DA LOGO — AGORA CORRETO
 # ----------------------------------------------------
-# __file__ -> .../SEU_REPO/pages/00_Home.py
-# parent   -> .../SEU_REPO/pages
-# parent.parent -> .../SEU_REPO
-# logo em: .../SEU_REPO/app_dashboard/logo_mr.png
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-LOGO_PATH = PROJECT_ROOT / "app_dashboard" / "logo_mr.png"
-
-# Se sua logo estiver direto na raiz do projeto (ex.: /logo_mr.png),
-# comente a linha de cima e descomente esta:
-# LOGO_PATH = PROJECT_ROOT / "logo_mr.png"
+LOGO_PATH = PROJECT_ROOT / "logo_mr.png"
 
 # ----------------------------------------------------
 # ESTILOS VISUAIS
@@ -42,11 +34,11 @@ st.markdown(
 
         .logo {
             width: 260px;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
         }
 
         .phrase {
-            font-size: 20px;      /* frase menor pra destacar a logo */
+            font-size: 20px;
             color: #e8e8e8;
             font-weight: 500;
             margin-top: 10px;
@@ -65,26 +57,15 @@ st.markdown(
 )
 
 # ----------------------------------------------------
-# FUNÇÃO PARA BUSCAR MÊS COMERCIAL REAL DA PLANILHA
+# FUNÇÃO MÊS COMERCIAL
 # ----------------------------------------------------
 def obter_mes_comercial():
-    """
-    Pega a última data_base da planilha e converte para mês comercial.
-    """
-
     try:
-        # ⬇️ AJUSTE AQUI SE A PLANILHA ESTIVER EM OUTRO LOCAL
-        df = pd.read_excel(PROJECT_ROOT / "app_dashboard" / "planilhas" / "base_vendas.xlsx")
-
+        df = pd.read_excel(PROJECT_ROOT / "base_vendas.xlsx")  # ajuste se necessário
         df["data_base"] = pd.to_datetime(df["data_base"], errors="coerce")
         ultima_data = df["data_base"].max()
-
-        if pd.isna(ultima_data):
-            return "Indefinido"
-
         return ultima_data.strftime("%B/%Y").capitalize()
-
-    except Exception:
+    except:
         return "Indefinido"
 
 
@@ -92,21 +73,18 @@ mes_comercial = obter_mes_comercial()
 ultima_atualizacao = datetime.now().strftime("%d/%m/%Y • %H:%M")
 
 # ----------------------------------------------------
-# LAYOUT DA HOME
+# LAYOUT
 # ----------------------------------------------------
 st.markdown('<div class="centered">', unsafe_allow_html=True)
 st.markdown('<div class="card">', unsafe_allow_html=True)
 
-# LOGO MR (com try/except pra não quebrar o app se der ruim)
+# LOGO MR
 try:
-    st.image(str(LOGO_PATH), use_container_width=False, width=260)
-except Exception:
-    st.markdown(
-        "<div class='phrase'><b>[Logo MR não encontrada no caminho configurado]</b></div>",
-        unsafe_allow_html=True,
-    )
+    st.image(str(LOGO_PATH), width=260)
+except:
+    st.error("Logo MR não encontrada no caminho raiz.")
 
-# FRASE INSTITUCIONAL
+# FRASE
 st.markdown(
     """
     <div class="phrase">
@@ -116,7 +94,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# INFORMAÇÕES DO MÊS E ATUALIZAÇÃO
+# INFOS
 st.markdown(
     f"""
     <div class="info">
@@ -127,5 +105,5 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-st.markdown('</div>', unsafe_allow_html=True)  # fecha card
-st.markdown('</div>', unsafe_allow_html=True)  # fecha centered
+st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
