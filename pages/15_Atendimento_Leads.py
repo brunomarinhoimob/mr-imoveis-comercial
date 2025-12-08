@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Logo MR Imóveis na lateral
+# Logo MR Imóveis na lateral (se quiser manter)
 st.sidebar.image("logo_mr.png", use_column_width=True)
 
 st.title("📞 Controle de Atendimento de Leads")
@@ -70,6 +70,9 @@ if col_corretor:
     df["CORRETOR_EXIBICAO"] = df[col_corretor].fillna("SEM CORRETOR").astype(str)
 else:
     df["CORRETOR_EXIBICAO"] = "SEM CORRETOR"
+
+# ✅ Coluna amigável para exibição
+df["Corretor responsável"] = df["CORRETOR_EXIBICAO"]
 
 # Situação / Status
 col_situacao = get_col(["situacao", "situação", "status"])
@@ -180,12 +183,12 @@ mask_periodo = (df["DATA_CAPTURA_DT"].dt.date >= data_ini) & (
 df_periodo = df[mask_periodo].copy()
 
 # Filtro de corretor
-corretores = sorted(df_periodo["CORRETOR_EXIBICAO"].dropna().unique().tolist())
+corretores = sorted(df_periodo["Corretor responsável"].dropna().unique().tolist())
 opcoes_corretor = ["Todos"] + corretores
 corretor_sel = st.sidebar.selectbox("Corretor", opcoes_corretor)
 
 if corretor_sel != "Todos":
-    df_periodo = df_periodo[df_periodo["CORRETOR_EXIBICAO"] == corretor_sel]
+    df_periodo = df_periodo[df_periodo["Corretor responsável"] == corretor_sel]
 
 if df_periodo.empty:
     st.warning("Nenhum lead encontrado com os filtros selecionados.")
@@ -221,7 +224,7 @@ perc_ate15 = (qtd_ate15 / leads_atendidos * 100) if leads_atendidos > 0 else 0
 
 st.markdown("## 🧾 Visão geral do atendimento")
 
-# 🔹 AQUI ENTRA O NOVO CARD DE LEADS NOVOS
+# Inclui card de leads novos
 c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
 c1.metric("Leads no período", leads_no_periodo)
 c2.metric("Leads atendidos", leads_atendidos)
@@ -236,7 +239,7 @@ if qtd_leads_novos > 0:
     cols_exibir = [
         "NOME_LEAD",
         "TELEFONE_LEAD",
-        "CORRETOR_EXIBICAO",
+        "Corretor responsável",
         "DATA_CAPTURA_DT",
     ]
     cols_exibir = [c for c in cols_exibir if c in df_leads_novos.columns]
@@ -258,7 +261,7 @@ st.markdown("## 👥 Resumo geral por corretor")
 
 df_cor = df_periodo.copy()
 
-agr = df_cor.groupby("CORRETOR_EXIBICAO").agg(
+agr = df_cor.groupby("Corretor responsável").agg(
     LEADS_PERIODO=("NOME_LEAD", "count"),
     LEADS_ATENDIDOS=("ATENDIDO", "sum"),
     TEMPO_MEDIO_ATEND_MIN=("TEMPO_ATEND_MIN", "mean"),
@@ -271,7 +274,7 @@ agr["Tempo médio entre interações"] = agr[
 ].apply(format_minutes)
 
 cols_resumo = [
-    "CORRETOR_EXIBICAO",
+    "Corretor responsável",
     "LEADS_PERIODO",
     "LEADS_ATENDIDOS",
     "Tempo médio atendimento",
@@ -305,7 +308,7 @@ with aba1:
         cols = [
             "NOME_LEAD",
             "TELEFONE_LEAD",
-            "CORRETOR_EXIBICAO",
+            "Corretor responsável",
             "Captura",
             "1º contato",
             "Última interação",
@@ -325,7 +328,7 @@ with aba2:
         cols = [
             "NOME_LEAD",
             "TELEFONE_LEAD",
-            "CORRETOR_EXIBICAO",
+            "Corretor responsável",
             "Captura",
             col_situacao,
             col_etapa,
@@ -348,7 +351,7 @@ with aba3:
         cols = [
             "NOME_LEAD",
             "TELEFONE_LEAD",
-            "CORRETOR_EXIBICAO",
+            "Corretor responsável",
             "Captura",
             "1º contato",
             col_situacao,
