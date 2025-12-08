@@ -236,6 +236,7 @@ agr = df_cor.groupby("CORRETOR_EXIBICAO").agg(
     TEMPO_MEDIO_INTERACOES_MIN=("TEMPO_INTERACOES_MIN", "mean"),
 ).reset_index()
 
+
 def obter_analises_por_corretor(inicio: date, fim: date) -> pd.Series:
     """
     Tenta puxar da base principal (ex.: st.session_state['df_base']) o número de
@@ -262,7 +263,8 @@ def obter_analises_por_corretor(inicio: date, fim: date) -> pd.Series:
     if not col_corretor_base or not col_data_base or not col_status_base:
         return pd.Series(dtype="float64")
 
-    df_b[col_data_base] = pd.to_datetime(df_b[col_data_base"], errors="coerce")
+    # ✅ LINHA CORRIGIDA (sem aspas sobrando)
+    df_b[col_data_base] = pd.to_datetime(df_b[col_data_base], errors="coerce")
 
     mask_data = (df_b[col_data_base].dt.date >= inicio) & (df_b[col_data_base].dt.date <= fim)
     df_b = df_b[mask_data].copy()
@@ -279,6 +281,7 @@ def obter_analises_por_corretor(inicio: date, fim: date) -> pd.Series:
     serie = df_b.groupby(col_corretor_base)[col_status_base].count()
     serie.name = "ANALISES_PERIODO"
     return serie
+
 
 serie_analises = obter_analises_por_corretor(data_inicio, data_fim)
 
