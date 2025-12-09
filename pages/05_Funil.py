@@ -329,8 +329,7 @@ df_painel = df_view[
 ].copy()
 
 if df_painel.empty:
-    st.warning("Não há movimentação na data base selecionada para essa visão.")
-    # Mesmo assim exibir zeros para manter consistência
+    # Nenhuma movimentação, mas vamos mostrar tudo zerado sem aviso
     analises_em = 0
     reanalises = 0
     analises_total = 0
@@ -370,7 +369,7 @@ else:
 
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
-# detectar corretores ativos (planilha + CRM)
+# detectar corretores ativos (planilha + CRM) – ainda usado em outras lógicas se quiser
 hoje = pd.Timestamp.today().normalize()
 limite_30d = hoje - pd.Timedelta(days=30)
 
@@ -410,17 +409,8 @@ else:
 # Corretores realmente ativos (planilha OU CRM)
 corretores_ativos_geral = set(corretores_planilha_ativos) | set(corretores_crm_ativos)
 
-# Aplicar filtro de inatividade (NÃO REMOVE DA PLANILHA - SÓ DO SELETOR E CÁLCULOS)
-if visao == "Corretor":
-    # Se o corretor da visão estiver inativo, limpa a visão para evitar inconsistência
-    if corretor_sel.upper() not in corretores_ativos_geral:
-        st.warning("Este corretor não possui atividade nos últimos 30 dias.")
-        df_painel = df_painel.iloc[0:0]  # zera dataframe
-        total_leads = 0
-        conv_leads_analise = 0
-        leads_por_analise = 0
-        # continua mostrando zeros no restante
-        pass
+# ❌ Removido o filtro que escondia corretor inativo
+# Agora sempre mostramos, mesmo sem atividade
 
 # ---------------------------------------------------------
 # FUNÇÃO CRM (LIMITADA À DATA BASE SELECIONADA)
@@ -444,10 +434,10 @@ if not df_leads.empty:
     # Nome do corretor padronizado
     df_leads_use["CORRETOR_KEY"] = (
         df_leads_use["nome_corretor"]
-        .fillna("")
-        .astype(str)
-        .str.upper()
-        .str.strip()
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
     )
 
     # Mapeamento equipe-corretor da planilha
