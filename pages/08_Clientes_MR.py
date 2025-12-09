@@ -61,6 +61,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 def badge_status(situacao: str) -> str:
     """Gera a badge visual estilo cartinha + emoji."""
     if not situacao:
@@ -87,6 +88,7 @@ def badge_status(situacao: str) -> str:
         emoji = "⚪"
 
     return f'<span class="badge-status {cls}">{emoji} {situacao}</span>'
+
 
 # LOGO
 try:
@@ -206,13 +208,52 @@ def carregar_dados():
 df = carregar_dados()
 
 # ---------------------------------------------------------
-# BUSCA
+# BUSCA (AGORA NO CENTRO DA TELA)
 # ---------------------------------------------------------
-st.sidebar.title("Busca Cliente")
+with st.container():
+    st.markdown(
+        """
+        <div style="
+            margin-top: 1.5rem;
+            margin-bottom: 1.5rem;
+            padding: 1.25rem 1.5rem;
+            border-radius: 0.75rem;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.45);
+        ">
+            <h4 style="margin: 0 0 0.75rem 0; font-weight: 600;">
+                🔍 Buscar cliente na base
+            </h4>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-modo_busca = st.sidebar.radio("Buscar por:", ["Nome", "CPF"])
-termo = st.sidebar.text_input("Digite para buscar")
+    col_esq, col_dir = st.columns([1, 3])
 
+    with col_esq:
+        modo_busca = st.radio(
+            "Buscar por:",
+            ["Nome", "CPF"],
+            horizontal=True,
+        )
+
+    with col_dir:
+        if modo_busca == "Nome":
+            placeholder = "Digite o nome do cliente"
+        else:
+            placeholder = "Digite o CPF do cliente (apenas números ou formatado)"
+
+        termo = st.text_input(
+            "Digite para buscar",
+            placeholder=placeholder,
+            key="busca_cliente_central",
+        )
+
+
+# ---------------------------------------------------------
+# FUNÇÃO PARA OBTER STATUS ATUAL (RESPEITANDO DESISTIU / VENDAS)
+# ---------------------------------------------------------
 def obter_status_atual(df_cli: pd.DataFrame) -> pd.Series:
     """
     Regra:
@@ -238,6 +279,9 @@ def obter_status_atual(df_cli: pd.DataFrame) -> pd.Series:
         return df_seg.iloc[-1]
 
 
+# ---------------------------------------------------------
+# RESULTADO DA BUSCA
+# ---------------------------------------------------------
 if termo.strip():
     termo_input = termo.strip().upper()
 
@@ -279,7 +323,7 @@ if termo.strip():
             st.write(f"**CPF:** `{'NÃO INFORMADO' if not cpf_cli else cpf_cli}`")
             st.write(f"**Última movimentação:** `{data_ult}`")
 
-            # Situação atual com BADGE estilo D
+            # Situação atual com BADGE
             st.markdown(
                 f"**Situação atual:** {badge_status(situacao_atual)}",
                 unsafe_allow_html=True,
@@ -324,4 +368,4 @@ if termo.strip():
             )
 
 else:
-    st.info("Digite o nome ou CPF na barra lateral para consultar um cliente.")
+    st.info("Digite o nome ou CPF acima para consultar um cliente.")
