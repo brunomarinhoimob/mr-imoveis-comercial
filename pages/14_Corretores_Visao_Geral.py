@@ -398,10 +398,14 @@ else:
     # Se não tiver dados ou não tiver coluna DIA, segue com DF vazio
     df_vendas_final = df_vendas_ref.iloc[0:0].copy()
 
-df_vendas_cor = (
-    df_vendas_final.groupby("CORRETOR", as_index=False)["VALOR_IMOVEL_BASE"]
-    .agg(VENDAS=("VALOR_IMOVEL_BASE", "size"), VGV=("VALOR_IMOVEL_BASE", "sum"))
-)
+# Agrupa vendas por corretor (quantidade e VGV)
+if df_vendas_final.empty:
+    df_vendas_cor = pd.DataFrame(columns=["CORRETOR", "VENDAS", "VGV"])
+else:
+    df_vendas_cor = df_vendas_final.groupby("CORRETOR", as_index=False).agg(
+        VENDAS=("VALOR_IMOVEL_BASE", "size"),
+        VGV=("VALOR_IMOVEL_BASE", "sum"),
+    )
 
 # Monta base de KPIs da planilha
 df_kpis_plan = (
