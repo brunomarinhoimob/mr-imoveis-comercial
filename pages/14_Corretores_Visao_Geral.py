@@ -189,17 +189,15 @@ status_final_por_cliente = status_final_por_cliente.rename(
 )
 
 # ---------------------------------------------------------
-# BASE LEADS (CRM) - VEM DE st.session_state
+# BASE CRM – df_leads DO SESSION_STATE
 # ---------------------------------------------------------
-df_leads_raw = st.session_state.get("df_leads_crm", None)
-if df_leads_raw is None or df_leads_raw.empty:
-    st.error(
-        "Nenhum dado de leads do CRM encontrado. "
-        "Abra primeiro a página principal (app_dashboard.py) para carregar os leads."
-    )
-    st.stop()
+# Tenta pegar do session_state. Se não tiver, segue com DF vazio.
+df_leads_raw = st.session_state.get("df_leads", pd.DataFrame())
 
-df_leads = df_leads_raw.copy()
+if df_leads_raw is None or getattr(df_leads_raw, "empty", True):
+    df_leads = pd.DataFrame()
+else:
+    df_leads = df_leads_raw.copy()
 lower_cols = {c.lower(): c for c in df_leads.columns}
 
 
