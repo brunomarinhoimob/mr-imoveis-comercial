@@ -1,6 +1,5 @@
 # =========================================================
-# FUNIL DE LEADS – ORIGEM, STATUS E CONVERSÃO (OFICIAL)
-# BASEADO NA 99_PAGINA_TESTE (SEM INVENTAR)
+# FUNIL DE LEADS – ORIGEM, STATUS E CONVERSÃO (REGRA CORRETA)
 # =========================================================
 
 import streamlit as st
@@ -10,11 +9,8 @@ from datetime import datetime
 
 from utils.supremo_config import TOKEN_SUPREMO
 
-# =========================================================
-# CONFIGURAÇÃO DA PÁGINA
-# =========================================================
 st.set_page_config(
-    page_title="Funil de Leads • Origem & Conversão",
+    page_title="Funil de Leads",
     page_icon="📊",
     layout="wide",
 )
@@ -22,58 +18,32 @@ st.set_page_config(
 st.title("📊 Funil de Leads – Origem, Status e Conversão")
 
 # =========================================================
-# GOOGLE SHEETS (MESMO DA 99)
+# PLANILHA (BASE ORIGINAL)
 # =========================================================
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
-GID_ANALISES = "1574157905"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
+GID = "1574157905"
+CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
 # =========================================================
-# FUNÇÕES AUXILIARES
+# FUNÇÕES
 # =========================================================
-def limpar_data(col):
-    return pd.to_datetime(col, dayfirst=True, errors="coerce").dt.date
+def parse_data(col):
+    return pd.to_datetime(col, dayfirst=True, errors="coerce")
 
-def mes_ano_para_date(valor):
-    meses = {
-        "JANEIRO": 1, "FEVEREIRO": 2, "MARÇO": 3, "MARCO": 3,
-        "ABRIL": 4, "MAIO": 5, "JUNHO": 6, "JULHO": 7,
-        "AGOSTO": 8, "SETEMBRO": 9, "OUTUBRO": 10,
-        "NOVEMBRO": 11, "DEZEMBRO": 12,
-    }
-    try:
-        p = str(valor).upper().split()
-        return datetime(int(p[-1]), meses[p[0]], 1).date()
-    except:
-        return pd.NaT
-
-# =========================================================
-# PLANILHA – FUNIL (IGUAL À 99, COM AJUSTES)
-# =========================================================
 @st.cache_data(ttl=300)
 def carregar_planilha():
-    df = pd.read_csv(CSV_URL)
-    df.columns = [c.strip().upper() for c in df.columns]
+    df = pd.read_csv(CSV_URL, dtype=str)
+    df.columns = df.columns.str.upper().str.strip()
 
-    df["DIA"] = limpar_data(df["DATA"])
-    df["DATA_BASE"] = df["DATA BASE"].apply(mes_ano_para_date)
-    df["DATA_BASE_LABEL"] = df["DATA BASE"].astype(str)
+    df["DATA"] = parse_data(df["DATA"])
+    df = df.dropna(subset=["DATA"])
 
-    df["STATUS_RAW"] = df["SITUAÇÃO"].astype(str).str.upper()
-
-    df = df[df["STATUS_RAW"].str.contains(
-        "ANÁLISE|REANÁLISE|APROV|REPROV|VENDA|DESIST|PEND",
-        regex=True
-    )]
-
-    df["NOME_CLIENTE"] = df["CLIENTE"].astype(str).str.upper().str.strip()
-    df["CHAVE"] = df["NOME_CLIENTE"]
-
-    df["CORRETOR"] = df["CORRETOR"].astype(str).str.upper()
-    df["EQUIPE"] = df["EQUIPE"].astype(str).str.upper()
+    df["CLIENTE"] = df["CLIENTE"].str.upper().str.strip()
+    df["CORRETOR"] = df["CORRETOR"].str.upper().str.strip()
+    df["EQUIPE"] = df["EQUIPE"].str.upper().str.strip()
+    df["STATUS_RAW"] = df["SITUAÇÃO"].str.upper().str.strip()
 
     df["STATUS_BASE"] = ""
-
     df.loc[df["STATUS_RAW"].str.contains("EM ANÁLISE"), "STATUS_BASE"] = "ANALISE"
     df.loc[df["STATUS_RAW"].str.contains("REANÁLISE"), "STATUS_BASE"] = "REANALISE"
     df.loc[df["STATUS_RAW"].str.contains("APROVADO BACEN"), "STATUS_BASE"] = "APROVADO_BACEN"
@@ -84,50 +54,17 @@ def carregar_planilha():
     df.loc[df["STATUS_RAW"].str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA_INFORMADA"
     df.loc[df["STATUS_RAW"].str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
 
-    # Último status do cliente
-    df = df.sort_values("DIA")
-    df = df.groupby("CHAVE").tail(1)
+    # Último status por cliente
+    df = df.sort_values("DATA")
+    df = df.groupby("CLIENTE", as_index=False).last()
 
     return df
 
-df_plan = carregar_planilha()
-
 # =========================================================
-# SIDEBAR – FILTROS (IGUAL À 99)
-# =========================================================
-st.sidebar.header("Filtros")
-
-modo = st.sidebar.radio("Modo de período", ["DIA", "DATA BASE"])
-
-if modo == "DIA":
-    ini, fim = st.sidebar.date_input(
-        "Período",
-        value=(df_plan["DIA"].min(), df_plan["DIA"].max())
-    )
-    df_plan = df_plan[(df_plan["DIA"] >= ini) & (df_plan["DIA"] <= fim)]
-else:
-    bases = st.sidebar.multiselect(
-        "Data Base",
-        sorted(df_plan["DATA_BASE_LABEL"].unique()),
-        default=df_plan["DATA_BASE_LABEL"].unique()
-    )
-    df_plan = df_plan[df_plan["DATA_BASE_LABEL"].isin(bases)]
-
-equipes = sorted(df_plan["EQUIPE"].unique())
-equipe_sel = st.sidebar.selectbox("Equipe", ["TODAS"] + equipes)
-if equipe_sel != "TODAS":
-    df_plan = df_plan[df_plan["EQUIPE"] == equipe_sel]
-
-corretores = sorted(df_plan["CORRETOR"].unique())
-corretor_sel = st.sidebar.selectbox("Corretor", ["TODOS"] + corretores)
-if corretor_sel != "TODOS":
-    df_plan = df_plan[df_plan["CORRETOR"] == corretor_sel]
-
-# =========================================================
-# CRM – ÚLTIMOS 1000 LEADS
+# CRM – ORIGEM
 # =========================================================
 @st.cache_data(ttl=1800)
-def carregar_crm_ultimos_1000():
+def carregar_crm():
     url = "https://api.supremocrm.com.br/v1/leads"
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
@@ -143,52 +80,21 @@ def carregar_crm_ultimos_1000():
         pagina += 1
 
     df = pd.DataFrame(dados)
-
-    df["CHAVE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
-    df["ORIGEM"] = df.get("nome_origem", "SEM ORIGEM").fillna("SEM ORIGEM")
-    df["CAMPANHA"] = df.get("nome_campanha", "-").fillna("-")
-
-    return df
-
-df_crm = carregar_crm_ultimos_1000()
+    df["CLIENTE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
+    df["ORIGEM"] = df.get("nome_origem", "SEM CADASTRO NO CRM").fillna("SEM CADASTRO NO CRM")
+    return df[["CLIENTE", "ORIGEM"]]
 
 # =========================================================
-# CRUZAMENTO
+# CARGA
 # =========================================================
-df = df_plan.merge(
-    df_crm[["CHAVE", "ORIGEM", "CAMPANHA"]],
-    on="CHAVE",
-    how="left"
-)
+df_plan = carregar_planilha()
+df_crm = carregar_crm()
 
+df = df_plan.merge(df_crm, on="CLIENTE", how="left")
 df["ORIGEM"] = df["ORIGEM"].fillna("SEM CADASTRO NO CRM")
 
 # =========================================================
-# STATUS ATUAL – CARDS MACRO
-# =========================================================
-st.subheader("📌 Status Atual do Funil")
-
-kpi = df["STATUS_BASE"].value_counts()
-df_vendas_validas = df[~df["STATUS_BASE"].isin(["DESISTIU"])]
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Em Análise", kpi.get("ANALISE", 0))
-c2.metric("Reanálise", kpi.get("REANALISE", 0))
-c3.metric("Pendência", kpi.get("PENDENCIA", 0))
-c4.metric("Reprovado", kpi.get("REPROVADO", 0))
-
-c5, c6, c7, c8 = st.columns(4)
-c5.metric("Aprovado", kpi.get("APROVADO", 0))
-c6.metric("Aprovado Bacen", kpi.get("APROVADO_BACEN", 0))
-c7.metric("Desistiu", kpi.get("DESISTIU", 0))
-c8.metric("Leads no Funil", len(df))
-
-c9, c10 = st.columns(2)
-c9.metric("Vendas Informadas", (df_vendas_validas["STATUS_BASE"] == "VENDA_INFORMADA").sum())
-c10.metric("Vendas Geradas", (df_vendas_validas["STATUS_BASE"] == "VENDA_GERADA").sum())
-
-# =========================================================
-# PERFORMANCE POR ORIGEM + CONVERSÃO
+# FILTRO POR ORIGEM
 # =========================================================
 st.subheader("📈 Performance e Conversão por Origem")
 
@@ -197,11 +103,23 @@ origem_sel = st.selectbox("Origem", origens)
 
 df_o = df if origem_sel == "TODAS" else df[df["ORIGEM"] == origem_sel]
 
+# =========================================================
+# KPIs (REGRA CORRETA)
+# =========================================================
 leads = len(df_o)
-analises = (df_o["STATUS_BASE"] == "ANALISE").sum()
-aprovados = (df_o["STATUS_BASE"] == "APROVADO").sum()
-vendas = df_o["STATUS_BASE"].isin(["VENDA_GERADA", "VENDA_INFORMADA"]).sum()
 
+analises = df_o[df_o["STATUS_BASE"].isin(["ANALISE", "REANALISE", "APROVADO", "APROVADO_BACEN", "VENDA_GERADA", "VENDA_INFORMADA"])].shape[0]
+
+aprovados = df_o[df_o["STATUS_BASE"].isin(["APROVADO", "APROVADO_BACEN", "VENDA_GERADA", "VENDA_INFORMADA"])].shape[0]
+
+vendas = df_o[
+    df_o["STATUS_BASE"].isin(["VENDA_GERADA", "VENDA_INFORMADA"])
+    & ~df_o["STATUS_BASE"].isin(["DESISTIU"])
+].shape[0]
+
+# =========================================================
+# CARDS
+# =========================================================
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Leads", leads)
 c2.metric("Análises", analises)
@@ -215,18 +133,18 @@ c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}
 c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
 
 # =========================================================
-# AUDITORIA DE CLIENTE
+# TABELA DE LEADS DA ORIGEM
 # =========================================================
-st.subheader("🔎 Auditoria Rápida de Cliente")
+st.divider()
+st.subheader("📋 Leads da Origem Selecionada")
 
-busca = st.text_input("Digite o nome do cliente")
-
-if busca:
-    hist = df[df["NOME_CLIENTE"].str.contains(busca.upper(), na=False)]
-    if not hist.empty:
-        st.dataframe(
-            hist.sort_values("DIA")[[
-                "DIA", "STATUS_BASE", "ORIGEM", "CAMPANHA", "CORRETOR", "EQUIPE"
-            ]],
-            use_container_width=True
-        )
+st.dataframe(
+    df_o[[
+        "CLIENTE",
+        "CORRETOR",
+        "EQUIPE",
+        "STATUS_BASE",
+        "DATA"
+    ]].sort_values("DATA", ascending=False),
+    use_container_width=True
+)
