@@ -35,9 +35,9 @@ def carregar_dados_funil():
     df.columns = [c.upper().strip() for c in df.columns]
 
     # DIA
-    if "DIA" in df:
+    if "DIA" in df.columns:
         df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
-    elif "DATA" in df:
+    elif "DATA" in df.columns:
         df["DIA"] = pd.to_datetime(df["DATA"], errors="coerce")
     else:
         df["DIA"] = pd.NaT
@@ -46,7 +46,7 @@ def carregar_dados_funil():
 
     # NOME CLIENTE
     col_nome = next(
-        (c for c in ["CLIENTE", "NOME", "NOME CLIENTE", "NOME DO CLIENTE"] if c in df),
+        (c for c in ["CLIENTE", "NOME", "NOME CLIENTE", "NOME DO CLIENTE"] if c in df.columns),
         None,
     )
     if col_nome:
@@ -56,38 +56,42 @@ def carregar_dados_funil():
 
     # STATUS
     col_status = next(
-        (c for c in ["SITUAÇÃO", "SITUACAO", "STATUS", "SITUAÇÃO ATUAL"] if c in df),
+        (c for c in ["SITUAÇÃO", "SITUACAO", "STATUS", "SITUAÇÃO ATUAL"] if c in df.columns),
         None,
     )
     if col_status:
-        df["STATUS_BASE"] = df[col_status].fillna("").astype(str).str.upper().str.strip()
+        df["STATUS_BASE"] = (
+            df[col_status]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
     else:
         df["STATUS_BASE"] = ""
 
     # CORRETOR / EQUIPE
     df["CORRETOR"] = (
-        df.get("CORRETOR", "NÃO INFORMADO")
-        .fillna("NÃO INFORMADO")
-        .astype(str)
-        .str.upper()
-        .str.strip()
+        df["CORRETOR"] if "CORRETOR" in df.columns else "NÃO INFORMADO"
     )
-    df["EQUIPE"] = (
-        df.get("EQUIPE", "NÃO INFORMADO")
-        .fillna("NÃO INFORMADO")
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
+    df["CORRETOR"] = df["CORRETOR"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
 
-    # ORIGEM / CAMPANHA (já vêm do CRM cruzado no app_dashboard)
-    df["ORIGEM"] = (
-        df.get("ORIGEM", "SEM CADASTRO NO CRM")
-        .fillna("SEM CADASTRO NO CRM")
-        .astype(str)
-        .str.upper()
-        .str.strip()
+    df["EQUIPE"] = (
+        df["EQUIPE"] if "EQUIPE" in df.columns else "NÃO INFORMADO"
     )
+    df["EQUIPE"] = df["EQUIPE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+
+    # 🔥 CORREÇÃO DO ERRO (ORIGEM)
+    if "ORIGEM" not in df.columns:
+        df["ORIGEM"] = "SEM CADASTRO NO CRM"
+    else:
+        df["ORIGEM"] = (
+            df["ORIGEM"]
+            .fillna("SEM CADASTRO NO CRM")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
 
     return df
 
@@ -192,7 +196,7 @@ c3.metric("Análise → Venda", calcular_taxa(vendas, analises))
 c4.metric("Aprovação → Venda", calcular_taxa(vendas, aprov))
 
 # =====================================================
-# BUSCA DE CLIENTE (LINK CONCEITUAL COM CLIENTES MR)
+# BUSCA DE CLIENTE
 # =====================================================
 st.divider()
 st.markdown("## 🔎 Auditoria Rápida de Cliente")
