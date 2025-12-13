@@ -1,228 +1,198 @@
-# =========================================================
-# FUNIL DE LEADS – ORIGEM, STATUS, CONVERSÃO E AUDITORIA
-# =========================================================
-
 import streamlit as st
 import pandas as pd
-import requests
-from datetime import datetime
+import numpy as np
+from datetime import datetime, timedelta
 
-from utils.supremo_config import TOKEN_SUPREMO
-
-# =========================================================
-# CONFIG PÁGINA
-# =========================================================
 st.set_page_config(
     page_title="Funil de Leads",
-    page_icon="📊",
     layout="wide"
 )
 
 st.title("📊 Funil de Leads – Origem, Status e Conversão")
 
-# =========================================================
-# GOOGLE SHEETS
-# =========================================================
-SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
-GID = "1574157905"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
+# =========================
+# FUNÇÕES AUXILIARES
+# =========================
 
-# =========================================================
-# FUNÇÕES AUX
-# =========================================================
-def limpar_data(col):
-    return pd.to_datetime(col, dayfirst=True, errors="coerce").dt.date
+def normalizar_nome(nome):
+    if pd.isna(nome):
+        return ""
+    return (
+        str(nome)
+        .upper()
+        .strip()
+        .replace("  ", " ")
+    )
 
-def mes_ano_para_date(v):
-    meses = {
-        "JANEIRO":1,"FEVEREIRO":2,"MARÇO":3,"MARCO":3,"ABRIL":4,"MAIO":5,
-        "JUNHO":6,"JULHO":7,"AGOSTO":8,"SETEMBRO":9,"OUTUBRO":10,
-        "NOVEMBRO":11,"DEZEMBRO":12
-    }
-    try:
-        p = str(v).upper().split()
-        return datetime(int(p[-1]), meses[p[0]], 1).date()
-    except:
-        return pd.NaT
 
-# =========================================================
-# PLANILHA COMPLETA (linha do tempo)
-# =========================================================
-@st.cache_data(ttl=300)
-def carregar_planilha_completa():
-    df = pd.read_csv(CSV_URL)
-    df.columns = [c.strip().upper() for c in df.columns]
+@st.cache_data(ttl=1800)  # cache 30 minutos
+def carregar_planilha():
+    df = pd.read_csv(
+        "https://docs.google.com/spreadsheets/d/SEU_ID_AQUI/export?format=csv",
+        dtype=str
+    )
 
-    df["DIA"] = limpar_data(df["DATA"])
-    df["DATA_BASE_LABEL"] = df["DATA BASE"].astype(str)
-    df["DATA_BASE"] = df["DATA BASE"].apply(mes_ano_para_date)
+    df.columns = [c.upper().strip() for c in df.columns]
 
-    df["STATUS_RAW"] = df["SITUAÇÃO"].astype(str).str.upper()
-    df["NOME_CLIENTE"] = df["CLIENTE"].astype(str).str.upper().str.strip()
-    df["CHAVE"] = df["NOME_CLIENTE"]
+    df["NOME_CLIENTE"] = df["CLIENTE"].apply(normalizar_nome)
+    df["STATUS_BASE"] = df["SITUAÇÃO"].str.upper().str.strip()
 
-    df["CORRETOR"] = df["CORRETOR"].astype(str).str.upper()
-    df["EQUIPE"] = df["EQUIPE"].astype(str).str.upper()
+    df["DIA"] = pd.to_datetime(df["DATA"], errors="coerce")
 
-    df["STATUS_BASE"] = ""
-    df.loc[df["STATUS_RAW"].str.contains("EM ANÁLISE"), "STATUS_BASE"] = "ANALISE"
-    df.loc[df["STATUS_RAW"].str.contains("REANÁLISE"), "STATUS_BASE"] = "REANALISE"
-    df.loc[df["STATUS_RAW"].str.contains("APROVADO BACEN"), "STATUS_BASE"] = "APROVADO_BACEN"
-    df.loc[df["STATUS_RAW"].str.contains("APROVA"), "STATUS_BASE"] = "APROVADO"
-    df.loc[df["STATUS_RAW"].str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
-    df.loc[df["STATUS_RAW"].str.contains("PEND"), "STATUS_BASE"] = "PENDENCIA"
-    df.loc[df["STATUS_RAW"].str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA_GERADA"
-    df.loc[df["STATUS_RAW"].str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA_INFORMADA"
-    df.loc[df["STATUS_RAW"].str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
+    df = df.dropna(subset=["DIA"])
 
     return df
 
-df_full = carregar_planilha_completa()
 
-# =========================================================
-# PLANILHA FINAL (último status)
-# =========================================================
-df = (
-    df_full
-    .sort_values("DIA")
-    .groupby("CHAVE")
-    .tail(1)
-)
-
-# =========================================================
-# CRM – ORIGEM
-# =========================================================
 @st.cache_data(ttl=1800)
-def carregar_crm():
-    url = "https://api.supremocrm.com.br/v1/leads"
-    headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
+def carregar_crm_ultimos_1000():
+    # Exemplo – adapte para sua função real de CRM
+    df = pd.read_json("teste_leads.json")
 
-    dados, pagina = [], 1
-    while len(dados) < 1000:
-        r = requests.get(url, headers=headers, params={"pagina": pagina}, timeout=20)
-        if r.status_code != 200:
-            break
-        js = r.json()
-        if not js.get("data"):
-            break
-        dados.extend(js["data"])
-        pagina += 1
+    df.columns = [c.lower() for c in df.columns]
 
-    dfc = pd.DataFrame(dados)
-    dfc["CHAVE"] = dfc.get("nome_pessoa","").astype(str).str.upper().str.strip()
-    dfc["ORIGEM"] = dfc.get("nome_origem","SEM ORIGEM").fillna("SEM ORIGEM")
-    return dfc[["CHAVE","ORIGEM"]]
+    df["NOME_CLIENTE"] = df["nome_pessoa"].apply(normalizar_nome)
+    df["ORIGEM"] = df.get("nome_origem", "SEM ORIGEM").fillna("SEM ORIGEM").str.upper()
+    df["CAMPANHA"] = df.get("nome_campanha", "").fillna("").str.upper()
+    df["CORRETOR"] = df.get("nome_corretor", "SEM CORRETOR").fillna("SEM CORRETOR").str.upper()
+    df["EQUIPE"] = df.get("nome_equipe", "SEM EQUIPE").fillna("SEM EQUIPE").str.upper()
 
-df_crm = carregar_crm()
+    return df.tail(1000)
 
-df = df.merge(df_crm, on="CHAVE", how="left")
-df["ORIGEM"] = df["ORIGEM"].fillna("SEM CADASTRO NO CRM")
 
-# =========================================================
-# FILTROS
-# =========================================================
-st.sidebar.header("Filtros")
+# =========================
+# CARGA DE DADOS
+# =========================
 
-modo = st.sidebar.radio("Modo de período", ["DIA","DATA BASE"])
+df_plan = carregar_planilha()
+df_crm = carregar_crm_ultimos_1000()
 
-if modo == "DIA":
-    ini, fim = st.sidebar.date_input(
-        "Período",
-        value=(df["DIA"].min(), df["DIA"].max())
-    )
-    df = df[(df["DIA"] >= ini) & (df["DIA"] <= fim)]
-    df_full_filtro = df_full[(df_full["DIA"] >= ini) & (df_full["DIA"] <= fim)]
-else:
-    bases = st.sidebar.multiselect(
-        "Data Base",
-        sorted(df["DATA_BASE_LABEL"].unique()),
-        default=df["DATA_BASE_LABEL"].unique()
-    )
-    df = df[df["DATA_BASE_LABEL"].isin(bases)]
-    df_full_filtro = df_full[df_full["DATA_BASE_LABEL"].isin(bases)]
+# =========================
+# FILTRO DE DATA (CORRIGIDO)
+# =========================
 
-# =========================================================
-# 🔝 CARDS MACRO
-# =========================================================
-st.subheader("📊 Visão Macro do Funil")
+if df_plan.empty:
+    st.warning("Sem dados na planilha.")
+    st.stop()
 
-status = df["STATUS_BASE"].value_counts()
-df_vendas_validas = df[~df["STATUS_BASE"].isin(["DESISTIU"])]
-
-c1,c2,c3,c4 = st.columns(4)
-c1.metric("Leads no Funil", len(df))
-c2.metric("Análises", status.get("ANALISE",0))
-c3.metric("Reanálises", status.get("REANALISE",0))
-c4.metric("Pendências", status.get("PENDENCIA",0))
-
-c5,c6,c7,c8 = st.columns(4)
-c5.metric("Aprovados", status.get("APROVADO",0))
-c6.metric("Aprovados Bacen", status.get("APROVADO_BACEN",0))
-c7.metric("Reprovados", status.get("REPROVADO",0))
-c8.metric("Desistidos", status.get("DESISTIU",0))
-
-c9,c10 = st.columns(2)
-c9.metric("Vendas Informadas", (df_vendas_validas["STATUS_BASE"]=="VENDA_INFORMADA").sum())
-c10.metric("Vendas Geradas", (df_vendas_validas["STATUS_BASE"]=="VENDA_GERADA").sum())
-
-# =========================================================
-# PERFORMANCE POR ORIGEM + CONVERSÃO
-# =========================================================
-st.subheader("📌 Performance por Origem")
-
-origens = ["TODAS"] + sorted(df["ORIGEM"].unique())
-origem_sel = st.selectbox("Selecione a origem", origens)
-
-df_origem = df if origem_sel=="TODAS" else df[df["ORIGEM"]==origem_sel]
-
-tipo_venda = st.radio(
-    "Tipo de venda para conversão",
-    ["Venda Gerada + Informada","Somente Venda Gerada"],
-    horizontal=True
+data_inicio, data_fim = st.date_input(
+    "📅 Período",
+    value=(df_plan["DIA"].min().date(), df_plan["DIA"].max().date()),
+    min_value=df_plan["DIA"].min().date(),
+    max_value=df_plan["DIA"].max().date(),
 )
 
-vendas_validas = ["VENDA_GERADA","VENDA_INFORMADA"] if tipo_venda=="Venda Gerada + Informada" else ["VENDA_GERADA"]
+df_plan = df_plan[
+    (df_plan["DIA"].dt.date >= data_inicio) &
+    (df_plan["DIA"].dt.date <= data_fim)
+]
 
-total = len(df_origem)
-analises = (df_origem["STATUS_BASE"]=="ANALISE").sum()
-aprovados = df_origem["STATUS_BASE"].isin(["APROVADO","APROVADO_BACEN"]).sum()
-vendas = df_origem["STATUS_BASE"].isin(vendas_validas).sum()
+# =========================
+# DEDUP – ÚLTIMO STATUS DO LEAD
+# =========================
 
-tx1 = analises/total*100 if total else 0
-tx2 = aprovados/analises*100 if analises else 0
-tx3 = vendas/analises*100 if analises else 0
-tx4 = vendas/aprovados*100 if aprovados else 0
+df_plan = df_plan.sort_values("DIA")
+df_plan = df_plan.groupby("NOME_CLIENTE", as_index=False).last()
 
-c1,c2,c3,c4 = st.columns(4)
-c1.metric("Lead → Análise", f"{tx1:.1f}%")
-c2.metric("Análise → Aprovação", f"{tx2:.1f}%")
-c3.metric("Análise → Venda", f"{tx3:.1f}%")
-c4.metric("Aprovação → Venda", f"{tx4:.1f}%")
+# =========================
+# KPI MACRO
+# =========================
 
-# =========================================================
-# 🔎 BUSCA DE CLIENTE
-# =========================================================
+st.subheader("📌 Status Atual do Funil")
+
+col1, col2, col3, col4 = st.columns(4)
+
+def kpi(col, titulo, valor):
+    col.metric(titulo, int(valor))
+
+kpi(col1, "Em Análise", (df_plan["STATUS_BASE"] == "EM ANÁLISE").sum())
+kpi(col1, "Reanálises", (df_plan["STATUS_BASE"] == "REANÁLISE").sum())
+
+kpi(col2, "Aprovados", (df_plan["STATUS_BASE"] == "APROVAÇÃO").sum())
+kpi(col2, "Aprovados Bacen", (df_plan["STATUS_BASE"] == "APROVADO BACEN").sum())
+
+kpi(col3, "Pendências", (df_plan["STATUS_BASE"] == "PENDÊNCIA").sum())
+kpi(col3, "Reprovados", (df_plan["STATUS_BASE"] == "REPROVAÇÃO").sum())
+
+kpi(col4, "Vendas Geradas", (df_plan["STATUS_BASE"] == "VENDA GERADA").sum())
+kpi(col4, "Vendas Informadas", (df_plan["STATUS_BASE"] == "VENDA INFORMADA").sum())
+
+st.metric(
+    "Leads no Funil",
+    df_plan[~df_plan["STATUS_BASE"].isin(["DESISTIU", "VENDA GERADA"])].shape[0]
+)
+
+# =========================
+# PERFORMANCE POR ORIGEM
+# =========================
+
+st.divider()
+st.subheader("📍 Performance por Origem")
+
+df_merge = df_plan.merge(
+    df_crm[["NOME_CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR", "EQUIPE"]],
+    on="NOME_CLIENTE",
+    how="left"
+)
+
+df_merge["ORIGEM"] = df_merge["ORIGEM"].fillna("SEM CADASTRO NO CRM")
+
+origens = ["TODAS"] + sorted(df_merge["ORIGEM"].unique().tolist())
+origem_sel = st.selectbox("Selecione a Origem", origens)
+
+if origem_sel != "TODAS":
+    df_filtro = df_merge[df_merge["ORIGEM"] == origem_sel]
+else:
+    df_filtro = df_merge.copy()
+
+colA, colB, colC, colD = st.columns(4)
+
+kpi(colA, "Leads", len(df_filtro))
+kpi(colA, "Análises", (df_filtro["STATUS_BASE"] == "EM ANÁLISE").sum())
+
+kpi(colB, "Aprovados", (df_filtro["STATUS_BASE"] == "APROVAÇÃO").sum())
+kpi(colB, "Vendas Geradas", (df_filtro["STATUS_BASE"] == "VENDA GERADA").sum())
+
+kpi(colC, "Pendências", (df_filtro["STATUS_BASE"] == "PENDÊNCIA").sum())
+kpi(colC, "Reprovados", (df_filtro["STATUS_BASE"] == "REPROVAÇÃO").sum())
+
+kpi(colD, "Desistidos", (df_filtro["STATUS_BASE"] == "DESISTIU").sum())
+
+# =========================
+# CONVERSÕES
+# =========================
+
+st.divider()
+st.subheader("📈 Conversões")
+
+total_leads = len(df_filtro)
+analises = (df_filtro["STATUS_BASE"] == "EM ANÁLISE").sum()
+aprovados = (df_filtro["STATUS_BASE"] == "APROVAÇÃO").sum()
+vendas = (df_filtro["STATUS_BASE"] == "VENDA GERADA").sum()
+
+def taxa(num, den):
+    return f"{(num/den*100):.1f}%" if den > 0 else "0%"
+
+c1, c2, c3 = st.columns(3)
+
+c1.metric("Leads → Análise", taxa(analises, total_leads))
+c2.metric("Análise → Aprovação", taxa(aprovados, analises))
+c3.metric("Aprovação → Venda", taxa(vendas, aprovados))
+
+# =========================
+# BUSCA DE CLIENTE
+# =========================
+
+st.divider()
 st.subheader("🔎 Auditoria de Cliente")
 
-busca = st.text_input("Digite o nome do cliente")
+cliente_busca = st.text_input("Digite o nome do cliente")
 
-if busca:
-    cli = df_full_filtro[
-        df_full_filtro["NOME_CLIENTE"].str.contains(busca.upper(), na=False)
-    ]
+if cliente_busca:
+    nome_busca = normalizar_nome(cliente_busca)
+    df_cliente = df_merge[df_merge["NOME_CLIENTE"].str.contains(nome_busca)]
 
-    if not cli.empty:
-        ultimo = cli.sort_values("DIA").iloc[-1]
-
-        c1,c2,c3 = st.columns(3)
-        c1.metric("Corretor", ultimo["CORRETOR"])
-        c2.metric("Situação Atual", ultimo["STATUS_BASE"])
-        c3.metric("Origem CRM", ultimo["ORIGEM"])
-
-        st.subheader("📜 Linha do Tempo")
-        st.dataframe(
-            cli.sort_values("DIA"),
-            use_container_width=True
-        )
+    if df_cliente.empty:
+        st.info("Cliente não encontrado.")
     else:
-        st.warning("Cliente não encontrado no período.")
+        st.dataframe(df_cliente, use_container_width=True)
