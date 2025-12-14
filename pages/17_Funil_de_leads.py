@@ -1,5 +1,5 @@
 # =========================================================
-# FUNIL DE LEADS – ORIGEM, STATUS, CONVERSÃO E CRM
+# FUNIL DE LEADS – ORIGEM, STATUS E CONVERSÃO
 # =========================================================
 
 import streamlit as st
@@ -17,7 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📊 Funil de Leads – Origem, Status, Conversão e CRM")
+st.title("📊 Funil de Leads – Origem, Status e Conversão")
 
 # =========================================================
 # PLANILHA
@@ -116,19 +116,17 @@ def carregar_crm():
         pagina += 1
 
     if not dados:
-        return pd.DataFrame(columns=["CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR_CRM", "DATA_CRM"])
+        return pd.DataFrame(columns=["CLIENTE", "ORIGEM", "CAMPANHA"])
 
     df = pd.DataFrame(dados)
     df["CLIENTE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
     df["ORIGEM"] = df.get("nome_origem", "SEM CADASTRO NO CRM").fillna("SEM CADASTRO NO CRM")
     df["CAMPANHA"] = df.get("nome_campanha", "-").fillna("-")
-    df["CORRETOR_CRM"] = df.get("nome_corretor", "").fillna("").astype(str).str.upper().str.strip()
-    df["DATA_CRM"] = pd.to_datetime(df.get("data_captura"), errors="coerce")
 
     df["ORIGEM"] = df["ORIGEM"].astype(str).str.upper().str.strip()
     df["CAMPANHA"] = df["CAMPANHA"].astype(str).str.upper().str.strip()
 
-    return df[["CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR_CRM", "DATA_CRM"]]
+    return df[["CLIENTE", "ORIGEM", "CAMPANHA"]]
 
 # =========================================================
 # DATASETS
@@ -154,13 +152,22 @@ if modo == "DIA":
         value=(df_f["DATA"].min().date(), df_f["DATA"].max().date())
     )
     df_f = df_f[(df_f["DATA"].dt.date >= ini) & (df_f["DATA"].dt.date <= fim)]
-    df_crm_f = df_crm[(df_crm["DATA_CRM"].dt.date >= ini) & (df_crm["DATA_CRM"].dt.date <= fim)]
 else:
     bases = sorted(df_f["DATA_BASE_LABEL"].dropna().unique(), key=parse_data_base)
     sel = st.sidebar.multiselect("Data Base", bases, default=bases)
     if sel:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
-    df_crm_f = df_crm.copy()
+
+if "CORRETOR" not in df_f.columns:
+    df_f["CORRETOR"] = ""
+
+equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique()))
+if equipe != "TODAS":
+    df_f = df_f[df_f["EQUIPE"] == equipe]
+
+corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_f["CORRETOR"].unique()))
+if corretor != "TODOS":
+    df_f = df_f[df_f["CORRETOR"] == corretor]
 
 # =========================================================
 # STATUS ATUAL
@@ -183,42 +190,32 @@ c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
 c8.metric("Leads no Funil", len(df_atual))
 
 # =========================================================
-# PERFORMANCE, CONVERSÃO E CRM (COMPLETO)
+# PERFORMANCE POR ORIGEM
 # =========================================================
-st.subheader("📈 Performance, Conversão e CRM")
+st.subheader("📈 Performance e Conversão por Origem")
 
 origem = st.selectbox("Origem", ["TODAS"] + sorted(df_f["ORIGEM"].unique()))
 df_o = df_f if origem == "TODAS" else df_f[df_f["ORIGEM"] == origem]
-df_crm_o = df_crm_f if origem == "TODAS" else df_crm_f[df_crm_f["ORIGEM"] == origem]
 
 leads = df_o["CLIENTE"].nunique()
 analises = df_o[df_o["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
 aprovados = df_o[df_o["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique()
 vendas = df_o[df_o["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique()
 
-crm_recebidos = df_crm_o["CLIENTE"].nunique()
-crm_distribuidos = df_crm_o[df_crm_o["CORRETOR_CRM"] != ""]["CLIENTE"].nunique()
-
-lead_analise = (analises / leads * 100) if leads else 0
-analise_aprov = (aprovados / analises * 100) if analises else 0
-analise_venda = (vendas / analises * 100) if analises else 0
-aprov_venda = (vendas / aprovados * 100) if aprovados else 0
-leads_por_analise = round(crm_distribuidos / analises, 1) if analises else 0
-
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Leads CRM (período)", crm_recebidos)
-c2.metric("Leads distribuídos CRM", crm_distribuidos)
-c3.metric("Análises", analises)
-c4.metric("Leads p/ 1 análise", leads_por_analise)
+c1.metric("Leads", leads)
+c2.metric("Análises", analises)
+c3.metric("Aprovados", aprovados)
+c4.metric("Vendas", vendas)
 
 c5, c6, c7, c8 = st.columns(4)
-c5.metric("Lead → Análise", f"{lead_analise:.1f}%")
-c6.metric("Análise → Aprovação", f"{analise_aprov:.1f}%")
-c7.metric("Análise → Venda", f"{analise_venda:.1f}%")
-c8.metric("Aprovação → Venda", f"{aprov_venda:.1f}%")
+c5.metric("Lead → Análise", f"{(analises/leads*100 if leads else 0):.1f}%")
+c6.metric("Análise → Aprovação", f"{(aprovados/analises*100 if analises else 0):.1f}%")
+c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}%")
+c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
 
 # =========================================================
-# TABELA
+# TABELA (RESPEITA ORIGEM)
 # =========================================================
 st.divider()
 st.subheader("📋 Leads")
@@ -229,10 +226,6 @@ df_tabela = (
     .groupby("CLIENTE", as_index=False)
     .last()
 )
-
-for col in ["CORRETOR", "EQUIPE"]:
-    if col not in df_tabela.columns:
-        df_tabela[col] = ""
 
 tabela = df_tabela[
     ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]
