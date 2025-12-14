@@ -116,18 +116,19 @@ def carregar_crm():
         pagina += 1
 
     if not dados:
-        return pd.DataFrame(columns=["CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR"])
+        return pd.DataFrame(columns=["CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR", "DATA_CRM"])
 
     df = pd.DataFrame(dados)
     df["CLIENTE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
     df["ORIGEM"] = df.get("nome_origem", "SEM CADASTRO NO CRM").fillna("SEM CADASTRO NO CRM")
     df["CAMPANHA"] = df.get("nome_campanha", "-").fillna("-")
     df["CORRETOR"] = df.get("nome_corretor", "").fillna("")
+    df["DATA_CRM"] = pd.to_datetime(df.get("data_captura"), errors="coerce")
 
     df["ORIGEM"] = df["ORIGEM"].astype(str).str.upper().str.strip()
     df["CAMPANHA"] = df["CAMPANHA"].astype(str).str.upper().str.strip()
 
-    return df[["CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR"]]
+    return df[["CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR", "DATA_CRM"]]
 
 # =========================================================
 # DATASETS
@@ -153,42 +154,13 @@ if modo == "DIA":
         value=(df_f["DATA"].min().date(), df_f["DATA"].max().date())
     )
     df_f = df_f[(df_f["DATA"].dt.date >= ini) & (df_f["DATA"].dt.date <= fim)]
+    df_crm_f = df_crm[(df_crm["DATA_CRM"].dt.date >= ini) & (df_crm["DATA_CRM"].dt.date <= fim)]
 else:
     bases = sorted(df_f["DATA_BASE_LABEL"].dropna().unique(), key=parse_data_base)
     sel = st.sidebar.multiselect("Data Base", bases, default=bases)
     if sel:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
-
-if "CORRETOR" not in df_f.columns:
-    df_f["CORRETOR"] = ""
-
-equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique()))
-if equipe != "TODAS":
-    df_f = df_f[df_f["EQUIPE"] == equipe]
-
-corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_f["CORRETOR"].unique()))
-if corretor != "TODOS":
-    df_f = df_f[df_f["CORRETOR"] == corretor]
-
-# =========================================================
-# STATUS ATUAL
-# =========================================================
-st.subheader("📌 Status Atual do Funil")
-
-df_atual = df_f.sort_values("DATA").groupby("CLIENTE", as_index=False).last()
-kpi = df_atual["STATUS_BASE"].value_counts()
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Em Análise", int(kpi.get("ANALISE", 0)))
-c2.metric("Reanálise", int(kpi.get("REANALISE", 0)))
-c3.metric("Pendência", int(kpi.get("PENDENCIA", 0)))
-c4.metric("Reprovado", int(kpi.get("REPROVADO", 0)))
-
-c5, c6, c7, c8 = st.columns(4)
-c5.metric("Aprovado", int(kpi.get("APROVADO", 0)))
-c6.metric("Aprovado Bacen", int(kpi.get("APROVADO_BACEN", 0)))
-c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
-c8.metric("Leads no Funil", len(df_atual))
+    df_crm_f = df_crm.copy()
 
 # =========================================================
 # PERFORMANCE POR ORIGEM
@@ -197,6 +169,7 @@ st.subheader("📈 Performance e Conversão por Origem")
 
 origem = st.selectbox("Origem", ["TODAS"] + sorted(df_f["ORIGEM"].unique()))
 df_o = df_f if origem == "TODAS" else df_f[df_f["ORIGEM"] == origem]
+df_crm_o = df_crm_f if origem == "TODAS" else df_crm_f[df_crm_f["ORIGEM"] == origem]
 
 leads = df_o["CLIENTE"].nunique()
 analises = df_o[df_o["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
@@ -209,22 +182,17 @@ c2.metric("Análises", analises)
 c3.metric("Aprovados", aprovados)
 c4.metric("Vendas", vendas)
 
-c5, c6, c7, c8 = st.columns(4)
-c5.metric("Lead → Análise", f"{(analises/leads*100 if leads else 0):.1f}%")
-c6.metric("Análise → Aprovação", f"{(aprovados/analises*100 if analises else 0):.1f}%")
-c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}%")
-c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
-
 # =========================================================
-# CARD – LEADS DO CRM ATRIBUÍDOS A CORRETOR
+# KPI – CRM → ANÁLISE
 # =========================================================
-df_crm_periodo = df_crm.copy()
-
-leads_atribuidos = df_crm_periodo[df_crm_periodo["CORRETOR"] != ""]["CLIENTE"].nunique()
-
 st.markdown("---")
-c_atr, = st.columns(1)
-c_atr.metric("Leads do CRM atribuídos a corretor", leads_atribuidos)
+
+leads_atribuidos = df_crm_o[df_crm_o["CORRETOR"] != ""]["CLIENTE"].nunique()
+ratio = round(leads_atribuidos / analises, 1) if analises else 0
+
+k1, k2 = st.columns(2)
+k1.metric("Leads do CRM atribuídos a corretor", leads_atribuidos)
+k2.metric("KPI: 1 análise a cada X leads", ratio)
 
 # =========================================================
 # TABELA
