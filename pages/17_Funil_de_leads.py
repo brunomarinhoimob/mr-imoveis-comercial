@@ -193,6 +193,12 @@ c2.metric("Análises", analises)
 c3.metric("Aprovados", aprovados)
 c4.metric("Vendas", vendas)
 
+c5, c6, c7, c8 = st.columns(4)
+c5.metric("Lead → Análise", f"{(analises/leads*100 if leads else 0):.1f}%")
+c6.metric("Análise → Aprovação", f"{(aprovados/analises*100 if analises else 0):.1f}%")
+c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}%")
+c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
+
 # =========================================================
 # KPI CRM → ANÁLISE
 # =========================================================
@@ -200,10 +206,12 @@ st.markdown("---")
 
 leads_atribuidos = df_crm_o[df_crm_o["CORRETOR"] != ""]["CLIENTE"].nunique()
 kpi_ratio = round(leads_atribuidos / analises, 1) if analises else 0
+conv_crm_analise = (analises / leads_atribuidos * 100) if leads_atribuidos else 0
 
-k1, k2 = st.columns(2)
+k1, k2, k3 = st.columns(3)
 k1.metric("Leads do CRM atribuídos a corretor", leads_atribuidos)
 k2.metric("1 análise a cada X leads", kpi_ratio)
+k3.metric("Conversão CRM → Análise", f"{conv_crm_analise:.1f}%")
 
 # =========================================================
 # TABELA
