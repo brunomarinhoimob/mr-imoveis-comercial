@@ -1,5 +1,5 @@
 # =========================================================
-# FUNIL DE LEADS – ORIGEM, STATUS E CONVERSÃO (FINAL)
+# FUNIL DE LEADS – ORIGEM, STATUS E CONVERSÃO
 # =========================================================
 
 import streamlit as st
@@ -12,7 +12,7 @@ st.set_page_config(page_title="Funil de Leads", page_icon="📊", layout="wide")
 st.title("📊 Funil de Leads – Origem, Status e Conversão")
 
 # =========================================================
-# PLANILHA (FIXA)
+# PLANILHA FIXA
 # =========================================================
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID = "1574157905"
@@ -39,7 +39,7 @@ def parse_data_base_label(label):
         return pd.NaT
 
 # =========================================================
-# CARGA PLANILHA
+# CARGA DA PLANILHA
 # =========================================================
 @st.cache_data(ttl=300)
 def carregar_planilha():
@@ -123,8 +123,8 @@ df["CAMPANHA"] = df["CAMPANHA"].fillna("-")
 # FILTROS
 # =========================================================
 st.sidebar.header("Filtros")
-modo = st.sidebar.radio("Período", ["DIA", "DATA BASE"])
 
+modo = st.sidebar.radio("Período", ["DIA", "DATA BASE"])
 df_f = df.copy()
 
 if modo == "DIA":
@@ -141,13 +141,12 @@ else:
 
 origens = ["TODAS"] + sorted(df_f["ORIGEM"].unique())
 origem_sel = st.selectbox("Origem", origens)
-
 df_o = df_f if origem_sel == "TODAS" else df_f[df_f["ORIGEM"] == origem_sel]
 
 # =========================================================
-# KPI STATUS
+# STATUS ATUAL
 # =========================================================
-st.subheader("📌 Status Atual")
+st.subheader("📌 Status Atual do Funil")
 
 kpi = df_o["STATUS_BASE"].value_counts()
 
@@ -164,26 +163,31 @@ c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
 c8.metric("Leads", len(df_o))
 
 # =========================================================
-# PERFORMANCE E CONVERSÃO
+# PERFORMANCE E CONVERSÃO (PRINT)
 # =========================================================
 st.subheader("📈 Performance e Conversão")
 
 tipo_venda = st.radio(
     "Tipo de venda para conversão",
     ["VENDAS GERADAS", "VENDAS INFORMADAS", "AMBAS"],
-    horizontal=True
+    horizontal=True,
+    index=2
 )
 
 leads = len(df_o)
 analises = (df_o["STATUS_BASE"] == "ANALISE").sum()
-aprovados = df_o["STATUS_BASE"].isin(["APROVADO", "VENDA_GERADA", "VENDA_INFORMADA"]).sum()
+aprovados = df_o["STATUS_BASE"].isin(
+    ["APROVADO", "VENDA_GERADA", "VENDA_INFORMADA"]
+).sum()
 
 if tipo_venda == "VENDAS GERADAS":
     vendas = (df_o["STATUS_BASE"] == "VENDA_GERADA").sum()
 elif tipo_venda == "VENDAS INFORMADAS":
     vendas = (df_o["STATUS_BASE"] == "VENDA_INFORMADA").sum()
 else:
-    vendas = df_o["STATUS_BASE"].isin(["VENDA_GERADA", "VENDA_INFORMADA"]).sum()
+    vendas = df_o["STATUS_BASE"].isin(
+        ["VENDA_GERADA", "VENDA_INFORMADA"]
+    ).sum()
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Leads", leads)
@@ -198,12 +202,13 @@ c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}
 c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
 
 # =========================================================
-# TABELA
+# TABELA FINAL
 # =========================================================
 st.divider()
-st.subheader("📋 Leads da Origem")
+st.subheader("📋 Leads")
 
-tabela = df_o[["CLIENTE", "CORRETOR", "EQUIPE", "STATUS_BASE", "DATA"]].sort_values("DATA", ascending=False)
-tabela.rename(columns={"DATA": "ULTIMA_ATUALIZACAO"}, inplace=True)
+tabela = df_o[["CLIENTE", "CORRETOR", "EQUIPE", "STATUS_BASE", "DATA"]] \
+    .sort_values("DATA", ascending=False) \
+    .rename(columns={"DATA": "ULTIMA_ATUALIZACAO"})
 
 st.dataframe(tabela, use_container_width=True)
