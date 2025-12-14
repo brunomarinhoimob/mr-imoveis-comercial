@@ -175,16 +175,18 @@ leads = df_o["CLIENTE"].nunique()
 analises = df_o[df_o["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
 
 # =========================================================
-# 🔥 CARDS – LEADS DISTRIBUÍDOS CRM + KPI
+# CARDS CRM – LEADS POR PERÍODO + KPI
 # =========================================================
 st.markdown("---")
 
+leads_crm_periodo = df_crm_o["CLIENTE"].nunique()
 leads_distribuidos = df_crm_o[df_crm_o["CORRETOR_CRM"] != ""]["CLIENTE"].nunique()
-kpi_leads_por_analise = round(leads_distribuidos / analises, 1) if analises else 0
+leads_por_analise = round(leads_distribuidos / analises, 1) if analises else 0
 
-c1, c2 = st.columns(2)
-c1.metric("Leads distribuídos pelo CRM", leads_distribuidos)
-c2.metric("Leads necessários para 1 análise", kpi_leads_por_analise)
+c1, c2, c3 = st.columns(3)
+c1.metric("Leads recebidos no CRM (período)", leads_crm_periodo)
+c2.metric("Leads distribuídos pelo CRM", leads_distribuidos)
+c3.metric("Leads necessários para 1 análise", leads_por_analise)
 
 # =========================================================
 # TABELA
