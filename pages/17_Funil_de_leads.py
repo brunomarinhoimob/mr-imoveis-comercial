@@ -1,195 +1,166 @@
+# =========================================================
+# FUNIL DE LEADS – MR IMÓVEIS (VERSÃO FINAL OFICIAL)
+# =========================================================
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-from datetime import datetime
+import unicodedata
+import re
+from datetime import date
 
 # =========================
-# CONFIGURAÇÕES
+# CONFIGURAÇÕES GERAIS
 # =========================
 st.set_page_config(
-    page_title="Funil de Leads - MR Imóveis",
+    page_title="Funil de Leads | MR Imóveis",
     layout="wide"
 )
 
 LOGO_PATH = "logo_mr.png"
 
-URL_PLANILHA = (
-    "https://docs.google.com/spreadsheets/d/"
-    "SEU_ID_AQUI/export?format=csv"
-)
+SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
+GID = "1574157905"
+URL_PLANILHA = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
-URL_CRM_ULTIMOS_1000 = "https://app.crm.supremo.app/api/leads"
+URL_CRM = "https://app.crm.supremo.app/api/leads"
 TOKEN_SUPREMO = st.secrets.get("TOKEN_SUPREMO", None)
 
-TTL_CACHE = 600
+CACHE_TTL = 60 * 30  # 30 minutos
 
 # =========================
 # FUNÇÕES AUXILIARES
 # =========================
-def normalizar_texto(txt):
+def normalizar(txt):
     if pd.isna(txt):
         return ""
-    return (
-        str(txt)
-        .upper()
-        .strip()
-        .replace("  ", " ")
-    )
+    txt = str(txt)
+    txt = unicodedata.normalize("NFKD", txt)
+    txt = "".join(c for c in txt if not unicodedata.combining(c))
+    txt = re.sub(r"[^A-Za-z0-9 ]+", " ", txt)
+    return re.sub(r"\s+", " ", txt).strip().upper()
 
-@st.cache_data(ttl=TTL_CACHE)
+def pct(a, b):
+    return f"{(a / b * 100):.1f}%" if b > 0 else "0%"
+
+# =========================
+# CARREGAMENTO PLANILHA
+# =========================
+@st.cache_data(ttl=CACHE_TTL)
 def carregar_planilha():
     df = pd.read_csv(URL_PLANILHA, dtype=str)
-
     df.columns = [c.upper().strip() for c in df.columns]
 
-    df["CLIENTE_NORM"] = df["CLIENTE"].map(normalizar_texto)
-    df["STATUS_BASE"] = df["SITUACAO"].str.upper().str.strip()
+    df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce", dayfirst=True)
+    df = df.dropna(subset=["DATA"])
 
-    df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
-    df["ULTIMA_ATUALIZACAO"] = df["DATA"]
+    for col in ["CLIENTE", "CORRETOR", "EQUIPE", "SITUACAO", "DATA BASE"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    df["CLIENTE"] = df["CLIENTE"].map(normalizar)
+    df["CORRETOR"] = df["CORRETOR"].map(normalizar)
+    df["EQUIPE"] = df["EQUIPE"].map(normalizar)
+    df["DATA_BASE"] = df["DATA BASE"].astype(str)
+
+    df["STATUS_BASE"] = df["SITUACAO"].map(normalizar)
+
+    df["LEAD_KEY"] = df["CLIENTE"]
 
     return df
 
-
-@st.cache_data(ttl=TTL_CACHE)
-def carregar_crm_ultimos_1000():
-    cols = ["CLIENTE_NORM", "ORIGEM_CRM"]
+# =========================
+# CARREGAMENTO CRM (SEGURO)
+# =========================
+@st.cache_data(ttl=CACHE_TTL)
+def carregar_crm():
+    cols = ["LEAD_KEY", "ORIGEM", "CAMPANHA"]
 
     if not TOKEN_SUPREMO:
         return pd.DataFrame(columns=cols)
 
     try:
         headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
-        r = requests.get(URL_CRM_ULTIMOS_1000, headers=headers, timeout=30)
+        r = requests.get(URL_CRM, headers=headers, timeout=20)
         r.raise_for_status()
-
         dados = r.json().get("dados", [])
-        df = pd.DataFrame(dados)
 
+        df = pd.DataFrame(dados)
         if df.empty:
             return pd.DataFrame(columns=cols)
 
-        df["CLIENTE_NORM"] = (
-            df["nome_pessoa"]
-            .astype(str)
-            .map(normalizar_texto)
-        )
+        df["LEAD_KEY"] = df["nome_pessoa"].map(normalizar)
+        df["ORIGEM"] = df["nome_origem"].fillna("SEM ORIGEM").map(normalizar)
+        df["CAMPANHA"] = df["nome_campanha"].fillna("SEM CAMPANHA").map(normalizar)
 
-        df["ORIGEM_CRM"] = (
-            df["nome_origem"]
-            .fillna("SEM ORIGEM")
-            .astype(str)
-            .str.upper()
-        )
-
-        df = (
-            df.sort_values("data_captura")
-              .drop_duplicates("CLIENTE_NORM", keep="last")
-        )
-
-        return df[cols]
+        return df[cols].drop_duplicates("LEAD_KEY", keep="last")
 
     except Exception:
-        st.warning(
-            "⚠️ CRM indisponível no momento. "
-            "Origem exibida como SEM CADASTRO NO CRM."
-        )
+        st.warning("⚠️ CRM indisponível. Origem exibida como SEM CADASTRO NO CRM.")
         return pd.DataFrame(columns=cols)
 
+# =========================
+# CARGA GERAL
+# =========================
+df_plan = carregar_planilha()
+df_crm = carregar_crm()
+
+df = df_plan.merge(df_crm, on="LEAD_KEY", how="left")
+df["ORIGEM"] = df["ORIGEM"].fillna("SEM CADASTRO NO CRM")
+df["CAMPANHA"] = df["CAMPANHA"].fillna("SEM CAMPANHA")
 
 # =========================
-# CARREGAMENTO
-# =========================
-df = carregar_planilha()
-df_crm = carregar_crm_ultimos_1000()
-
-df = df.merge(
-    df_crm,
-    on="CLIENTE_NORM",
-    how="left"
-)
-
-df["ORIGEM_CRM"] = df["ORIGEM_CRM"].fillna("SEM CADASTRO NO CRM")
-
-# =========================
-# ÚLTIMA SITUAÇÃO DO LEAD
+# ÚLTIMA MOVIMENTAÇÃO
 # =========================
 df_ult = (
-    df.sort_values("ULTIMA_ATUALIZACAO")
-      .drop_duplicates("CLIENTE_NORM", keep="last")
+    df.sort_values("DATA")
+      .groupby("LEAD_KEY", as_index=False)
+      .last()
 )
-
-# =========================
-# STATUS DO FUNIL
-# =========================
-EM_ANALISE = df_ult["STATUS_BASE"].eq("EM ANALISE")
-REANALISE = df_ult["STATUS_BASE"].eq("REANALISE")
-APROVADO = df_ult["STATUS_BASE"].str.contains("APROVADO", na=False)
-PENDENCIA = df_ult["STATUS_BASE"].eq("PENDENCIA")
-REPROVADO = df_ult["STATUS_BASE"].eq("REPROVADO")
-VENDA_GERADA = df_ult["STATUS_BASE"].eq("VENDA GERADA")
-VENDA_INFORMADA = df_ult["STATUS_BASE"].eq("VENDA INFORMADA")
-DESISTIU = df_ult["STATUS_BASE"].eq("DESISTIU")
 
 # =========================
 # HEADER
 # =========================
 col_logo, col_title = st.columns([1, 6])
 with col_logo:
-    st.image(LOGO_PATH, width=120)
+    st.image(LOGO_PATH, width=130)
 with col_title:
-    st.title("🎯 Funil de Leads – Origem, Status e Conversão")
+    st.title("🎯 Funil de Leads – Gestão, Origem e Conversão")
 
 # =========================
-# STATUS ATUAL DO FUNIL
+# STATUS ATUAL
 # =========================
 st.subheader("📌 Status Atual do Funil")
 
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Em Análise", EM_ANALISE.sum())
-c2.metric("Reanálises", REANALISE.sum())
-c3.metric("Pendências", PENDENCIA.sum())
-c4.metric("Vendas Geradas", VENDA_GERADA.sum())
-c5.metric("Leads Ativos", len(df_ult))
+def cnt(status):
+    return (df_ult["STATUS_BASE"] == status).sum()
 
-st.divider()
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("Em Análise", cnt("EM ANALISE"))
+c2.metric("Reanálises", cnt("REANALISE"))
+c3.metric("Reprovados", cnt("REPROVADO"))
+c4.metric("Aprovados", cnt("APROVADO"))
+c5.metric("Vendas Geradas", cnt("VENDA GERADA"))
 
 # =========================
 # PERFORMANCE POR ORIGEM
 # =========================
+st.markdown("---")
 st.subheader("📈 Performance e Conversão por Origem")
 
-origens = ["TODAS"] + sorted(df_ult["ORIGEM_CRM"].unique().tolist())
-origem_sel = st.selectbox("Origem", origens)
-
-tipo_venda = st.radio(
-    "Tipo de Venda para Conversão",
-    ["Vendas Geradas + Informadas", "Apenas Vendas Geradas"],
-    horizontal=True
+origem_sel = st.selectbox(
+    "Origem",
+    ["TODAS"] + sorted(df_ult["ORIGEM"].unique())
 )
 
-df_perf = df_ult.copy()
+df_o = df_ult if origem_sel == "TODAS" else df_ult[df_ult["ORIGEM"] == origem_sel]
 
-if origem_sel != "TODAS":
-    df_perf = df_perf[df_perf["ORIGEM_CRM"] == origem_sel]
-
-# Contagens corretas
-leads = len(df_perf)
-
-analises = df_perf["STATUS_BASE"].eq("EM ANALISE").sum()
-aprovados = df_perf["STATUS_BASE"].str.contains("APROVADO", na=False).sum()
-reanalises = df_perf["STATUS_BASE"].eq("REANALISE").sum()
-
-if tipo_venda == "Apenas Vendas Geradas":
-    vendas = df_perf["STATUS_BASE"].eq("VENDA GERADA").sum()
-else:
-    vendas = df_perf["STATUS_BASE"].isin(
-        ["VENDA GERADA", "VENDA INFORMADA"]
-    ).sum()
-
-def pct(a, b):
-    return f"{(a / b * 100):.1f}%" if b > 0 else "0%"
+leads = len(df_o)
+analises = (df_o["STATUS_BASE"] == "EM ANALISE").sum()
+reanalises = (df_o["STATUS_BASE"] == "REANALISE").sum()
+aprovados = df_o["STATUS_BASE"].str.contains("APROVADO", na=False).sum()
+vendas = (df_o["STATUS_BASE"] == "VENDA GERADA").sum()
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Leads", leads)
@@ -203,54 +174,99 @@ c3.metric("Análise → Venda", pct(vendas, analises))
 c4.metric("Aprovação → Venda", pct(vendas, aprovados))
 
 # =========================
-# TABELA DA ORIGEM
+# RANKING ORIGEM POR VGV
 # =========================
-st.subheader("📋 Leads da Origem Selecionada")
+st.markdown("---")
+st.subheader("🏆 Ranking de Origem por VGV")
 
-cols_tabela = [
-    "CLIENTE",
-    "CORRETOR",
-    "EQUIPE",
-    "STATUS_BASE",
-    "ULTIMA_ATUALIZACAO"
-]
+if "VGV" in df.columns:
+    ranking_vgv = (
+        df[df["STATUS_BASE"] == "VENDA GERADA"]
+        .groupby("ORIGEM")["VGV"]
+        .sum()
+        .sort_values(ascending=False)
+        .reset_index()
+    )
+    st.dataframe(ranking_vgv, use_container_width=True)
+else:
+    st.info("Coluna VGV não encontrada na planilha.")
 
-st.dataframe(
-    df_perf[cols_tabela]
-    .sort_values("ULTIMA_ATUALIZACAO", ascending=False),
-    use_container_width=True
+# =========================
+# ORIGEM × CORRETOR
+# =========================
+st.markdown("---")
+st.subheader("🔀 Origem × Corretor")
+
+origem_corretor = (
+    df_ult.groupby(["ORIGEM", "CORRETOR"])
+    .agg(
+        Leads=("LEAD_KEY", "count"),
+        Analises=("STATUS_BASE", lambda x: (x == "EM ANALISE").sum()),
+        Vendas=("STATUS_BASE", lambda x: (x == "VENDA GERADA").sum())
+    )
+    .reset_index()
 )
 
-st.divider()
+st.dataframe(origem_corretor, use_container_width=True)
 
 # =========================
-# AUDITORIA DE CLIENTE
+# ORIGEM × CAMPANHA
 # =========================
-st.subheader("🔎 Auditoria Rápida de Cliente")
+st.markdown("---")
+st.subheader("🎯 Origem × Campanha")
 
-nome_busca = st.text_input("Digite o nome do cliente")
+origem_campanha = (
+    df_ult.groupby(["ORIGEM", "CAMPANHA"])
+    .agg(
+        Leads=("LEAD_KEY", "count"),
+        Analises=("STATUS_BASE", lambda x: (x == "EM ANALISE").sum()),
+        Vendas=("STATUS_BASE", lambda x: (x == "VENDA GERADA").sum())
+    )
+    .reset_index()
+)
 
-if nome_busca:
-    nome_norm = normalizar_texto(nome_busca)
+st.dataframe(origem_campanha, use_container_width=True)
 
-    hist = df[df["CLIENTE_NORM"].str.contains(nome_norm, na=False)]
+# =========================
+# ALERTAS AUTOMÁTICOS
+# =========================
+st.markdown("---")
+st.subheader("🚨 Alertas Automáticos")
+
+for _, row in origem_corretor.iterrows():
+    if row["Leads"] >= 10:
+        conv = row["Vendas"] / max(row["Leads"], 1)
+        if conv < 0.05:
+            st.warning(
+                f"⚠️ Conversão baixa ({conv:.1%}) | "
+                f"Origem: {row['ORIGEM']} | Corretor: {row['CORRETOR']}"
+            )
+
+# =========================
+# AUDITORIA DE LEAD
+# =========================
+st.markdown("---")
+st.subheader("🔎 Auditoria de Lead")
+
+busca = st.text_input("Buscar cliente pelo nome")
+
+if busca:
+    chave = normalizar(busca)
+    hist = df[df["LEAD_KEY"].str.contains(chave, na=False)]
 
     if hist.empty:
-        st.warning("Cliente não encontrado.")
+        st.warning("Lead não encontrado.")
     else:
-        atual = hist.sort_values("ULTIMA_ATUALIZACAO").iloc[-1]
+        atual = hist.sort_values("DATA").iloc[-1]
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Situação Atual", atual["STATUS_BASE"])
         c2.metric("Corretor", atual["CORRETOR"])
         c3.metric("Equipe", atual["EQUIPE"])
-        c4.metric("Origem", atual["ORIGEM_CRM"])
+        c4.metric("Origem", atual["ORIGEM"])
 
-        st.subheader("🕒 Linha do Tempo do Cliente")
-
+        st.markdown("### 🕒 Linha do Tempo")
         st.dataframe(
-            hist.sort_values("ULTIMA_ATUALIZACAO")[
-                ["DATA", "STATUS_BASE", "OBSERVACOES"]
-            ],
+            hist.sort_values("DATA")[["DATA", "STATUS_BASE"]],
             use_container_width=True
         )
