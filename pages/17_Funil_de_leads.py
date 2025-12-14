@@ -1,6 +1,5 @@
 # =========================================================
 # FUNIL DE LEADS – ORIGEM, STATUS E CONVERSÃO
-# (Conversão: Análise = só EM ANÁLISE | Aprovado = só APROVAÇÃO)
 # =========================================================
 
 import streamlit as st
@@ -10,7 +9,7 @@ from datetime import date
 from utils.supremo_config import TOKEN_SUPREMO
 
 # =========================================================
-# CONFIGURAÇÃO DA PÁGINA
+# CONFIGURAÇÃO
 # =========================================================
 st.set_page_config(
     page_title="Funil de Leads",
@@ -21,7 +20,7 @@ st.set_page_config(
 st.title("📊 Funil de Leads – Origem, Status e Conversão")
 
 # =========================================================
-# FONTE DA PLANILHA
+# PLANILHA
 # =========================================================
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID = "1574157905"
@@ -43,12 +42,12 @@ def parse_data(col):
 def parse_data_base(label):
     if not label or pd.isna(label):
         return pd.NaT
-    partes = str(label).upper().split()
-    if len(partes) < 2:
+    p = str(label).upper().split()
+    if len(p) < 2:
         return pd.NaT
-    mes = MESES.get(partes[0])
+    mes = MESES.get(p[0])
     try:
-        ano = int(partes[-1])
+        ano = int(p[-1])
     except:
         return pd.NaT
     if not mes:
@@ -56,33 +55,26 @@ def parse_data_base(label):
     return date(ano, mes, 1)
 
 # =========================================================
-# CARGA DA PLANILHA
+# CARGA PLANILHA (HISTÓRICO COMPLETO)
 # =========================================================
 @st.cache_data(ttl=300)
 def carregar_planilha():
     df = pd.read_csv(CSV_URL, dtype=str)
     df.columns = df.columns.str.upper().str.strip()
 
-    # Datas
     df["DATA"] = parse_data(df["DATA"])
     df = df.dropna(subset=["DATA"])
 
-    # Data base
     df["DATA_BASE_LABEL"] = df.get("DATA BASE", "").astype(str).str.strip()
     df["DATA_BASE_DATE"] = df["DATA_BASE_LABEL"].apply(parse_data_base)
 
-    # Normalizações
     for col in ["CLIENTE", "CORRETOR", "EQUIPE"]:
-        if col not in df.columns:
-            df[col] = ""
         df[col] = df[col].astype(str).str.upper().str.strip()
 
-    df["STATUS_RAW"] = df.get("SITUAÇÃO", "").astype(str).str.upper().str.strip()
+    df["STATUS_RAW"] = df["SITUAÇÃO"].astype(str).str.upper().str.strip()
     df["STATUS_BASE"] = ""
 
-    # ⚠️ MAPEAMENTO BLINDADO (ordem importa e não sobrescreve)
-    # - APROVADO BACEN não pode virar APROVADO
-    regras_ordenadas = [
+    regras = [
         ("APROVADO BACEN", "APROVADO_BACEN"),
         ("EM ANÁLISE", "ANALISE"),
         ("REANÁLISE", "REANALISE"),
@@ -91,25 +83,19 @@ def carregar_planilha():
         ("REPROV", "REPROVADO"),
         ("PEND", "PENDENCIA"),
         ("DESIST", "DESISTIU"),
-        ("APROVA", "APROVADO"),  # por último
+        ("APROVA", "APROVADO"),
     ]
 
-    for chave, valor in regras_ordenadas:
+    for chave, valor in regras:
         mask = df["STATUS_RAW"].str.contains(chave, na=False)
-        # não sobrescreve status já definido
         df.loc[mask & (df["STATUS_BASE"] == ""), "STATUS_BASE"] = valor
 
-    # mantém só linhas válidas do funil
     df = df[df["STATUS_BASE"] != ""]
-
-    # Último status por cliente (lead permanece no funil)
-    df = df.sort_values("DATA")
-    df = df.groupby("CLIENTE", as_index=False).last()
 
     return df
 
 # =========================================================
-# CARGA DO CRM
+# CARGA CRM
 # =========================================================
 @st.cache_data(ttl=1800)
 def carregar_crm():
@@ -141,103 +127,87 @@ def carregar_crm():
     return df[["CLIENTE", "ORIGEM", "CAMPANHA"]]
 
 # =========================================================
-# CARGA GERAL
+# DATASETS
 # =========================================================
-df_plan = carregar_planilha()
+df_hist = carregar_planilha()
 df_crm = carregar_crm()
 
-df = df_plan.merge(df_crm, on="CLIENTE", how="left")
-df["ORIGEM"] = df["ORIGEM"].fillna("SEM CADASTRO NO CRM")
-df["CAMPANHA"] = df["CAMPANHA"].fillna("-")
+df_hist = df_hist.merge(df_crm, on="CLIENTE", how="left")
+df_hist["ORIGEM"] = df_hist["ORIGEM"].fillna("SEM CADASTRO NO CRM")
+df_hist["CAMPANHA"] = df_hist["CAMPANHA"].fillna("-")
 
 # =========================================================
 # FILTROS
 # =========================================================
 st.sidebar.header("Filtros")
 
-modo_periodo = st.sidebar.radio("Modo de período", ["DIA", "DATA BASE"])
-df_filtro = df.copy()
+modo = st.sidebar.radio("Modo de período", ["DIA", "DATA BASE"])
+df_f = df_hist.copy()
 
-if modo_periodo == "DIA":
+if modo == "DIA":
     ini, fim = st.sidebar.date_input(
         "Período",
-        value=(df_filtro["DATA"].min().date(), df_filtro["DATA"].max().date())
+        value=(df_f["DATA"].min().date(), df_f["DATA"].max().date())
     )
-    df_filtro = df_filtro[
-        (df_filtro["DATA"].dt.date >= ini) &
-        (df_filtro["DATA"].dt.date <= fim)
-    ]
+    df_f = df_f[(df_f["DATA"].dt.date >= ini) & (df_f["DATA"].dt.date <= fim)]
 else:
-    bases = sorted(
-        df_filtro["DATA_BASE_LABEL"].dropna().unique(),
-        key=lambda x: parse_data_base(x) or date(1900, 1, 1)
-    )
+    bases = sorted(df_f["DATA_BASE_LABEL"].dropna().unique(), key=parse_data_base)
     sel = st.sidebar.multiselect("Data Base", bases, default=bases)
     if sel:
-        df_filtro = df_filtro[df_filtro["DATA_BASE_LABEL"].isin(sel)]
+        df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
 
-equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_filtro["EQUIPE"].dropna().unique()))
+equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique()))
 if equipe != "TODAS":
-    df_filtro = df_filtro[df_filtro["EQUIPE"] == equipe]
+    df_f = df_f[df_f["EQUIPE"] == equipe]
 
-corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_filtro["CORRETOR"].dropna().unique()))
+corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_f["CORRETOR"].unique()))
 if corretor != "TODOS":
-    df_filtro = df_filtro[df_filtro["CORRETOR"] == corretor]
+    df_f = df_f[df_f["CORRETOR"] == corretor]
 
 # =========================================================
-# STATUS ATUAL (CARDS)
+# STATUS ATUAL (ÚLTIMO STATUS)
 # =========================================================
 st.subheader("📌 Status Atual do Funil")
 
-kpi = df_filtro["STATUS_BASE"].value_counts()
+df_atual = df_f.sort_values("DATA").groupby("CLIENTE", as_index=False).last()
+kpi = df_atual["STATUS_BASE"].value_counts()
 
-cols = st.columns(4)
-cols[0].metric("Em Análise", int(kpi.get("ANALISE", 0)))
-cols[1].metric("Reanálise", int(kpi.get("REANALISE", 0)))
-cols[2].metric("Pendência", int(kpi.get("PENDENCIA", 0)))
-cols[3].metric("Reprovado", int(kpi.get("REPROVADO", 0)))
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Em Análise", int(kpi.get("ANALISE", 0)))
+c2.metric("Reanálise", int(kpi.get("REANALISE", 0)))
+c3.metric("Pendência", int(kpi.get("PENDENCIA", 0)))
+c4.metric("Reprovado", int(kpi.get("REPROVADO", 0)))
 
-cols = st.columns(4)
-cols[0].metric("Aprovado", int(kpi.get("APROVADO", 0)))
-cols[1].metric("Aprovado Bacen", int(kpi.get("APROVADO_BACEN", 0)))
-cols[2].metric("Desistiu", int(kpi.get("DESISTIU", 0)))
-cols[3].metric("Leads no Funil", len(df_filtro))
-
-cols = st.columns(2)
-cols[0].metric("Vendas Informadas", int(kpi.get("VENDA_INFORMADA", 0)))
-cols[1].metric("Vendas Geradas", int(kpi.get("VENDA_GERADA", 0)))
+c5, c6, c7, c8 = st.columns(4)
+c5.metric("Aprovado", int(kpi.get("APROVADO", 0)))
+c6.metric("Aprovado Bacen", int(kpi.get("APROVADO_BACEN", 0)))
+c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
+c8.metric("Leads no Funil", len(df_atual))
 
 # =========================================================
-# PERFORMANCE POR ORIGEM (CONVERSÃO COM NOVA REGRA)
+# CONVERSÃO (ESTOQUE ACUMULADO)
 # =========================================================
 st.subheader("📈 Performance e Conversão por Origem")
 
-origem = st.selectbox("Origem", ["TODAS"] + sorted(df_filtro["ORIGEM"].dropna().unique()))
-df_o = df_filtro if origem == "TODAS" else df_filtro[df_filtro["ORIGEM"] == origem]
+origem = st.selectbox("Origem", ["TODAS"] + sorted(df_f["ORIGEM"].unique()))
+df_o = df_f if origem == "TODAS" else df_f[df_f["ORIGEM"] == origem]
 
-# Base
-leads = len(df_o)
+leads = df_o["CLIENTE"].nunique()
+analises = df_o[df_o["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
+aprovados = df_o[df_o["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique()
+vendas = df_o[df_o["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique()
 
-# ✅ CONVERSÃO: só conta como análise "EM ANÁLISE"
-analises = int((df_o["STATUS_BASE"] == "ANALISE").sum())
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Leads", leads)
+c2.metric("Análises", analises)
+c3.metric("Aprovados", aprovados)
+c4.metric("Vendas", vendas)
 
-# ✅ CONVERSÃO: só conta como aprovado "APROVAÇÃO"
-aprovados = int((df_o["STATUS_BASE"] == "APROVADO").sum())
-
-# Vendas (mantém como está: venda gerada/informada)
-vendas = int(df_o["STATUS_BASE"].isin(["VENDA_GERADA", "VENDA_INFORMADA"]).sum())
-
-cols = st.columns(4)
-cols[0].metric("Leads", leads)
-cols[1].metric("Análises (só EM ANÁLISE)", analises)
-cols[2].metric("Aprovados (só APROVAÇÃO)", aprovados)
-cols[3].metric("Vendas", vendas)
-
-cols = st.columns(4)
-cols[0].metric("Lead → Análise", f"{(analises / leads * 100 if leads else 0):.1f}%")
-cols[1].metric("Análise → Aprovação", f"{(aprovados / analises * 100 if analises else 0):.1f}%")
-cols[2].metric("Análise → Venda", f"{(vendas / analises * 100 if analises else 0):.1f}%")
-cols[3].metric("Aprovação → Venda", f"{(vendas / aprovados * 100 if aprovados else 0):.1f}%")
+c5, c6, c7, c8 = st.columns(4)
+c5.metric("Lead → Análise", f"{(analises/leads*100 if leads else 0):.1f}%")
+c6.metric("Análise → Aprovação", f"{(aprovados/analises*100 if analises else 0):.1f}%")
+c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}%")
+c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
 
 # =========================================================
 # TABELA
@@ -245,7 +215,7 @@ cols[3].metric("Aprovação → Venda", f"{(vendas / aprovados * 100 if aprovado
 st.divider()
 st.subheader("📋 Leads")
 
-tabela = df_o[["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]].copy()
+tabela = df_atual[["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]]
 tabela = tabela.sort_values("DATA", ascending=False)
 tabela.rename(columns={"DATA": "ULTIMA_ATUALIZACAO"}, inplace=True)
 
