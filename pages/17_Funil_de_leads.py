@@ -137,16 +137,8 @@ df_hist = carregar_planilha()
 df_crm = carregar_crm()
 
 df_hist = df_hist.merge(df_crm, on="CLIENTE", how="left")
-
 df_hist["ORIGEM"] = df_hist["ORIGEM"].fillna("SEM CADASTRO NO CRM")
 df_hist["CAMPANHA"] = df_hist["CAMPANHA"].fillna("-")
-
-# CORRETOR RESPONSÁVEL
-df_hist["CORRETOR_RESPONSAVEL"] = df_hist["CORRETOR"]
-mask_sem_corretor = df_hist["CORRETOR_RESPONSAVEL"].str.strip() == ""
-df_hist.loc[mask_sem_corretor, "CORRETOR_RESPONSAVEL"] = df_hist.loc[
-    mask_sem_corretor, "CORRETOR_CRM"
-]
 
 # =========================================================
 # FILTROS
@@ -162,11 +154,37 @@ if modo == "DIA":
         value=(df_f["DATA"].min().date(), df_f["DATA"].max().date())
     )
     df_f = df_f[(df_f["DATA"].dt.date >= ini) & (df_f["DATA"].dt.date <= fim)]
+    df_crm_f = df_crm[(df_crm["DATA_CRM"].dt.date >= ini) & (df_crm["DATA_CRM"].dt.date <= fim)]
 else:
     bases = sorted(df_f["DATA_BASE_LABEL"].dropna().unique(), key=parse_data_base)
     sel = st.sidebar.multiselect("Data Base", bases, default=bases)
     if sel:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
+    df_crm_f = df_crm.copy()
+
+# =========================================================
+# PERFORMANCE POR ORIGEM
+# =========================================================
+st.subheader("📈 Performance e Conversão por Origem")
+
+origem = st.selectbox("Origem", ["TODAS"] + sorted(df_f["ORIGEM"].unique()))
+df_o = df_f if origem == "TODAS" else df_f[df_f["ORIGEM"] == origem]
+df_crm_o = df_crm_f if origem == "TODAS" else df_crm_f[df_crm_f["ORIGEM"] == origem]
+
+leads = df_o["CLIENTE"].nunique()
+analises = df_o[df_o["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
+
+# =========================================================
+# 🔥 CARDS – LEADS DISTRIBUÍDOS CRM + KPI
+# =========================================================
+st.markdown("---")
+
+leads_distribuidos = df_crm_o[df_crm_o["CORRETOR_CRM"] != ""]["CLIENTE"].nunique()
+kpi_leads_por_analise = round(leads_distribuidos / analises, 1) if analises else 0
+
+c1, c2 = st.columns(2)
+c1.metric("Leads distribuídos pelo CRM", leads_distribuidos)
+c2.metric("Leads necessários para 1 análise", kpi_leads_por_analise)
 
 # =========================================================
 # TABELA
@@ -175,34 +193,20 @@ st.divider()
 st.subheader("📋 Leads")
 
 df_tabela = (
-    df_f
+    df_o
     .sort_values("DATA")
     .groupby("CLIENTE", as_index=False)
     .last()
 )
 
-for col in ["CORRETOR_RESPONSAVEL", "EQUIPE"]:
+for col in ["CORRETOR", "EQUIPE"]:
     if col not in df_tabela.columns:
         df_tabela[col] = ""
 
 tabela = df_tabela[
-    [
-        "CLIENTE",
-        "CORRETOR_RESPONSAVEL",
-        "EQUIPE",
-        "ORIGEM",
-        "CAMPANHA",
-        "STATUS_BASE",
-        "DATA",
-    ]
+    ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]
 ].sort_values("DATA", ascending=False)
 
-tabela.rename(
-    columns={
-        "CORRETOR_RESPONSAVEL": "CORRETOR",
-        "DATA": "ULTIMA_ATUALIZACAO",
-    },
-    inplace=True,
-)
+tabela.rename(columns={"DATA": "ULTIMA_ATUALIZACAO"}, inplace=True)
 
 st.dataframe(tabela, use_container_width=True)
