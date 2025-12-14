@@ -1,5 +1,5 @@
 # =========================================================
-# FUNIL DE LEADS – ORIGEM, STATUS E CONVERSÃO
+# FUNIL DE LEADS – ORIGEM, STATUS, CONVERSÃO E CRM
 # =========================================================
 
 import streamlit as st
@@ -17,7 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📊 Funil de Leads – Origem, Status e Conversão")
+st.title("📊 Funil de Leads – Origem, Status, Conversão e CRM")
 
 # =========================================================
 # PLANILHA
@@ -162,17 +162,6 @@ else:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
     df_crm_f = df_crm.copy()
 
-if "CORRETOR" not in df_f.columns:
-    df_f["CORRETOR"] = ""
-
-equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique()))
-if equipe != "TODAS":
-    df_f = df_f[df_f["EQUIPE"] == equipe]
-
-corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_f["CORRETOR"].unique()))
-if corretor != "TODOS":
-    df_f = df_f[df_f["CORRETOR"] == corretor]
-
 # =========================================================
 # STATUS ATUAL
 # =========================================================
@@ -194,7 +183,7 @@ c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
 c8.metric("Leads no Funil", len(df_atual))
 
 # =========================================================
-# PERFORMANCE + CRM
+# PERFORMANCE, CONVERSÃO E CRM (COMPLETO)
 # =========================================================
 st.subheader("📈 Performance, Conversão e CRM")
 
@@ -209,6 +198,11 @@ vendas = df_o[df_o["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique()
 
 crm_recebidos = df_crm_o["CLIENTE"].nunique()
 crm_distribuidos = df_crm_o[df_crm_o["CORRETOR_CRM"] != ""]["CLIENTE"].nunique()
+
+lead_analise = (analises / leads * 100) if leads else 0
+analise_aprov = (aprovados / analises * 100) if analises else 0
+analise_venda = (vendas / analises * 100) if analises else 0
+aprov_venda = (vendas / aprovados * 100) if aprovados else 0
 leads_por_analise = round(crm_distribuidos / analises, 1) if analises else 0
 
 c1, c2, c3, c4 = st.columns(4)
@@ -216,6 +210,12 @@ c1.metric("Leads CRM (período)", crm_recebidos)
 c2.metric("Leads distribuídos CRM", crm_distribuidos)
 c3.metric("Análises", analises)
 c4.metric("Leads p/ 1 análise", leads_por_analise)
+
+c5, c6, c7, c8 = st.columns(4)
+c5.metric("Lead → Análise", f"{lead_analise:.1f}%")
+c6.metric("Análise → Aprovação", f"{analise_aprov:.1f}%")
+c7.metric("Análise → Venda", f"{analise_venda:.1f}%")
+c8.metric("Aprovação → Venda", f"{aprov_venda:.1f}%")
 
 # =========================================================
 # TABELA
@@ -229,6 +229,10 @@ df_tabela = (
     .groupby("CLIENTE", as_index=False)
     .last()
 )
+
+for col in ["CORRETOR", "EQUIPE"]:
+    if col not in df_tabela.columns:
+        df_tabela[col] = ""
 
 tabela = df_tabela[
     ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]
