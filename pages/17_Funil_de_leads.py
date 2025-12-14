@@ -9,7 +9,7 @@ from datetime import date
 from utils.supremo_config import TOKEN_SUPREMO
 
 # =========================================================
-# CONFIGURAÇÃO DA PÁGINA
+# CONFIGURAÇÃO
 # =========================================================
 st.set_page_config(
     page_title="Funil de Leads",
@@ -20,7 +20,7 @@ st.set_page_config(
 st.title("📊 Funil de Leads – Origem, Status e Conversão")
 
 # =========================================================
-# PLANILHA (GOOGLE SHEETS)
+# PLANILHA
 # =========================================================
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID = "1574157905"
@@ -42,12 +42,12 @@ def parse_data(col):
 def parse_data_base(label):
     if pd.isna(label):
         return pd.NaT
-    partes = str(label).upper().split()
-    if len(partes) < 2:
+    p = str(label).upper().split()
+    if len(p) < 2:
         return pd.NaT
-    mes = MESES.get(partes[0])
+    mes = MESES.get(p[0])
     try:
-        ano = int(partes[-1])
+        ano = int(p[-1])
     except:
         return pd.NaT
     if not mes:
@@ -55,14 +55,13 @@ def parse_data_base(label):
     return date(ano, mes, 1)
 
 # =========================================================
-# CARGA DA PLANILHA (HISTÓRICO)
+# CARGA PLANILHA
 # =========================================================
 @st.cache_data(ttl=300)
 def carregar_planilha():
     df = pd.read_csv(CSV_URL, dtype=str)
     df.columns = df.columns.str.upper().str.strip()
 
-    # Garante colunas essenciais
     for col in ["CLIENTE", "CORRETOR", "EQUIPE", "SITUAÇÃO", "DATA"]:
         if col not in df.columns:
             df[col] = ""
@@ -76,7 +75,6 @@ def carregar_planilha():
     for col in ["CLIENTE", "CORRETOR", "EQUIPE"]:
         df[col] = df[col].astype(str).str.upper().str.strip()
 
-    # Normalização de status
     df["STATUS_RAW"] = df["SITUAÇÃO"].astype(str).str.upper().str.strip()
     df["STATUS_BASE"] = ""
 
@@ -96,29 +94,24 @@ def carregar_planilha():
         mask = df["STATUS_RAW"].str.contains(chave, na=False)
         df.loc[mask & (df["STATUS_BASE"] == ""), "STATUS_BASE"] = valor
 
-    df = df[df["STATUS_BASE"] != ""]
-    return df
+    return df[df["STATUS_BASE"] != ""]
 
 # =========================================================
-# CARGA DO CRM (SUPREMO)
+# CARGA CRM
 # =========================================================
 @st.cache_data(ttl=1800)
 def carregar_crm():
     url = "https://api.supremocrm.com.br/v1/leads"
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
-    dados = []
-    pagina = 1
-
+    dados, pagina = [], 1
     while len(dados) < 1000:
         r = requests.get(url, headers=headers, params={"pagina": pagina}, timeout=20)
         if r.status_code != 200:
             break
-
         js = r.json()
         if not js.get("data"):
             break
-
         dados.extend(js["data"])
         pagina += 1
 
@@ -126,7 +119,6 @@ def carregar_crm():
         return pd.DataFrame(columns=["CLIENTE", "ORIGEM", "CAMPANHA"])
 
     df = pd.DataFrame(dados)
-
     df["CLIENTE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
     df["ORIGEM"] = df.get("nome_origem", "SEM CADASTRO NO CRM").fillna("SEM CADASTRO NO CRM")
     df["CAMPANHA"] = df.get("nome_campanha", "-").fillna("-")
@@ -137,7 +129,7 @@ def carregar_crm():
     return df[["CLIENTE", "ORIGEM", "CAMPANHA"]]
 
 # =========================================================
-# DATASETS UNIFICADOS
+# DATASETS
 # =========================================================
 df_hist = carregar_planilha()
 df_crm = carregar_crm()
@@ -147,7 +139,7 @@ df_hist["ORIGEM"] = df_hist["ORIGEM"].fillna("SEM CADASTRO NO CRM")
 df_hist["CAMPANHA"] = df_hist["CAMPANHA"].fillna("-")
 
 # =========================================================
-# FILTROS (SIDEBAR)
+# FILTROS
 # =========================================================
 st.sidebar.header("Filtros")
 
@@ -166,7 +158,6 @@ else:
     if sel:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
 
-# garante coluna CORRETOR para não quebrar seletor
 if "CORRETOR" not in df_f.columns:
     df_f["CORRETOR"] = ""
 
@@ -174,15 +165,12 @@ equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique
 if equipe != "TODAS":
     df_f = df_f[df_f["EQUIPE"] == equipe]
 
-corretor = st.sidebar.selectbox(
-    "Corretor",
-    ["TODOS"] + sorted(df_f["CORRETOR"].unique())
-)
+corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_f["CORRETOR"].unique()))
 if corretor != "TODOS":
     df_f = df_f[df_f["CORRETOR"] == corretor]
 
 # =========================================================
-# STATUS ATUAL (ÚLTIMO STATUS POR LEAD)
+# STATUS ATUAL
 # =========================================================
 st.subheader("📌 Status Atual do Funil")
 
@@ -202,7 +190,7 @@ c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
 c8.metric("Leads no Funil", len(df_atual))
 
 # =========================================================
-# PERFORMANCE E CONVERSÃO POR ORIGEM (ESTOQUE)
+# PERFORMANCE POR ORIGEM
 # =========================================================
 st.subheader("📈 Performance e Conversão por Origem")
 
@@ -227,12 +215,19 @@ c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}
 c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
 
 # =========================================================
-# TABELA FINAL
+# TABELA (RESPEITA ORIGEM)
 # =========================================================
 st.divider()
 st.subheader("📋 Leads")
 
-tabela = df_atual[
+df_tabela = (
+    df_o
+    .sort_values("DATA")
+    .groupby("CLIENTE", as_index=False)
+    .last()
+)
+
+tabela = df_tabela[
     ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]
 ].sort_values("DATA", ascending=False)
 
