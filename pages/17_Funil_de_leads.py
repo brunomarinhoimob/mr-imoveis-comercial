@@ -116,17 +116,23 @@ def carregar_crm():
         pagina += 1
 
     if not dados:
-        return pd.DataFrame(columns=["CLIENTE", "ORIGEM", "CAMPANHA"])
+        return pd.DataFrame(columns=["CLIENTE", "ORIGEM", "CAMPANHA", "DATA_CRM"])
 
     df = pd.DataFrame(dados)
+
     df["CLIENTE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
-    df["ORIGEM"] = df.get("nome_origem", "SEM CADASTRO NO CRM").fillna("SEM CADASTRO NO CRM")
-    df["CAMPANHA"] = df.get("nome_campanha", "-").fillna("-")
 
-    df["ORIGEM"] = df["ORIGEM"].astype(str).str.upper().str.strip()
-    df["CAMPANHA"] = df["CAMPANHA"].astype(str).str.upper().str.strip()
+    df["ORIGEM"] = df.get("nome_origem")
+    df["ORIGEM"] = df["ORIGEM"].fillna("SEM CADASTRO NO CRM").astype(str).str.upper().str.strip()
 
-    return df[["CLIENTE", "ORIGEM", "CAMPANHA"]]
+    df["CAMPANHA"] = df.get("nome_campanha")
+    df["CAMPANHA"] = df["CAMPANHA"].fillna("-").astype(str).str.upper().str.strip()
+
+    df["DATA_CRM"] = pd.to_datetime(df.get("data_captura"), errors="coerce")
+
+    return df[["CLIENTE", "ORIGEM", "CAMPANHA", "DATA_CRM"]]
+
+
 
 # =========================================================
 # DATASETS
@@ -137,6 +143,26 @@ df_crm = carregar_crm()
 df_hist = df_hist.merge(df_crm, on="CLIENTE", how="left")
 df_hist["ORIGEM"] = df_hist["ORIGEM"].fillna("SEM CADASTRO NO CRM")
 df_hist["CAMPANHA"] = df_hist["CAMPANHA"].fillna("-")
+# =========================================================
+# CRM BASE (CÓPIA PARA FILTROS)
+# =========================================================
+df_crm_f = df_crm.copy()
+
+# =========================================================
+# CRM ENRIQUECIDO COM EQUIPE E CORRETOR (SEM STATUS)
+# =========================================================
+df_crm_enriquecido = (
+    df_crm_f
+    .merge(
+        df_hist[["CLIENTE", "EQUIPE", "CORRETOR"]],
+        on="CLIENTE",
+        how="left"
+    )
+)
+
+df_crm_enriquecido["EQUIPE"] = df_crm_enriquecido["EQUIPE"].fillna("SEM EQUIPE")
+df_crm_enriquecido["CORRETOR"] = df_crm_enriquecido["CORRETOR"].fillna("SEM CORRETOR")
+
 
 # =========================================================
 # FILTROS
@@ -157,17 +183,130 @@ else:
     sel = st.sidebar.multiselect("Data Base", bases, default=bases)
     if sel:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
+    # =========================================================
+# FILTRO POR EQUIPE
+# =========================================================
+equipes = ["TODAS"] + sorted(df_f["EQUIPE"].dropna().unique())
 
-if "CORRETOR" not in df_f.columns:
-    df_f["CORRETOR"] = ""
+equipe_sel = st.sidebar.selectbox(
+    "Equipe",
+    equipes,
+    key="filtro_equipe"
+)
 
-equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique()))
-if equipe != "TODAS":
-    df_f = df_f[df_f["EQUIPE"] == equipe]
+if equipe_sel != "TODAS":
+    df_f = df_f[df_f["EQUIPE"] == equipe_sel]
 
-corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_f["CORRETOR"].unique()))
-if corretor != "TODOS":
-    df_f = df_f[df_f["CORRETOR"] == corretor]
+
+# =========================================================
+# FILTRO POR CORRETOR
+# =========================================================
+corretores = ["TODOS"] + sorted(df_f["CORRETOR"].dropna().unique())
+corretor_sel = st.sidebar.selectbox("Corretor", corretores, key="filtro_corretor")
+
+if corretor_sel != "TODOS":
+    df_f = df_f[df_f["CORRETOR"] == corretor_sel]
+
+
+if equipe_sel != "TODAS":
+    df_f = df_f[df_f["EQUIPE"] == equipe_sel]
+
+
+if corretor_sel != "TODOS":
+    df_f = df_f[df_f["CORRETOR"] == corretor_sel]
+
+# =========================================================
+# CRM FILTRADO PELO PERÍODO SELECIONADO (DIA ou DATA BASE)
+# =========================================================
+df_crm_f = df_crm.copy()
+
+if modo == "DIA":
+    df_crm_f = df_crm_f[
+        (df_crm_f["DATA_CRM"].dt.date >= ini) &
+        (df_crm_f["DATA_CRM"].dt.date <= fim)
+    ]
+else:
+    if sel:
+        base_df = df_hist[df_hist["DATA_BASE_LABEL"].isin(sel)]
+        dt_ini = base_df["DATA"].min()
+        dt_fim = base_df["DATA"].max()
+
+        if pd.notna(dt_ini) and pd.notna(dt_fim):
+            df_crm_f = df_crm_f[
+                (df_crm_f["DATA_CRM"] >= dt_ini) &
+                (df_crm_f["DATA_CRM"] <= dt_fim)
+            ]
+
+# =========================================================
+# SELETOR DE STATUS ATUAL
+# =========================================================
+ # =========================================================
+# SELETOR DE STATUS ATUAL (DINÂMICO – STATUS_BASE)
+# =========================================================
+# =========================================
+# SELETOR – SITUAÇÃO DO LEAD (PLANILHA)
+# =========================================
+df_base = df_f.copy()
+
+
+# =========================================================
+# PERFORMANCE POR ORIGEM
+# =========================================================
+st.subheader("📈 Performance e Conversão por Origem")
+# =========================================================
+# SELETOR DE ORIGEM (KPIs)
+# =========================================================
+origens_disponiveis = ["TODAS"] + sorted(df_base["ORIGEM"].dropna().unique())
+
+origem = st.selectbox(
+    "Origem",
+    origens_disponiveis,
+    key="origem_performance"
+)
+
+df_kpi = df_base if origem == "TODAS" else df_base[df_base["ORIGEM"] == origem]
+
+
+# =========================================================
+# CÁLCULO DOS KPIs
+# =========================================================
+# =========================================================
+# KPI – LEADS CRM (APENAS CRM, FILTRADO SÓ POR DATA E ORIGEM)
+# =========================================================
+
+df_crm_kpi = df_crm_f.copy()
+
+if origem != "TODAS":
+    df_crm_kpi = df_crm_kpi[df_crm_kpi["ORIGEM"] == origem]
+
+leads = df_crm_kpi["CLIENTE"].nunique()
+
+
+# KPIs
+leads = df_crm_kpi["CLIENTE"].nunique()
+
+analises = df_kpi[df_kpi["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
+aprovados = df_kpi[df_kpi["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique()
+vendas = df_kpi[df_kpi["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique()
+
+
+
+analises = df_kpi[df_kpi["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
+aprovados = df_kpi[df_kpi["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique()
+vendas = df_kpi[df_kpi["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique()
+
+# Exibindo os KPIs em Cards
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Leads CRM (Supremo)", leads)
+c2.metric("Análises", analises)
+c3.metric("Aprovados", aprovados)
+c4.metric("Vendas", vendas)
+
+c5, c6, c7, c8 = st.columns(4)
+c5.metric("Lead → Análise", f"{(analises / leads * 100 if leads else 0):.1f}%")
+c6.metric("Análise → Aprovação", f"{(aprovados / analises * 100 if analises else 0):.1f}%")
+c7.metric("Análise → Venda", f"{(vendas / analises * 100 if analises else 0):.1f}%")
+c8.metric("Aprovação → Venda", f"{(vendas / aprovados * 100 if aprovados else 0):.1f}%")
 
 # =========================================================
 # STATUS ATUAL
@@ -189,18 +328,11 @@ c6.metric("Aprovado Bacen", int(kpi.get("APROVADO_BACEN", 0)))
 c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
 c8.metric("Leads no Funil", len(df_atual))
 
-# =========================================================
-# PERFORMANCE POR ORIGEM
-# =========================================================
-st.subheader("📈 Performance e Conversão por Origem")
+leads = df_kpi["CLIENTE"].nunique()
+analises = df_kpi[df_kpi["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
+aprovados = df_kpi[df_kpi["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique()
+vendas = df_kpi[df_kpi["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique()
 
-origem = st.selectbox("Origem", ["TODAS"] + sorted(df_f["ORIGEM"].unique()))
-df_o = df_f if origem == "TODAS" else df_f[df_f["ORIGEM"] == origem]
-
-leads = df_o["CLIENTE"].nunique()
-analises = df_o[df_o["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
-aprovados = df_o[df_o["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique()
-vendas = df_o[df_o["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique()
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Leads", leads)
@@ -213,24 +345,45 @@ c5.metric("Lead → Análise", f"{(analises/leads*100 if leads else 0):.1f}%")
 c6.metric("Análise → Aprovação", f"{(aprovados/analises*100 if analises else 0):.1f}%")
 c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}%")
 c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
-
 # =========================================================
-# TABELA (RESPEITA ORIGEM)
+# TABELA DE LEADS DA ORIGEM SELECIONADA
 # =========================================================
-st.divider()
-st.subheader("📋 Leads")
+st.subheader("📋 Leads da Origem Selecionada")
+# =========================================
+# SELETOR DE STATUS (AFETA APENAS A TABELA)
+# =========================================
+status_tabela_opcoes = ["TODOS"] + sorted(
+    df_kpi["STATUS_BASE"].dropna().unique().tolist()
+)
 
-df_tabela = (
-    df_o
-    .sort_values("DATA")
+status_tabela = st.selectbox(
+    "Filtrar leads por status",
+    status_tabela_opcoes,
+    key="status_tabela_origem"
+)
+
+# Só o ÚLTIMO status por cliente (dentro do período + filtros atuais)
+df_tabela_origem = (
+    df_kpi.sort_values("DATA")
     .groupby("CLIENTE", as_index=False)
     .last()
 )
 
-tabela = df_tabela[
+# Filtro de status (após consolidar o último status)
+if status_tabela != "TODOS":
+    df_tabela_origem = df_tabela_origem[df_tabela_origem["STATUS_BASE"] == status_tabela]
+
+tabela_origem = df_tabela_origem[
     ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]
 ].sort_values("DATA", ascending=False)
 
-tabela.rename(columns={"DATA": "ULTIMA_ATUALIZACAO"}, inplace=True)
 
-st.dataframe(tabela, use_container_width=True)
+
+tabela_origem.rename(
+    columns={"DATA": "ULTIMA_ATUALIZACAO"},
+    inplace=True
+)
+
+st.dataframe(tabela_origem, use_container_width=True)
+
+
