@@ -180,6 +180,17 @@ except Exception:
 if st.sidebar.button("Sair"):
     st.session_state.logado = False
     st.rerun()
+# ---------------------------------------------------------
+# CONTROLE DE ACESSO POR PERFIL (MENU)
+# ---------------------------------------------------------
+perfil = st.session_state.get("perfil")
+
+if perfil == "corretor":
+    st.sidebar.markdown("### 👤 Acesso do Corretor")
+    st.sidebar.markdown("- 📂 Carteira de Clientes")
+    st.sidebar.markdown("- 🔎 Consulta de Clientes")
+    st.sidebar.markdown("---")
+    st.sidebar.warning("🔒 Demais páginas são restritas")
 
 # ---------------------------------------------------------
 # PLANILHA – GOOGLE SHEETS
@@ -357,6 +368,22 @@ def carregar_dados_planilha() -> pd.DataFrame:
 
 
 df = carregar_dados_planilha()
+# ---------------------------------------------------------
+# CONTEXTO DO USUÁRIO LOGADO
+# ---------------------------------------------------------
+perfil = st.session_state.get("perfil")
+nome_corretor_logado = (
+    st.session_state.get("nome_usuario", "")
+    .upper()
+    .strip()
+)
+
+# ---------------------------------------------------------
+# BLOQUEIO GLOBAL DE DADOS PARA PERFIL CORRETOR
+# ---------------------------------------------------------
+if perfil == "corretor":
+    if "CORRETOR" in df.columns:
+        df = df[df["CORRETOR"] == nome_corretor_logado]
 
 if df.empty:
     st.error("Erro ao carregar planilha.")

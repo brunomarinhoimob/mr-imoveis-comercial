@@ -5,6 +5,12 @@ from datetime import datetime, timedelta
 if "logado" not in st.session_state or not st.session_state.logado:
     st.warning("🔒 Acesso restrito. Faça login para continuar.")
     st.stop()
+# ---------------------------------------------------------
+# BLOQUEIO DE PERFIL CORRETOR
+# ---------------------------------------------------------
+if st.session_state.get("perfil") == "corretor":
+    st.warning("🔒 Você não tem permissão para acessar esta página.")
+    st.stop()
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
