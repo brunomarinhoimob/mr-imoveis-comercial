@@ -1,209 +1,235 @@
+# =========================================================
+# FUNIL DE LEADS — INTELIGÊNCIA COMERCIAL
+# =========================================================
+
 import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 import requests
-from fpdf import FPDF
-
+from datetime import date, timedelta
 from utils.supremo_config import TOKEN_SUPREMO
 
-# ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA
-# ---------------------------------------------------------
+# =========================================================
+# SEGURANÇA
+# =========================================================
+if "logado" not in st.session_state or not st.session_state.logado:
+    st.warning("🔒 Acesso restrito. Faça login para continuar.")
+    st.stop()
+
 st.set_page_config(
-    page_title="Oferta Ativa – Leads pra Ligar",
-    page_icon="📞",
-    layout="wide",
+    page_title="Funil de Leads | Inteligência Comercial",
+    page_icon="📊",
+    layout="wide"
 )
 
-st.title("📞 Oferta Ativa – Leads pra Ligar")
-st.caption("Base limpa de leads do CRM, pronta para contato ativo.")
+st.title("📊 Funil de Leads — Inteligência Comercial")
+st.caption("Visão estratégica por Origem, Equipe e Corretor")
 
-# ---------------------------------------------------------
-# FUNÇÃO – BUSCAR LEADS NO SUPREMO CRM
-# ---------------------------------------------------------
-@st.cache_data(ttl=1800)
-def carregar_leads_oferta(limit=3000, max_pages=200):
+# =========================================================
+# PLANILHA (FUNIL)
+# =========================================================
+SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
+GID = "1574157905"
+CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
+
+@st.cache_data(ttl=300)
+def carregar_planilha():
+    df = pd.read_csv(CSV_URL, dtype=str)
+    df.columns = df.columns.str.upper().str.strip()
+
+    for col in ["CLIENTE", "CORRETOR", "EQUIPE", "SITUAÇÃO", "DATA"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    df["DATA"] = pd.to_datetime(df["DATA"], dayfirst=True, errors="coerce")
+    df = df.dropna(subset=["DATA"])
+
+    for col in ["CLIENTE", "CORRETOR", "EQUIPE"]:
+        df[col] = df[col].astype(str).str.upper().str.strip()
+
+    df["STATUS_RAW"] = df["SITUAÇÃO"].astype(str).str.upper()
+    df["STATUS_BASE"] = ""
+
+    regras = [
+        ("APROVADO BACEN", "APROVADO_BACEN"),
+        ("EM ANÁLISE", "ANALISE"),
+        ("REANÁLISE", "REANALISE"),
+        ("VENDA GERADA", "VENDA_GERADA"),
+        ("VENDA INFORMADA", "VENDA_INFORMADA"),
+        ("REPROV", "REPROVADO"),
+        ("PEND", "PENDENCIA"),
+        ("DESIST", "DESISTIU"),
+        ("APROVA", "APROVADO"),
+    ]
+
+    for chave, valor in regras:
+        mask = df["STATUS_RAW"].str.contains(chave, na=False)
+        df.loc[mask & (df["STATUS_BASE"] == ""), "STATUS_BASE"] = valor
+
+    return df[df["STATUS_BASE"] != ""]
+
+# =========================================================
+# CRM — LEADS RECEBIDOS
+# =========================================================
+@st.cache_data(ttl=1800, show_spinner=False)
+def carregar_crm(data_ini, data_fim):
     url = "https://api.supremocrm.com.br/v1/leads"
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
     dados = []
     pagina = 1
+    LIMITE_PAGINAS = 10
+    TIMEOUT = 30
 
-    while pagina <= max_pages and len(dados) < limit:
-        resp = requests.get(
-            url,
-            headers=headers,
-            params={"pagina": pagina},
-            timeout=30,
-        )
-        if resp.status_code != 200:
+    while pagina <= LIMITE_PAGINAS:
+        try:
+            r = requests.get(
+                url,
+                headers=headers,
+                params={
+                    "pagina": pagina,
+                    "data_inicio": data_ini.strftime("%Y-%m-%d"),
+                    "data_fim": data_fim.strftime("%Y-%m-%d"),
+                },
+                timeout=TIMEOUT
+            )
+
+            if r.status_code != 200:
+                break
+
+            js = r.json()
+            if not js.get("data"):
+                break
+
+            dados.extend(js["data"])
+            pagina += 1
+
+        except requests.exceptions.RequestException:
             break
-
-        js = resp.json()
-        if not js.get("data"):
-            break
-
-        dados.extend(js["data"])
-        pagina += 1
 
     if not dados:
-        return pd.DataFrame()
+        return pd.DataFrame(
+            columns=["CLIENTE", "ORIGEM", "CAMPANHA", "DATA_CRM", "CORRETOR", "EQUIPE"]
+        )
 
-    df = pd.DataFrame(dados).drop_duplicates(subset=["id"])
+    df = pd.DataFrame(dados)
 
-    # Normalização
-    df["NOME"] = df.get("nome_pessoa", "").fillna("").astype(str).str.upper().str.strip()
-    df["TELEFONE"] = df.get("telefone_pessoa", "").fillna("").astype(str).str.strip()
-    df["ORIGEM"] = df.get("nome_origem", "").fillna("").astype(str).str.upper().str.strip()
-    df["CAMPANHA"] = df.get("nome_campanha", "").fillna("").astype(str).str.upper().str.strip()
-    df["CORRETOR"] = df.get("nome_corretor", "").fillna("").astype(str).str.upper().str.strip()
+    # CLIENTE
+    df["CLIENTE"] = df.get("nome_pessoa", "").astype(str).str.upper().str.strip()
 
-    df["DATA_CAPTURA"] = pd.to_datetime(df.get("data_captura"), errors="coerce")
-    df = df.dropna(subset=["DATA_CAPTURA"])
+    # ORIGEM
+    if "nome_origem" in df.columns:
+        df["ORIGEM"] = df["nome_origem"].fillna("SEM ORIGEM").astype(str).str.upper()
+    else:
+        df["ORIGEM"] = "SEM ORIGEM"
 
-    # -----------------------------------------------------
-    # REGRAS DE NEGÓCIO – OFERTA ATIVA
-    # -----------------------------------------------------
-    origem_upper = df["ORIGEM"]
+    # CAMPANHA
+    if "nome_campanha" in df.columns:
+        df["CAMPANHA"] = df["nome_campanha"].fillna("-").astype(str).str.upper()
+    else:
+        df["CAMPANHA"] = "-"
 
-    mask_excluir_origem = (
-        origem_upper.str.contains("CARTEIRA", na=False)
-        | origem_upper.str.contains("INDICA", na=False)
-        | origem_upper.str.contains("IMPULSIONAMENTO CORRETOR", na=False)
-    )
+    # DATA CRM
+    df["DATA_CRM"] = pd.to_datetime(df.get("data_captura"), errors="coerce")
 
-    df = df[~mask_excluir_origem]
+    # CORRETOR
+    if "nome_corretor" in df.columns:
+        df["CORRETOR"] = df["nome_corretor"].fillna("SEM CORRETOR").astype(str).str.upper()
+    else:
+        df["CORRETOR"] = "SEM CORRETOR"
 
-    palavras_finalizacao = ["VENDA", "COMPROU", "CLIENTE", "FINALIZ", "CONCLU"]
+    # EQUIPE
+    if "nome_equipe" in df.columns:
+        df["EQUIPE"] = (
+            df["nome_equipe"]
+            .fillna("SEM EQUIPE")
+            .astype(str)
+            .str.upper()
+        )
+    else:
+        df["EQUIPE"] = "SEM EQUIPE"
 
-    for termo in palavras_finalizacao:
-        df = df[
-            ~df["ORIGEM"].str.contains(termo, na=False)
-            & ~df["CAMPANHA"].str.contains(termo, na=False)
-        ]
+    return df[["CLIENTE", "ORIGEM", "CAMPANHA", "DATA_CRM", "CORRETOR", "EQUIPE"]]
 
-    return df.reset_index(drop=True)
+# =========================================================
+# BASE FUNIL (PLANILHA)
+# =========================================================
+df_funil = carregar_planilha()
 
-# ---------------------------------------------------------
-# CARREGAMENTO DOS LEADS
-# ---------------------------------------------------------
-st.sidebar.title("Filtros – Oferta Ativa")
+df_status_final = (
+    df_funil.sort_values("DATA")
+    .groupby("CLIENTE", as_index=False)
+    .last()
+)
 
-usar_api = st.sidebar.checkbox("Buscar direto do CRM", value=True)
+# =========================================================
+# PERÍODO PADRÃO (INDEPENDENTE)
+# =========================================================
+fim = date.today()
+ini = fim - timedelta(days=30)
 
-if usar_api:
-    limite = st.sidebar.slider("Quantidade máxima de leads", 1000, 5000, 3000, 500)
-    df = carregar_leads_oferta(limit=limite)
-else:
-    df = st.session_state.get("df_leads", pd.DataFrame())
-
-if df is None or df.empty:
-    st.error("Nenhum lead disponível.")
-    st.stop()
-
-# ---------------------------------------------------------
+# =========================================================
 # FILTROS
-# ---------------------------------------------------------
-hoje = datetime.now().date()
+# =========================================================
+st.sidebar.header("Filtros")
 
-data_ini = st.sidebar.date_input("Data inicial", hoje - timedelta(days=7))
-data_fim = st.sidebar.date_input("Data final", hoje)
+ini, fim = st.sidebar.date_input(
+    "Período",
+    value=(ini, fim)
+)
 
-if data_ini > data_fim:
-    data_ini, data_fim = data_fim, data_ini
+# =========================================================
+# CARREGAMENTO DO CRM
+# =========================================================
+with st.spinner("🔄 Carregando leads do CRM (período selecionado)..."):
+    df_crm = carregar_crm(ini, fim)
 
-df = df[
-    (df["DATA_CAPTURA"].dt.date >= data_ini)
-    & (df["DATA_CAPTURA"].dt.date <= data_fim)
-]
+# =========================================================
+# BASE CONSOLIDADA
+# =========================================================
+df_base = df_crm.merge(
+    df_status_final[["CLIENTE", "STATUS_BASE"]],
+    on="CLIENTE",
+    how="left"
+)
 
-corretores = sorted(df["CORRETOR"].dropna().unique())
-corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + corretores)
+df_base["STATUS_BASE"] = df_base["STATUS_BASE"].fillna("SEM_ACAO")
 
-if corretor_sel != "Todos":
-    df = df[df["CORRETOR"] == corretor_sel]
-
-if df.empty:
-    st.warning("Nenhum lead para os filtros selecionados.")
-    st.stop()
-
-# ---------------------------------------------------------
-# KPI
-# ---------------------------------------------------------
-st.subheader("📊 Resumo")
-
-c1, c2, c3 = st.columns(3)
-c1.metric("Leads disponíveis", len(df))
-c2.metric("Corretores", df["CORRETOR"].nunique())
-c3.metric("Período", f"{data_ini} → {data_fim}")
-
-# ---------------------------------------------------------
-# TABELA
-# ---------------------------------------------------------
-st.divider()
-st.subheader("📋 Leads para contato")
-
-tabela = df[["NOME", "TELEFONE", "ORIGEM", "CAMPANHA"]].copy()
-st.dataframe(tabela, use_container_width=True)
-
-# ---------------------------------------------------------
-# PDF
-# ---------------------------------------------------------
-def limpar_texto_pdf(texto):
-    if pd.isna(texto):
-        return ""
+# =========================================================
+# KPIs GERAIS
+# =========================================================
+def kpis(df):
     return (
-        str(texto)
-        .encode("latin-1", errors="ignore")
-        .decode("latin-1")
+        df["CLIENTE"].nunique(),
+        df[df["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique(),
+        df[df["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique(),
+        df[df["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique(),
     )
 
-def gerar_pdf(df_pdf):
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=10)
+leads, analises, aprovados, vendas = kpis(df_base)
 
-    # 🔧 AJUSTE AQUI
-    linhas_por_pagina = 33  # máximo 33 linhas por página
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Leads CRM", leads)
+c2.metric("Análises", analises)
+c3.metric("Aprovados", aprovados)
+c4.metric("Vendas", vendas)
 
-    col_nome = 70
-    col_tel = 40
-    col_obs = 80
+# =========================================================
+# RANKING POR ORIGEM
+# =========================================================
+st.subheader("🏆 Ranking por Origem")
 
-    for i in range(0, len(df_pdf), linhas_por_pagina):
-        pdf.add_page()
-        pdf.set_font("Arial", "B", 10)
+ranking = df_base.groupby("ORIGEM").apply(
+    lambda x: pd.Series({
+        "Leads": x["CLIENTE"].nunique(),
+        "Análises": x[x["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique(),
+        "Aprovados": x[x["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique(),
+        "Vendas": x[x["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique(),
+    })
+).reset_index()
 
-        pdf.cell(col_nome, 8, "NOME", border=1)
-        pdf.cell(col_tel, 8, "TELEFONE", border=1)
-        pdf.cell(col_obs, 8, "INFORMAÇÕES", border=1)
-        pdf.ln()
+ranking["% Análise"] = (ranking["Análises"] / ranking["Leads"] * 100).round(1)
+ranking["% Venda"] = (ranking["Vendas"] / ranking["Leads"] * 100).round(1)
 
-        pdf.set_font("Arial", size=9)
+ranking = ranking.sort_values("% Venda", ascending=False)
 
-        bloco = df_pdf.iloc[i:i + linhas_por_pagina]
-
-        for _, row in bloco.iterrows():
-            nome = limpar_texto_pdf(row["NOME"])
-            telefone = limpar_texto_pdf(row["TELEFONE"])
-
-            pdf.cell(col_nome, 8, nome[:40], border=1)
-            pdf.cell(col_tel, 8, telefone[:20], border=1)
-            pdf.cell(col_obs, 8, "", border=1)
-            pdf.ln()
-
-    return bytes(pdf.output(dest="S"))
-
-
-
-
-st.divider()
-
-if st.button("📄 Gerar PDF para Oferta Ativa"):
-    pdf_bytes = gerar_pdf(df[["NOME", "TELEFONE"]])
-    st.download_button(
-        "⬇️ Baixar PDF",
-        data=pdf_bytes,
-        file_name="oferta_ativa_leads.pdf",
-        mime="application/pdf",
-    )
+st.dataframe(ranking, use_container_width=True)
