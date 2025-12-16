@@ -1,32 +1,46 @@
 USUARIOS = {
     "bruno.marinho": {
-        "nome": "Bruno Marinho",
+        "nome": "BRUNO MARINHO",
         "senha": "511712bm",
         "perfil": "admin"
     },
-    "leandro.rodrigues": {
-        "nome": "Leandro Rodrigues",
-        "senha": "leandro123",
-        "perfil": "gestor"
-    },
+
     "djacir.adm": {
-        "nome": "Djacir Adm",
+        "nome": "DJACIR ADM",
         "senha": "Djacir123",
         "perfil": "admin"
     },
+
     "nicolas.adm": {
-        "nome": "Nicolas Adm",
+        "nome": "NICOLAS ADM",
         "senha": "Nicolas123",
         "perfil": "admin"
     },
+
+    "leandro.rodrigues": {
+        "nome": "LEANDRO RODRIGUES",
+        "senha": "Leandro123",
+        "perfil": "gestor"
+    },
+
     "magda.rayanne": {
-        "nome": "Magda Rayanne",
+        "nome": "MAGDA RAYANNE",
         "senha": "Magda123",
         "perfil": "gestor"
     },
+
     "diego.pinheiro": {
-        "nome": "Diego Pinheiro",
+        "nome": "DIEGO PINHEIRO",
         "senha": "Diego123",
         "perfil": "gestor"
+    },
+
+    # -------------------------------
+    # CORRETOR (TESTE)
+    # -------------------------------
+    "marcello.barbosa": {
+        "nome": "MARCELLO BARBOSA",
+        "senha": "Marcello123",
+        "perfil": "corretor"
     }
 }

@@ -118,16 +118,28 @@ else:
     dt_fim = periodo
 
 df = df[(df["DIA"] >= pd.to_datetime(dt_ini)) & (df["DIA"] <= pd.to_datetime(dt_fim))]
+# ---------------------------------------------------------
+# BLOQUEIO REAL DE DADOS PARA PERFIL CORRETOR
+# ---------------------------------------------------------
+if perfil == "corretor":
+    df = df[df["CORRETOR"] == nome_corretor_logado]
 
-# EQUIPE
-equipe = st.sidebar.selectbox("Equipe:", ["Todas"] + sorted(df["EQUIPE"].unique()))
-if equipe != "Todas":
-    df = df[df["EQUIPE"] == equipe]
+perfil = st.session_state.get("perfil")
+nome_corretor_logado = st.session_state.get("nome_usuario", "").upper()
+nome_corretor_logado = nome_corretor_logado.strip()
 
-# CORRETOR
-corretor = st.sidebar.selectbox("Corretor:", ["Todos"] + sorted(df["CORRETOR"].unique()))
+if perfil == "corretor":
+    equipe = "Todas"
+    corretor = nome_corretor_logado
+    st.sidebar.info(f"👤 Corretor logado: {nome_corretor_logado}")
+else:
+    equipe = st.sidebar.selectbox("Equipe:", ["Todas"] + sorted(df["EQUIPE"].unique()))
+    corretor = st.sidebar.selectbox("Corretor:", ["Todos"] + sorted(df["CORRETOR"].unique()))
 if corretor != "Todos":
     df = df[df["CORRETOR"] == corretor]
+
+if equipe != "Todas":
+    df = df[df["EQUIPE"] == equipe]
 
 if df.empty:
     st.info("Nenhum cliente encontrado com esses filtros.")

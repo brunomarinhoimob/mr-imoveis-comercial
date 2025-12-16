@@ -104,15 +104,15 @@ def tela_login():
         senha = st.text_input("Senha", type="password")
 
         if st.button("Entrar", use_container_width=True):
-            user = USUARIOS.get(usuario.lower())
+    user = USUARIOS.get(usuario.lower())
 
-            if user and senha == user["senha"]:
-                st.session_state.logado = True
-                st.session_state.usuario = usuario.lower()
-                st.session_state.nome_usuario = user["nome"]
-                st.session_state.perfil = user["perfil"]
-                st.rerun()
-            else:
-                st.error("Usuário ou senha inválidos")
+    if user and senha == user["senha"]:
+        st.session_state.logado = True
+        st.session_state.usuario = usuario.lower()
+        st.session_state.nome_usuario = user["nome"].upper()
+        st.session_state.perfil = user["perfil"]
+        st.rerun()
+    else:
+        st.error("Usuário ou senha inválidos")
 
         st.markdown("</div>", unsafe_allow_html=True)
