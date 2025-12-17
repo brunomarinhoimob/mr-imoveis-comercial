@@ -60,12 +60,18 @@ def obter_status_atual(grupo):
 def formatar_observacao(linha):
     texto = (
         linha.get("OBSERVAÇÕES 2")
-        or linha.get("OBSERVAÇÕES")
-        or ""
+        if "OBSERVAÇÕES 2" in linha and not pd.isna(linha.get("OBSERVAÇÕES 2"))
+        else linha.get("OBSERVAÇÕES")
+        if "OBSERVAÇÕES" in linha and not pd.isna(linha.get("OBSERVAÇÕES"))
+        else None
     )
 
+    if texto is None:
+        return None
+
     texto = str(texto).strip()
-    if not texto:
+
+    if texto == "" or texto.lower() == "nan":
         return None
 
     return texto
@@ -165,7 +171,7 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
 
     obs_final = formatar_observacao(ultima)
 
-if obs_final:
+if obs_final is not None:
     st.markdown("### 📝 Observação do cliente")
     st.info(obs_final)
 
