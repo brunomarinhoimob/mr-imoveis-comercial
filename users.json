@@ -1,0 +1,76 @@
+{
+  "bruno.marinho": {
+    "nome": "BRUNO MARINHO",
+    "senha": "511712bm",
+    "perfil": "admin"
+  },
+  "djacir.adm": {
+    "nome": "DJACIR ADM",
+    "senha": "Djacir123",
+    "perfil": "admin"
+  },
+  "nicolas.adm": {
+    "nome": "NICOLAS ADM",
+    "senha": "Nicolas123",
+    "perfil": "admin"
+  },
+  "leandro.rodrigues": {
+    "nome": "LEANDRO RODRIGUES",
+    "senha": "Leandro123",
+    "perfil": "gestor"
+  },
+  "magda.rayanne": {
+    "nome": "MAGDA RAYANNE",
+    "senha": "Magda123",
+    "perfil": "gestor"
+  },
+  "diego.pinheiro": {
+    "nome": "DIEGO PINHEIRO",
+    "senha": "Diego123",
+    "perfil": "gestor"
+  },
+
+  "ana.rita": { "nome": "ANA RITA", "senha": "Ana123", "perfil": "corretor" },
+  "deiviane.deiviane": { "nome": "DEIVIANE", "senha": "Deiviane123", "perfil": "corretor" },
+  "magno.magno": { "nome": "MAGNO", "senha": "Magno123", "perfil": "corretor" },
+  "mikaely.lima": { "nome": "MIKAELY LIMA", "senha": "Mikaely123", "perfil": "corretor" },
+  "maria.fatima": { "nome": "MARIA DE FATIMA", "senha": "Maria123", "perfil": "corretor" },
+  "ivan.junior": { "nome": "IVAN JUNIOR", "senha": "Ivan123", "perfil": "corretor" },
+  "patricia.sales": { "nome": "PATRICIA SALES", "senha": "Patricia123", "perfil": "corretor" },
+  "paloma.paloma": { "nome": "PALOMA", "senha": "Paloma123", "perfil": "corretor" },
+  "vivian.vivian": { "nome": "VIVIAN", "senha": "Vivian123", "perfil": "corretor" },
+  "rayanne.rayanne": { "nome": "RAYANNE", "senha": "Rayanne123", "perfil": "corretor" },
+  "ana.lira": { "nome": "ANA LIRA", "senha": "Ana123", "perfil": "corretor" },
+  "daniel.souza": { "nome": "DANIEL SOUZA", "senha": "Daniel123", "perfil": "corretor" },
+  "marcia.matos": { "nome": "MARCIA MATOS", "senha": "Marcia123", "perfil": "corretor" },
+  "francisco.celber": { "nome": "FRANCISCO CELBER", "senha": "Francisco123", "perfil": "corretor" },
+  "wellia.camara": { "nome": "WELLIA CAMARA", "senha": "Wellia123", "perfil": "corretor" },
+  "ricardo.nascimento": { "nome": "RICARDO NASCIMENTO", "senha": "Ricardo123", "perfil": "corretor" },
+  "clara.braga": { "nome": "CLARA BRAGA", "senha": "Clara123", "perfil": "corretor" },
+  "henrique.henrique": { "nome": "HENRIQUE", "senha": "Henrique123", "perfil": "corretor" },
+  "gutemberg.filguerias": { "nome": "GUTEMBERG FILGUEIRAS", "senha": "Gutemberg123", "perfil": "corretor" },
+  "gabriel.bezerra": { "nome": "GABRIEL BEZERRA", "senha": "Gabriel123", "perfil": "corretor" },
+  "taina.viana": { "nome": "TAINA VIANA", "senha": "Taina123", "perfil": "corretor" },
+  "janice.alcantara": { "nome": "JANICE ALCANTARA", "senha": "Janice123", "perfil": "corretor" },
+  "mikael.douglas": { "nome": "MIKAEL DOUGLAS", "senha": "Mikael123", "perfil": "corretor" },
+  "rebeka.goncalves": { "nome": "REBEKA GONÇALVES", "senha": "Rebeka123", "perfil": "corretor" },
+  "alice.silva": { "nome": "ALICE SILVA", "senha": "Alice123", "perfil": "corretor" },
+  "samuel.souto": { "nome": "SAMUEL SOUTO", "senha": "Samuel123", "perfil": "corretor" },
+  "djacir.silva": { "nome": "DJACIR SILVA", "senha": "Djacir123", "perfil": "corretor" },
+  "adrian.ferreira": { "nome": "ADRIAN FERREIRA", "senha": "Adrian123", "perfil": "corretor" },
+  "fabio.sousa": { "nome": "FABIO SOUSA", "senha": "Fabio123", "perfil": "corretor" },
+  "vanessa.vanessa": { "nome": "VANESSA", "senha": "Vanessa123", "perfil": "corretor" },
+  "luana.braga": { "nome": "LUANA BRAGA", "senha": "Luana123", "perfil": "corretor" },
+  "ryan.ferrari": { "nome": "RYAN FERRARI", "senha": "Ryan123", "perfil": "corretor" },
+  "eduarda.rocha": { "nome": "EDUARDA ROCHA", "senha": "Eduarda123", "perfil": "corretor" },
+  "katharina.santana": { "nome": "KATHARINA SANTANA", "senha": "Katharina123", "perfil": "corretor" },
+  "valdemir.valdemir": { "nome": "VALDEMIR", "senha": "Valdemir123", "perfil": "corretor" },
+  "pedro.gabriel": { "nome": "PEDRO GABRIEL", "senha": "Pedro123", "perfil": "corretor" },
+  "arnold.lenar": { "nome": "ARNOLD LENAR", "senha": "Arnold123", "perfil": "corretor" },
+  "maria.eduarda": { "nome": "MARIA EDUARDA", "senha": "Maria123", "perfil": "corretor" },
+  "vanessa.martins": { "nome": "VANESSA MARTINS", "senha": "Vanessa123", "perfil": "corretor" },
+  "aline.aline": { "nome": "ALINE", "senha": "Aline123", "perfil": "corretor" },
+  "alexandre.rodrigues": { "nome": "ALEXANDRE RODRIGUES", "senha": "Alexandre123", "perfil": "corretor" },
+  "brito.brito": { "nome": "BRITO", "senha": "Brito123", "perfil": "corretor" },
+  "marcello.barbosa": { "nome": "MARCELLO BARBOSA", "senha": "Marcello123", "perfil": "corretor" }
+}
