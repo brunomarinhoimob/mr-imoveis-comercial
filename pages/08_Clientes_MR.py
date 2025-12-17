@@ -152,7 +152,39 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
     st.write(f"**Construtora:** `{ultima['CONSTRUTORA'] or 'NÃO INFORMADO'}`")
     st.write(f"**Empreendimento:** `{ultima['EMPREENDIMENTO'] or 'NÃO INFORMADO'}`")
 
-    obs = (ultima.get("OBS2") or ultima.get("OBS") or "").strip()
+    # ---------------------------------------------------------
+# ÚLTIMA OBSERVAÇÃO (COM REGRA DE VENDA)
+# ---------------------------------------------------------
+obs_bruta = (
+    ultima.get("OBS2")
+    or ultima.get("OBS")
+    or ""
+)
+
+obs_bruta = str(obs_bruta).strip()
+
+if obs_bruta:
+    situacao = (ultima.get("SITUACAO_ORIGINAL") or "").upper()
+
+    # Se for venda, tenta formatar como dinheiro
+    if "VENDA" in situacao:
+        try:
+            valor = float(
+                obs_bruta
+                .replace("R$", "")
+                .replace(".", "")
+                .replace(",", ".")
+                .strip()
+            )
+            obs_formatada = f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except:
+            obs_formatada = obs_bruta
+    else:
+        obs_formatada = obs_bruta
+
+    st.markdown("**Última observação:**")
+    st.info(obs_formatada)
+
     if obs:
         st.info(obs)
 
