@@ -6,12 +6,6 @@ from datetime import date, timedelta
 if "logado" not in st.session_state or not st.session_state.logado:
     st.warning("🔒 Acesso restrito. Faça login para continuar.")
     st.stop()
-# ---------------------------------------------------------
-# BLOQUEIO DE PERFIL CORRETOR
-# ---------------------------------------------------------
-if st.session_state.get("perfil") == "corretor":
-    st.warning("🔒 Você não tem permissão para acessar esta página.")
-    st.stop()
 
 from app_dashboard import carregar_dados_planilha
 
@@ -288,6 +282,20 @@ else:
 if df_view.empty:
     st.warning("Não há dados para a seleção atual.")
     st.stop()
+# ---------------------------------------------------------
+# FILTRO AUTOMÁTICO PARA CORRETOR LOGADO
+# ---------------------------------------------------------
+if st.session_state.get("perfil") == "corretor":
+    nome_corretor_logado = (
+        st.session_state.get("nome_usuario", "")
+        .upper()
+        .strip()
+    )
+
+    df_view = df_view[
+        df_view["CORRETOR"].astype(str).str.upper().str.strip()
+        == nome_corretor_logado
+    ]
 
 # ---------------------------------------------------------
 # IDENTIFICA A ÚLTIMA DATA BASE (ATUAL) E LISTA DE BASES
@@ -715,7 +723,9 @@ else:
 if data_ini > data_fim:
     st.error("A data inicial não pode ser maior que a final.")
 else:
-    # Range de dias
+    # -------------------------------------------------
+    # RANGE DE DIAS (USA SOMENTE DIAS DA PLANILHA)
+    # -------------------------------------------------
     dias_range = pd.date_range(start=data_ini, end=data_fim, freq="D")
     dias_lista = [d.date() for d in dias_range]
 
@@ -727,7 +737,9 @@ else:
         & (df_range["DIA_DATA"] <= data_fim)
     ].copy()
 
-    # Seleção do indicador
+    # ---------------------------------------------
+    # SELEÇÃO DO INDICADOR
+    # ---------------------------------------------
     status_base_upper = df_range["STATUS_BASE"].fillna("").astype(str).str.upper()
 
     if indicador == "Análises":
@@ -738,7 +750,7 @@ else:
         df_ind = df_range[status_base_upper == "APROVADO"].copy()
         total_meta = aprovacoes_necessarias
 
-    else:  # Vendas (apenas GERADAS)
+    else:  # Vendas (GERADAS)
         df_ind = obter_vendas_unicas(
             df_range,
             status_venda=["VENDA GERADA"],
@@ -754,7 +766,7 @@ else:
             df_ind["DIA"], errors="coerce"
         ).dt.date
 
-        # Contagem diária preenchendo dias sem movimento
+        # Contagem diária (dias sem movimento = 0)
         cont_por_dia = (
             df_ind.groupby("DIA_DATA")
             .size()
@@ -765,15 +777,8 @@ else:
         df_line = pd.DataFrame(index=pd.to_datetime(dias_lista))
         df_line.index.name = "DIA"
 
-        # Acumulado do Real
-        real_acum = cont_por_dia.cumsum()
-        df_line["Real"] = real_acum.values
-
-        # 👉 REAL para no último dia com movimento
-        if (cont_por_dia > 0).any():
-            ultimo_dia_com_mov = cont_por_dia[cont_por_dia > 0].index[-1]
-            ultimo_dia_com_mov = pd.to_datetime(ultimo_dia_com_mov)
-            df_line.loc[df_line.index > ultimo_dia_com_mov, "Real"] = np.nan
+        # Real acumulado (linha contínua)
+        df_line["Real"] = cont_por_dia.cumsum().values
 
         # Meta linear até o fim do período
         df_line["Meta"] = np.linspace(
@@ -800,5 +805,7 @@ else:
         st.caption(
             "Real = indicador acumulado. "
             "Meta = ritmo necessário, do início ao fim do intervalo, "
-            "para atingir o total planejado (considerando apenas VENDA GERADA)."
+            "para atingir o total planejado."
         )
+
+        

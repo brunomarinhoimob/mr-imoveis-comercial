@@ -3,21 +3,59 @@ import os
 import json
 from pathlib import Path
 
-# (opcional) mantém fallback pros usuários do python enquanto migra
+# Bootstrap inicial (só pra popular o users.json na primeira vez / quando faltar gente)
 from auth_users import USUARIOS
 
 CAMINHO_USERS = Path("users.json")
 
+
+# =========================================================
+# USERS.JSON (única fonte de verdade do login)
+# =========================================================
 def carregar_users_json() -> dict:
     if CAMINHO_USERS.exists():
         try:
             with open(CAMINHO_USERS, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                data = json.load(f) or {}
             # garante chaves em lowercase
-            return {str(k).strip().lower(): v for k, v in (data or {}).items()}
+            return {str(k).strip().lower(): v for k, v in data.items()}
         except Exception:
             return {}
     return {}
+
+
+def salvar_users_json(data: dict):
+    with open(CAMINHO_USERS, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def bootstrap_users_json():
+    """
+    Garante que users.json existe e tem pelo menos os usuários do auth_users.py.
+    IMPORTANTE: não sobrescreve senha já alterada no JSON.
+    """
+    users = carregar_users_json()
+
+    for login, info in (USUARIOS or {}).items():
+        k = str(login).strip().lower()
+        if not k:
+            continue
+
+        if k not in users:
+            users[k] = {
+                "nome": info.get("nome", k.upper()),
+                "senha": str(info.get("senha", "")),
+                "perfil": info.get("perfil", "corretor"),
+            }
+        else:
+            # garante campos mínimos sem mexer na senha atual do JSON
+            users[k]["nome"] = users[k].get("nome") or info.get("nome", k.upper())
+            users[k]["perfil"] = users[k].get("perfil") or info.get("perfil", "corretor")
+            if "senha" not in users[k]:
+                users[k]["senha"] = str(info.get("senha", ""))
+
+    salvar_users_json(users)
+
 
 def validar_login(usuario: str, senha: str):
     """
@@ -30,18 +68,20 @@ def validar_login(usuario: str, senha: str):
     users_json = carregar_users_json()
     user = users_json.get(usuario)
 
-    if user and senha == str(user.get("senha", "")):
+    # valida SOMENTE no users.json (fonte única)
+    if user and senha == str(user.get("senha", "")).strip():
         return True, user
-
-    # fallback (caso ainda não esteja no users.json)
-    user_py = USUARIOS.get(usuario)
-    if user_py and senha == str(user_py.get("senha", "")):
-        return True, user_py
 
     return False, None
 
 
+# =========================================================
+# TELA LOGIN
+# =========================================================
 def tela_login():
+
+    # garante que o users.json existe e está populado
+    bootstrap_users_json()
 
     # -------------------------
     # CSS (login clean)
@@ -122,8 +162,8 @@ def tela_login():
 
         if ok:
             st.session_state.logado = True
-            st.session_state.usuario = usuario.strip().lower()
-            st.session_state.nome_usuario = user.get("nome", usuario.strip().upper())
+            st.session_state.usuario = (usuario or "").strip().lower()
+            st.session_state.nome_usuario = user.get("nome", (usuario or "").strip().upper())
             st.session_state.perfil = user.get("perfil", "corretor")
             st.rerun()
         else:
