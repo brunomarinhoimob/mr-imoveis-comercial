@@ -115,11 +115,18 @@ if nome_busca:
 resultado = df[mask].copy()
 
 # =========================================================
-# VALIDAÇÃO DE POSSE
+# VALIDAÇÃO E FILTRO DE POSSE (REGRA FORTE)
 # =========================================================
-if resultado.empty:
-    st.warning("⚠️ Cliente não encontrado ou sem análise.")
-    st.stop()
+if perfil == "corretor":
+
+    resultado = resultado[
+        resultado["CORRETOR"].str.upper().str.strip()
+        == nome_corretor_logado
+    ]
+
+    if resultado.empty:
+        st.error("🚫 Cliente não pertence à sua carteira ou não possui análise com você.")
+        st.stop()
 
 if perfil == "corretor":
     pertence = resultado["CORRETOR"].eq(nome_corretor_logado).any()
