@@ -58,23 +58,6 @@ def obter_status_atual(grupo):
     return grupo.iloc[-1]
 
 def formatar_observacao(linha):
-    obs = (linha.get("OBS2") or linha.get("OBS") or "").strip()
-    if not obs:
-        return None
-
-    situacao = (linha.get("SITUACAO_ORIGINAL") or "").upper()
-
-    if "VENDA" in situacao:
-        try:
-            valor = float(
-                obs.replace("R$", "")
-                   .replace(".", "")
-                   .replace(",", ".")
-                   .strip()
-            )
-            return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        except:
-            return obs
 
     return obs
 
