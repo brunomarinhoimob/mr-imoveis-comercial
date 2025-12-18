@@ -2,56 +2,21 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-import requests
-import io
-from datetime import date
+from datetime import date, timedelta
+if "logado" not in st.session_state or not st.session_state.logado:
+    st.warning("🔒 Acesso restrito. Faça login para continuar.")
+    st.stop()
+
+from app_dashboard import carregar_dados_planilha
 
 # ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA (TEM QUE SER O 1º st.* DO ARQUIVO)
+# CONFIGURAÇÃO DA PÁGINA
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Funil MR Imóveis – Visão Geral",
     page_icon="🧩",
     layout="wide",
 )
-
-# ---------------------------------------------------------
-# 🔒 BLOQUEIO DE LOGIN
-# ---------------------------------------------------------
-if "logado" not in st.session_state or not st.session_state.get("logado", False):
-    st.warning("🔒 Acesso restrito. Faça login para continuar.")
-    st.stop()
-
-# ---------------------------------------------------------
-# PLANILHA (SEM IMPORTAR app_dashboard)
-# ---------------------------------------------------------
-SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
-GID = "1574157905"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
-
-@st.cache_data(ttl=600)
-def carregar_dados_planilha() -> pd.DataFrame:
-    """
-    Carrega a planilha via export CSV (robusto contra redirect do Google).
-    """
-    r = requests.get(
-        CSV_URL,
-        timeout=30,
-        headers={"User-Agent": "Mozilla/5.0"}
-    )
-
-    # Se o Google mandar erro, cai aqui
-    r.raise_for_status()
-
-    # Se vier HTML, geralmente é login/permissão
-    head = (r.text or "").lower()[:400]
-    if "<html" in head:
-        raise RuntimeError(
-            "O Google devolveu HTML (provável login/permissão). "
-            "Confere se a planilha está compartilhada como 'Qualquer pessoa com o link: Leitor'."
-        )
-
-    return pd.read_csv(io.StringIO(r.text))
 
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES
@@ -105,14 +70,14 @@ def conta_reanalises(status: pd.Series) -> int:
 
 def conta_aprovacoes(status: pd.Series) -> int:
     s = status.fillna("").astype(str).str.upper()
-    # "APROVADO BACEN" NÃO entra aqui, pq não é igual a "APROVADO"
     return (s == "APROVADO").sum()
 
 
 def obter_vendas_unicas(df_scope: pd.DataFrame, status_venda=None, status_final_map=None):
     """
     1 venda por cliente.
-    Remove DESISTIU (se status_final_map for passado).
+    Se status_venda incluir VENDA GERADA e VENDA INFORMADA,
+    VENDA GERADA prevalece se houver as duas.
     """
     if df_scope.empty:
         return df_scope.copy()
@@ -167,28 +132,20 @@ def obter_vendas_unicas(df_scope: pd.DataFrame, status_venda=None, status_final_
 
 
 def format_currency(v: float) -> str:
-    try:
-        v = float(v)
-    except:
-        v = 0.0
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 # ---------------------------------------------------------
 # CARREGAMENTO GERAL DA PLANILHA
 # ---------------------------------------------------------
-try:
-    df_global = carregar_dados_planilha()
-except Exception as e:
-    st.error(f"Erro ao carregar a planilha: {e}")
-    st.stop()
+df_global = carregar_dados_planilha()
 
 if df_global.empty:
-    st.error("Planilha vazia ou não carregou.")
+    st.error("Erro ao carregar a planilha.")
     st.stop()
 
 # Padroniza datas
-df_global["DIA"] = pd.to_datetime(df_global.get("DIA"), errors="coerce")
+df_global["DIA"] = pd.to_datetime(df_global["DIA"], errors="coerce")
 
 # DATA BASE
 if "DATA BASE" in df_global.columns:
@@ -210,6 +167,7 @@ df_global["STATUS_BASE"] = (
     .astype(str)
     .str.upper()
 )
+
 df_global.loc[df_global["STATUS_BASE"].str.contains("DESIST", na=False), "STATUS_BASE"] = "DESISTIU"
 
 # Nome / CPF / CHAVE_CLIENTE
@@ -264,12 +222,9 @@ if "EQUIPE" not in df_global.columns:
     st.error("A planilha não possui a coluna 'EQUIPE'.")
     st.stop()
 
-if "CORRETOR" not in df_global.columns:
-    st.error("A planilha não possui a coluna 'CORRETOR'.")
-    st.stop()
-
 lista_equipes = sorted(df_global["EQUIPE"].dropna().astype(str).unique())
 
+# Corretores por equipe
 mapa_corretores = (
     df_global[["EQUIPE", "CORRETOR"]]
     .dropna()
@@ -291,9 +246,11 @@ visao = st.sidebar.radio(
 equipe_sel = None
 corretor_sel = None
 
+# Se visão por equipe
 if visao == "Equipe":
     equipe_sel = st.sidebar.selectbox("Selecione a equipe:", lista_equipes)
 
+# Se visão por corretor
 if visao == "Corretor":
     equipe_sel = st.sidebar.selectbox("Equipe do corretor:", lista_equipes)
     lista_corr = (
@@ -309,20 +266,22 @@ if visao == "Corretor":
 # ---------------------------------------------------------
 if visao == "MR IMÓVEIS":
     df_view = df_global.copy()
+
 elif visao == "Equipe":
     df_view = df_global[df_global["EQUIPE"] == equipe_sel].copy()
+
 elif visao == "Corretor":
     df_view = df_global[
         (df_global["EQUIPE"] == equipe_sel)
         & (df_global["CORRETOR"] == corretor_sel)
     ].copy()
+
 else:
     df_view = df_global.copy()
 
 if df_view.empty:
     st.warning("Não há dados para a seleção atual.")
     st.stop()
-
 # ---------------------------------------------------------
 # FILTRO AUTOMÁTICO PARA CORRETOR LOGADO
 # ---------------------------------------------------------
@@ -332,13 +291,11 @@ if st.session_state.get("perfil") == "corretor":
         .upper()
         .strip()
     )
-    df_view = df_view[
-        df_view["CORRETOR"].astype(str).str.upper().str.strip() == nome_corretor_logado
-    ]
 
-if df_view.empty:
-    st.warning("Sem dados para o corretor logado nesta visão.")
-    st.stop()
+    df_view = df_view[
+        df_view["CORRETOR"].astype(str).str.upper().str.strip()
+        == nome_corretor_logado
+    ]
 
 # ---------------------------------------------------------
 # IDENTIFICA A ÚLTIMA DATA BASE (ATUAL) E LISTA DE BASES
@@ -348,18 +305,21 @@ if bases_validas.empty:
     st.error("Não há DATA BASE válida para a visão atual.")
     st.stop()
 
-DATA_BASE_ATUAL = bases_validas.max()
-DATA_BASE_ATUAL_LABEL = pd.Timestamp(DATA_BASE_ATUAL).strftime("%m/%Y")
+DATA_BASE_ATUAL = bases_validas.max()  # última data base real
+DATA_BASE_ATUAL_LABEL = DATA_BASE_ATUAL.strftime("%m/%Y")
 
+# Lista de bases disponíveis para seletor do painel
 bases_unicas = sorted(bases_validas.unique())
 bases_labels = [pd.Timestamp(b).strftime("%m/%Y") for b in bases_unicas]
 
+# índice padrão = última data base
 idx_default_base = (
     bases_labels.index(DATA_BASE_ATUAL_LABEL)
     if DATA_BASE_ATUAL_LABEL in bases_labels
     else len(bases_labels) - 1
 )
 
+# Seletor de DATA BASE que afeta SOMENTE o painel superior
 col_t1, col_t2 = st.columns([3, 1])
 with col_t2:
     base_label_escolhida = st.selectbox(
@@ -368,6 +328,7 @@ with col_t2:
         index=idx_default_base,
     )
 
+# data base selecionada para o painel 1
 idx_sel = bases_labels.index(base_label_escolhida)
 DATA_BASE_PAINEL = pd.Timestamp(bases_unicas[idx_sel])
 DATA_BASE_PAINEL_LABEL = base_label_escolhida
@@ -375,6 +336,7 @@ DATA_BASE_PAINEL_LABEL = base_label_escolhida
 with col_t1:
     st.markdown(f"## 🟦 Funil da Data Base – {DATA_BASE_PAINEL_LABEL}")
 
+# Dataframe da ÚLTIMA base real (para outros painéis)
 df_base_atual = df_view[
     pd.to_datetime(df_view["DATA_BASE"], errors="coerce") == DATA_BASE_ATUAL
 ].copy()
@@ -382,11 +344,13 @@ df_base_atual = df_view[
 # ---------------------------------------------------------
 # 🔥 PAINEL 1 — FUNIL DA DATA BASE SELECIONADA
 # ---------------------------------------------------------
+# Filtra df_view apenas para a data base escolhida no seletor
 df_painel = df_view[
     pd.to_datetime(df_view["DATA_BASE"], errors="coerce") == DATA_BASE_PAINEL
 ].copy()
 
 if df_painel.empty:
+    # Nenhuma movimentação, mas vamos mostrar tudo zerado sem aviso
     analises_em = 0
     reanalises = 0
     analises_total = 0
@@ -395,6 +359,7 @@ if df_painel.empty:
     vgv_total = 0
     ipc = 0
 else:
+    # STATUS
     status_atual = df_painel["STATUS_BASE"].fillna("").astype(str).str.upper()
 
     analises_em = conta_analises_base(status_atual)
@@ -402,20 +367,18 @@ else:
     analises_total = conta_analises_total(status_atual)
     aprovacoes = conta_aprovacoes(status_atual)
 
+    # VENDAS ÚNICAS (APENAS VENDA GERADA)
     df_vendas_atual = obter_vendas_unicas(
         df_painel,
         status_venda=["VENDA GERADA"],
         status_final_map=status_final_por_cliente
     )
     vendas = len(df_vendas_atual)
+    vgv_total = df_vendas_atual["VGV"].sum() if vendas > 0 else 0
 
-    if vendas > 0 and "VGV" in df_vendas_atual.columns:
-        df_vendas_atual["VGV"] = pd.to_numeric(df_vendas_atual["VGV"], errors="coerce").fillna(0)
-        vgv_total = float(df_vendas_atual["VGV"].sum())
-    else:
-        vgv_total = 0.0
-
+    # IPC (vendas / corretor no período)
     if visao == "Corretor":
+        # Um corretor só → IPC = vendas dele
         ipc = vendas
     else:
         corretores_ativos = df_painel["CORRETOR"].dropna().astype(str).nunique()
@@ -424,26 +387,80 @@ else:
 # ---------------------------------------------------------
 # 🔥 LEADS DO CRM (apenas período da data base selecionada)
 # ---------------------------------------------------------
+
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
+
+# detectar corretores ativos (planilha + CRM) – se precisar em outras regras
+hoje = pd.Timestamp.today().normalize()
+limite_30d = hoje - pd.Timedelta(days=30)
+
+# Corretores ativos pela planilha (últimos 30 dias)
+df_planilha_30d = df_global[
+    (pd.to_datetime(df_global["DIA"], errors="coerce") >= limite_30d)
+]
+corretores_planilha_ativos = (
+    df_planilha_30d["CORRETOR"]
+    .dropna()
+    .astype(str)
+    .str.upper()
+    .unique()
+)
+
+# Corretores ativos pelo CRM
+if not df_leads.empty:
+    df_leads_copy = df_leads.copy()
+    df_leads_copy["data_captura"] = pd.to_datetime(
+        df_leads_copy["data_captura"], errors="coerce"
+    )
+
+    df_crm_30d = df_leads_copy[
+        df_leads_copy["data_captura"] >= limite_30d
+    ]
+
+    corretores_crm_ativos = (
+        df_crm_30d["nome_corretor"]
+        .dropna()
+        .astype(str)
+        .str.upper()
+        .unique()
+    )
+else:
+    corretores_crm_ativos = []
+
+# Corretores realmente ativos (planilha OU CRM)
+corretores_ativos_geral = set(corretores_planilha_ativos) | set(corretores_crm_ativos)
+
+# ❌ NÃO filtramos mais corretor inativo – sempre mostra os cards
+
+# ---------------------------------------------------------
+# FUNÇÃO CRM (LIMITADA À DATA BASE SELECIONADA)
+# ---------------------------------------------------------
 
 total_leads = None
 conv_leads_analise = None
 leads_por_analise = None
 
 if not df_leads.empty:
+
     df_leads_use = df_leads.copy()
-    df_leads_use["data_captura"] = pd.to_datetime(df_leads_use.get("data_captura"), errors="coerce")
+
+    # Converte
+    df_leads_use["data_captura"] = pd.to_datetime(
+        df_leads_use["data_captura"], errors="coerce"
+    )
     df_leads_use = df_leads_use.dropna(subset=["data_captura"])
     df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
 
+    # Nome do corretor padronizado
     df_leads_use["CORRETOR_KEY"] = (
-        df_leads_use.get("nome_corretor", "")
+        df_leads_use["nome_corretor"]
         .fillna("")
         .astype(str)
         .str.upper()
         .str.strip()
     )
 
+    # Mapeamento equipe-corretor da planilha
     mapa_cor = (
         df_global[["CORRETOR", "EQUIPE"]]
         .dropna()
@@ -452,21 +469,36 @@ if not df_leads.empty:
     )
     mapa_cor["CORRETOR_KEY"] = mapa_cor["CORRETOR"].str.upper().str.strip()
 
+    # Merge CRM → Equipe
     df_leads_merge = df_leads_use.merge(
         mapa_cor[["CORRETOR_KEY", "EQUIPE"]],
         on="CORRETOR_KEY",
         how="left"
     )
 
+    # -----------------------------------------------
+    # FILTRO POR VISÃO
+    # -----------------------------------------------
     if visao == "MR IMÓVEIS":
         df_leads_filtrado = df_leads_merge.copy()
+
     elif visao == "Equipe":
-        df_leads_filtrado = df_leads_merge[df_leads_merge["EQUIPE"] == equipe_sel]
+        df_leads_filtrado = df_leads_merge[
+            df_leads_merge["EQUIPE"] == equipe_sel
+        ]
+
     elif visao == "Corretor":
-        df_leads_filtrado = df_leads_merge[df_leads_merge["CORRETOR_KEY"] == corretor_sel.upper().strip()]
+        df_leads_filtrado = df_leads_merge[
+            df_leads_merge["CORRETOR_KEY"] == corretor_sel.upper().strip()
+        ]
+
     else:
         df_leads_filtrado = df_leads_merge.copy()
 
+    # -----------------------------------------------
+    # FILTRO PELO PERÍODO DA DATA BASE SELECIONADA
+    # (usa df_painel)
+    # -----------------------------------------------
     dias_validos = df_painel["DIA"].dropna()
     if not dias_validos.empty:
         dia_ini = dias_validos.min().date()
@@ -479,18 +511,27 @@ if not df_leads.empty:
         (df_leads_filtrado["data_captura_date"] >= dia_ini)
         & (df_leads_filtrado["data_captura_date"] <= dia_fim)
     )
+
     df_leads_periodo = df_leads_filtrado[mask_periodo].copy()
 
+    # -----------------------------------------------
+    # MÉTRICAS
+    # -----------------------------------------------
     total_leads = len(df_leads_periodo)
+
     if total_leads > 0:
-        conv_leads_analise = (analises_em / total_leads * 100) if analises_em else 0
-        leads_por_analise = (total_leads / analises_em) if analises_em else None
+        conv_leads_analise = (
+            analises_em / total_leads * 100 if analises_em else 0
+        )
+        leads_por_analise = (
+            total_leads / analises_em if analises_em else None
+        )
     else:
         conv_leads_analise = 0
         leads_por_analise = None
 
 # ---------------------------------------------------------
-# EXIBIÇÃO DO PAINEL 1
+# EXIBIÇÃO DO PAINEL
 # ---------------------------------------------------------
 st.markdown("### 🔎 Indicadores principais da data base selecionada")
 
@@ -518,35 +559,36 @@ with col8:
 with col9:
     st.metric("IPC (vendas/corretor)", f"{ipc:.2f}")
 
+# LEADS CRM
 st.markdown("### 📞 Leads CRM na data base selecionada")
 
 col10, col11, col12 = st.columns(3)
 with col10:
     st.metric("Leads capturados", total_leads if total_leads is not None else "—")
 with col11:
-    st.metric("Leads → Análises (EM)", f"{conv_leads_analise:.1f}%" if conv_leads_analise is not None else "—")
+    st.metric(
+        "Leads → Análises (EM)",
+        f"{conv_leads_analise:.1f}%" if conv_leads_analise is not None else "—"
+    )
 with col12:
-    st.metric("Leads por análise", f"{leads_por_analise:.1f}" if leads_por_analise is not None else "—")
+    st.metric(
+        "Leads por análise",
+        f"{leads_por_analise:.1f}" if leads_por_analise is not None else "—"
+    )
 
 st.markdown("---")
-
 # ---------------------------------------------------------
 # 🔥 PAINEL 2 — HISTÓRICO DAS 3 ÚLTIMAS DATA BASE ANTERIORES
 # ---------------------------------------------------------
 st.markdown(f"## 📊 Histórico dos Últimos 3 Meses (Base: {DATA_BASE_ATUAL_LABEL})")
 
-# defaults (evita NameError no gráfico)
-analises_por_venda = 0.0
-aprov_por_venda = 0.0
-meta_vendas = 0
-analises_necessarias = 0
-aprovacoes_necessarias = 0
-
+# Pega as 3 data base imediatamente anteriores à base atual
 bases_view = sorted(pd.to_datetime(df_view["DATA_BASE"], errors="coerce").dropna().unique())
 
 if DATA_BASE_ATUAL in bases_view:
     idx_atual = bases_view.index(DATA_BASE_ATUAL)
     idx_ini = max(0, idx_atual - 3)
+    # NÃO inclui a base atual, só as 3 anteriores
     bases_hist = bases_view[idx_ini:idx_atual]
 else:
     bases_hist = []
@@ -557,24 +599,41 @@ df_3m = df_view[
 
 if df_3m.empty:
     st.info("Nenhum registro encontrado para as 3 últimas data base anteriores.")
-    vendas_3m = 0
 else:
     status_3m = df_3m["STATUS_BASE"].fillna("").astype(str).str.upper()
 
     analises_em_3m = conta_analises_base(status_3m)
     reanalises_3m = conta_reanalises(status_3m)
+    analises_total_3m = conta_analises_total(status_3m)
     aprovacoes_3m = conta_aprovacoes(status_3m)
 
+    # VENDAS ÚNICAS (APENAS GERADAS)
     df_vendas_3m = obter_vendas_unicas(
         df_3m,
         status_venda=["VENDA GERADA"],
         status_final_map=status_final_por_cliente
     )
     vendas_3m = len(df_vendas_3m)
+    vgv_3m = df_vendas_3m["VGV"].sum() if vendas_3m > 0 else 0
 
+    # Corretores
+    if visao == "Corretor":
+        corretores_ativos_3m = 1  # visão individual
+    else:
+        corretores_ativos_3m = df_3m["CORRETOR"].dropna().astype(str).nunique()
+
+    ipc_3m = (vendas_3m / corretores_ativos_3m) if corretores_ativos_3m > 0 else 0
+
+    # Médias por venda (para planejamento)
     if vendas_3m > 0:
-        analises_por_venda = (analises_em_3m / vendas_3m) if analises_em_3m > 0 else 0
-        aprov_por_venda = (aprovacoes_3m / vendas_3m) if aprovacoes_3m > 0 else 0
+        analises_por_venda = analises_em_3m / vendas_3m if analises_em_3m > 0 else 0
+        aprov_por_venda = aprovacoes_3m / vendas_3m if aprovacoes_3m > 0 else 0
+    else:
+        analises_por_venda = 0
+        aprov_por_venda = 0
+
+    # ----------------- EXIBIÇÃO -----------------------
+    st.markdown("### 📌 Indicadores do Funil (Últimos 3 Meses)")
 
     colH1, colH2, colH3, colH4 = st.columns(4)
     with colH1:
@@ -586,52 +645,55 @@ else:
     with colH4:
         st.metric("Vendas (únicas GERADAS)", vendas_3m)
 
+    colH5, colH6, colH7 = st.columns(3)
+    with colH5:
+        st.metric("VGV (3 bases)", format_currency(vgv_3m))
+    with colH6:
+        st.metric("Corretores ativos (3 bases)", corretores_ativos_3m)
+    with colH7:
+        st.metric("IPC (3 bases)", f"{ipc_3m:.2f}")
+
+    colH8, colH9 = st.columns(2)
+    with colH8:
+        st.metric("Média análises/venda", f"{analises_por_venda:.1f}")
+    with colH9:
+        st.metric("Média aprovações/venda", f"{aprov_por_venda:.1f}")
+
     st.markdown("---")
 
-# ---------------------------------------------------------
-# 🔥 PAINEL 3 — PLANEJAMENTO (META)
-# ---------------------------------------------------------
-st.markdown("## 🎯 Planejamento")
+    # ---------------------------------------------------------
+    # 🔥 PAINEL 3 — PLANEJAMENTO (META)
+    # ---------------------------------------------------------
+    st.markdown("## 🎯 Planejamento com Base nas 3 Últimas Data Base")
 
-meta_sugerida = int(vendas_3m / 3) if 'vendas_3m' in locals() and vendas_3m > 0 else 3
+    # Meta sugerida = vendas_3m / 3 bases
+    meta_sugerida = int(vendas_3m / 3) if vendas_3m > 0 else 3
 
-meta_vendas = st.number_input(
-    "Meta de vendas (GERADAS) para o próximo período:",
-    min_value=0,
-    step=1,
-    value=meta_sugerida
-)
-
-if analises_por_venda > 0:
-    analises_necessarias = int(np.ceil(meta_vendas * analises_por_venda))
-else:
-    analises_necessarias = st.number_input(
-        "Meta de análises (manual, sem histórico suficiente):",
+    meta_vendas = st.number_input(
+        "Meta de vendas (GERADAS) para o próximo período:",
         min_value=0,
         step=1,
-        value=0
+        value=meta_sugerida
     )
 
-if aprov_por_venda > 0:
-    aprovacoes_necessarias = int(np.ceil(meta_vendas * aprov_por_venda))
-else:
-    aprovacoes_necessarias = st.number_input(
-        "Meta de aprovações (manual, sem histórico suficiente):",
-        min_value=0,
-        step=1,
-        value=0
-    )
+    if meta_vendas > 0 and vendas_3m > 0:
+        analises_necessarias = int(np.ceil(meta_vendas * analises_por_venda))
+        aprovacoes_necessarias = int(np.ceil(meta_vendas * aprov_por_venda))
+    else:
+        analises_necessarias = 0
+        aprovacoes_necessarias = 0
 
-colP1, colP2, colP3 = st.columns(3)
-with colP1:
-    st.metric("Meta Vendas (GERADAS)", meta_vendas)
-with colP2:
-    st.metric("Meta Análises", analises_necessarias)
-with colP3:
-    st.metric("Meta Aprovações", aprovacoes_necessarias)
+    colP1, colP2, colP3 = st.columns(3)
+    with colP1:
+        st.metric("Meta de Vendas (GERADAS)", meta_vendas)
+    with colP2:
+        st.metric("Análises Necessárias", analises_necessarias)
+    with colP3:
+        st.metric("Aprovações Necessárias", aprovacoes_necessarias)
 
-st.caption("Vendas = VENDA GERADA. Análises = EM ANÁLISE. Aprovações = APROVADO.")
-st.markdown("---")
+    st.caption("Cálculos baseados nas 3 últimas data base ANTERIORES à base atual, considerando apenas VENDA GERADA.")
+
+    st.markdown("---")
 
 # ---------------------------------------------------------
 # 🔥 META X REAL (GRÁFICO ACUMULADO)
@@ -643,37 +705,31 @@ indicador = st.selectbox(
     ["Análises", "Aprovações", "Vendas"],
 )
 
-# ✅ EIXO DO TEMPO: SEMPRE ATÉ A ÚLTIMA DATA EXISTENTE NA PLANILHA
-# (da DATA_BASE_ATUAL) — mesmo que corretor/equipe tenha parado.
-df_ref = df_global[
-    pd.to_datetime(df_global["DATA_BASE"], errors="coerce") == DATA_BASE_ATUAL
-].copy()
+# Período do acompanhamento – por padrão, da ÚLTIMA data base real
+dias_validos = df_base_atual["DIA"].dropna()
+if not dias_validos.empty:
+    periodo_default = (dias_validos.min().date(), dias_validos.max().date())
+else:
+    hoje = date.today()
+    periodo_default = (hoje, hoje)
 
-datas_ref = df_ref["DIA"].dropna()
-if datas_ref.empty:
-    st.info("Sem datas válidas na base atual para montar o gráfico.")
-    st.stop()
+periodo_sel = st.date_input("Período do acompanhamento:", periodo_default)
 
-data_ini_ref = datas_ref.min().date()
-data_fim_ref = datas_ref.max().date()
-
-# Usuário escolhe só o início (o fim fica travado na última data da planilha)
-data_ini = st.date_input(
-    "Início do acompanhamento:",
-    value=data_ini_ref,
-    min_value=data_ini_ref,
-    max_value=data_fim_ref
-)
-data_fim = data_fim_ref
-
-st.caption(f"Fim do gráfico travado na última data da planilha: {data_fim.strftime('%d/%m/%Y')}")
+if isinstance(periodo_sel, tuple) and len(periodo_sel) == 2:
+    data_ini, data_fim = periodo_sel
+else:
+    data_ini, data_fim = periodo_default
 
 if data_ini > data_fim:
     st.error("A data inicial não pode ser maior que a final.")
 else:
+    # -------------------------------------------------
+    # RANGE DE DIAS (USA SOMENTE DIAS DA PLANILHA)
+    # -------------------------------------------------
     dias_range = pd.date_range(start=data_ini, end=data_fim, freq="D")
     dias_lista = [d.date() for d in dias_range]
 
+    # Base filtrada pelo período
     df_range = df_view.copy()
     df_range["DIA_DATA"] = pd.to_datetime(df_range["DIA"], errors="coerce").dt.date
     df_range = df_range[
@@ -681,15 +737,18 @@ else:
         & (df_range["DIA_DATA"] <= data_fim)
     ].copy()
 
+    # ---------------------------------------------
+    # SELEÇÃO DO INDICADOR
+    # ---------------------------------------------
     status_base_upper = df_range["STATUS_BASE"].fillna("").astype(str).str.upper()
 
     if indicador == "Análises":
         df_ind = df_range[status_base_upper == "EM ANÁLISE"].copy()
-        total_meta = int(analises_necessarias)
+        total_meta = analises_necessarias
 
     elif indicador == "Aprovações":
         df_ind = df_range[status_base_upper == "APROVADO"].copy()
-        total_meta = int(aprovacoes_necessarias)
+        total_meta = aprovacoes_necessarias
 
     else:  # Vendas (GERADAS)
         df_ind = obter_vendas_unicas(
@@ -697,49 +756,56 @@ else:
             status_venda=["VENDA GERADA"],
             status_final_map=status_final_por_cliente
         ).copy()
-        total_meta = int(meta_vendas)
+        total_meta = meta_vendas
 
-    if total_meta <= 0:
-        st.info("Defina uma meta maior que 0 para visualizar a linha de meta.")
-        st.stop()
-
-    if df_ind.empty:
-        # Ainda assim, queremos a linha do realizado seguindo zerada (flat em 0)
-        cont_por_dia = pd.Series(0, index=dias_lista)
+    if df_ind.empty or total_meta == 0:
+        st.info("Não há dados suficientes para gerar o gráfico.")
     else:
-        df_ind["DIA_DATA"] = pd.to_datetime(df_ind["DIA"], errors="coerce").dt.date
+        # Garantir coluna de data
+        df_ind["DIA_DATA"] = pd.to_datetime(
+            df_ind["DIA"], errors="coerce"
+        ).dt.date
+
+        # Contagem diária (dias sem movimento = 0)
         cont_por_dia = (
             df_ind.groupby("DIA_DATA")
             .size()
             .reindex(dias_lista, fill_value=0)
         )
 
-    df_line = pd.DataFrame(index=pd.to_datetime(dias_lista))
-    df_line.index.name = "DIA"
+        # DataFrame base com todos os dias
+        df_line = pd.DataFrame(index=pd.to_datetime(dias_lista))
+        df_line.index.name = "DIA"
 
-    # ✅ Real acumulado: quando para de produzir, soma 0 e a linha fica reta (exatamente tua lógica)
-    df_line["Real"] = cont_por_dia.cumsum().values
+        # Real acumulado (linha contínua)
+        df_line["Real"] = cont_por_dia.cumsum().values
 
-    # Meta linear até o fim do período
-    df_line["Meta"] = np.linspace(0, total_meta, num=len(df_line), endpoint=True)
-
-    df_plot = df_line.reset_index().melt(
-        "DIA", var_name="Série", value_name="Valor"
-    )
-
-    chart = (
-        alt.Chart(df_plot)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("DIA:T", title="Dia"),
-            y=alt.Y("Valor:Q", title="Total Acumulado"),
-            color=alt.Color("Série:N", title="")
+        # Meta linear até o fim do período
+        df_line["Meta"] = np.linspace(
+            0, total_meta, num=len(df_line), endpoint=True
         )
-        .properties(height=350)
-    )
 
-    st.altair_chart(chart, use_container_width=True)
-    st.caption(
-        "Real = acumulado diário (dias sem movimento = +0, linha reta). "
-        "Meta = ritmo necessário até a última data da planilha."
-    )
+        # Preparar dados para o Altair
+        df_plot = df_line.reset_index().melt(
+            "DIA", var_name="Série", value_name="Valor"
+        )
+
+        chart = (
+            alt.Chart(df_plot)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("DIA:T", title="Dia"),
+                y=alt.Y("Valor:Q", title="Total Acumulado"),
+                color=alt.Color("Série:N", title="")
+            )
+            .properties(height=350)
+        )
+
+        st.altair_chart(chart, use_container_width=True)
+        st.caption(
+            "Real = indicador acumulado. "
+            "Meta = ritmo necessário, do início ao fim do intervalo, "
+            "para atingir o total planejado."
+        )
+
+        
