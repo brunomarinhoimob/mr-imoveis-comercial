@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 
+from utils.bootstrap import iniciar_app
+from app_dashboard import carregar_dados_planilha
+
 # ---------------------------------------------------------
 # BLOQUEIO SEM LOGIN
 # ---------------------------------------------------------
