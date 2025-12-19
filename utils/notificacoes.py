@@ -4,7 +4,33 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+# ---------------------------------------------------------
+# ARQUIVO DE CACHE LOCAL
+# ---------------------------------------------------------
+ARQ_STATUS = Path("utils/status_clientes_cache.json")
 
+
+def _carregar_cache():
+    if ARQ_STATUS.exists():
+        try:
+            with open(ARQ_STATUS, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _salvar_cache(cache: dict):
+    try:
+        with open(ARQ_STATUS, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------
+# NOTIFICAÇÕES (NOVA LINHA = EVENTO)
+# ---------------------------------------------------------
 def verificar_notificacoes(df: pd.DataFrame):
     if df.empty:
         return
@@ -12,7 +38,8 @@ def verificar_notificacoes(df: pd.DataFrame):
     perfil = st.session_state.get("perfil")
     nome_corretor = st.session_state.get("nome_usuario", "").upper().strip()
 
-    if not {"CHAVE_CLIENTE", "STATUS_BASE", "CORRETOR", "DIA"}.issubset(df.columns):
+    colunas = {"CHAVE_CLIENTE", "STATUS_BASE", "CORRETOR", "DIA"}
+    if not colunas.issubset(df.columns):
         return
 
     # filtro por perfil
@@ -22,6 +49,7 @@ def verificar_notificacoes(df: pd.DataFrame):
     if df.empty:
         return
 
+    # ordena histórico
     df = df.sort_values("DIA")
 
     cache = _carregar_cache()
@@ -38,7 +66,7 @@ def verificar_notificacoes(df: pd.DataFrame):
 
         ultimo = cache_usuario.get(chave)
 
-        # se já existe no cache
+        # NOVA LINHA + STATUS DIFERENTE = NOTIFICA
         if ultimo:
             if ultimo["status"] != status and ultimo["dia"] != dia:
                 cliente = chave.split("|")[0].strip()
@@ -50,7 +78,7 @@ def verificar_notificacoes(df: pd.DataFrame):
         # atualiza cache sempre
         cache_usuario[chave] = {
             "status": status,
-            "dia": dia
+            "dia": dia,
         }
 
     cache[chave_cache] = cache_usuario
