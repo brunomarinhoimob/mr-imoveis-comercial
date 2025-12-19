@@ -246,121 +246,73 @@ def mes_ano_ptbr_para_date(valor: str):
 
 
 @st.cache_data(ttl=60)
-def carregar_dados_planilha() -> pd.DataFrame:
-    """
-    Carrega e trata a base da planilha do Google Sheets.
-    Cache de 5 minutos.
-    """
-    df = pd.read_csv(CSV_URL)
-    df.columns = [c.strip().upper() for c in df.columns]
+def carregar_dados_planilha():
+    # ---------------------------------------------------------
+    # CARREGA PLANILHA
+    # ---------------------------------------------------------
+    df = carregar_planilha_google()  # usa tua função existente
 
-    # DATA / DIA
-    if "DATA" in df.columns:
-        df["DIA"] = limpar_para_data(df["DATA"])
-    elif "DIA" in df.columns:
-        df["DIA"] = limpar_para_data(df["DIA"])
-    else:
-        df["DIA"] = pd.NaT
+    if df is None or df.empty:
+        return df
 
-    # DATA BASE (MÊS COMERCIAL) - TEXTO IGUAL À PLANILHA + REFERÊNCIA DE DATA
-    possiveis_cols_base = [
-        "DATA BASE",
-        "DATA_BASE",
-        "DT BASE",
-        "DATA REF",
-        "DATA REFERÊNCIA",
-        "DATA REFERENCIA",
+    # ---------------------------------------------------------
+    # COLUNA DE SITUAÇÃO (ORIGINAL)
+    # ---------------------------------------------------------
+    possiveis_cols = [
+        "SITUACAO", "SITUAÇÃO",
+        "SITUACAO_BASE", "SITUAÇÃO_BASE",
+        "SITUAÇÃO DO CLIENTE", "SITUACAO DO CLIENTE"
     ]
-    col_data_base = next((c for c in possiveis_cols_base if c in df.columns), None)
 
-    if col_data_base:
-        base_raw = df[col_data_base].astype(str).str.strip()
-        df["DATA_BASE_LABEL"] = base_raw.str.lower().str.title()
-        df["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
+    col_situacao = next((c for c in possiveis_cols if c in df.columns), None)
 
-        if df["DATA_BASE"].dropna().empty:
-            df["DATA_BASE"] = df["DIA"]
-            df["DATA_BASE_LABEL"] = df["DIA"].apply(
-                lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
-            )
-    else:
-        df["DATA_BASE"] = df["DIA"]
-        df["DATA_BASE_LABEL"] = df["DIA"].apply(
-            lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
+    # ---------------------------------------------------------
+    # STATUS_RAW = TEXTO ORIGINAL (SEM NORMALIZAR)
+    # ---------------------------------------------------------
+    if col_situacao:
+        df["STATUS_RAW"] = (
+            df[col_situacao]
+            .fillna("")
+            .astype(str)
+            .str.strip()
         )
-
-    # EQUIPE / CORRETOR
-    for col in ["EQUIPE", "CORRETOR"]:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .fillna("NÃO INFORMADO")
-                .astype(str)
-                .str.upper()
-                .str.strip()
-            )
-        else:
-            df[col] = "NÃO INFORMADO"
-
-    # STATUS BASE
-    possiveis_cols_situacao = [
-        "SITUAÇÃO",
-        "SITUAÇÃO ATUAL",
-        "STATUS",
-        "SITUACAO",
-        "SITUACAO ATUAL",
-    ]
-    col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
-
-# ---------------------------------------------------------
-# STATUS_RAW = TEXTO ORIGINAL DA SITUAÇÃO (SEM NORMALIZAR)
-# (usado para notificações)
-# ---------------------------------------------------------
-# tenta achar a coluna real de situação
-possiveis_cols = ["SITUACAO", "SITUAÇÃO", "SITUACAO_BASE", "SITUAÇÃO_BASE", "SITUAÇÃO DO CLIENTE", "SITUACAO DO CLIENTE"]
-col_situacao = None
-for c in possiveis_cols:
-    if c in df.columns:
-        col_situacao = c
-        break
-
-if col_situacao:
-    df["STATUS_RAW"] = df[col_situacao].fillna("").astype(str).str.strip()
-else:
-    # fallback: se não achar coluna de situação, usa STATUS_BASE se existir
-    if "STATUS_BASE" in df.columns:
-        df["STATUS_RAW"] = df["STATUS_BASE"].fillna("").astype(str).str.strip()
     else:
         df["STATUS_RAW"] = ""
 
+    # ---------------------------------------------------------
+    # STATUS_BASE = STATUS NORMALIZADO (KPI / FUNIL)
+    # ---------------------------------------------------------
     df["STATUS_BASE"] = ""
+
     if col_situacao:
         s = df[col_situacao].fillna("").astype(str).str.upper()
+
         df.loc[s.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
         df.loc[s.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
         df.loc[s.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
         df.loc[s.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
         df.loc[s.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
-        # 👇 NOVO – mapeia qualquer coisa com DESIST (DESISTIU, DESISTÊNCIA etc.)
         df.loc[s.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
 
+    # ---------------------------------------------------------
     # VGV
+    # ---------------------------------------------------------
     if "OBSERVAÇÕES" in df.columns:
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0)
     else:
         df["VGV"] = 0
 
+    # ---------------------------------------------------------
     # NOME / CPF BASE
+    # ---------------------------------------------------------
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
     col_nome = next((c for c in possiveis_nome if c in df.columns), None)
     col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
 
-    if col_nome is None:
-        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
-    else:
+    if col_nome:
         df["NOME_CLIENTE_BASE"] = (
             df[col_nome]
             .fillna("NÃO INFORMADO")
@@ -368,26 +320,27 @@ else:
             .str.upper()
             .str.strip()
         )
-
-    if col_cpf is None:
-        df["CPF_CLIENTE_BASE"] = ""
     else:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+
+    if col_cpf:
         df["CPF_CLIENTE_BASE"] = (
             df[col_cpf]
             .fillna("")
             .astype(str)
             .str.replace(r"\D", "", regex=True)
         )
+    else:
+        df["CPF_CLIENTE_BASE"] = ""
 
-    # 👇 NOVO – CHAVE_CLIENTE global (nome + CPF) para todas as regras
+    # ---------------------------------------------------------
+    # CHAVE_CLIENTE (GLOBAL)
+    # ---------------------------------------------------------
     df["CHAVE_CLIENTE"] = (
-        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
-        + " | "
-        + df["CPF_CLIENTE_BASE"].fillna("")
+        df["NOME_CLIENTE_BASE"] + " | " + df["CPF_CLIENTE_BASE"]
     )
 
     return df
-
 
 df = carregar_dados_planilha()
 
