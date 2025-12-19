@@ -3,20 +3,24 @@ import pandas as pd
 import numpy as np
 import altair as alt
 from datetime import date, timedelta
-if "logado" not in st.session_state or not st.session_state.logado:
-    st.warning("🔒 Acesso restrito. Faça login para continuar.")
-    st.stop()
 
+from utils.bootstrap import iniciar_app
 from app_dashboard import carregar_dados_planilha
 
 # ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA
+# CONFIGURAÇÃO DA PÁGINA (PRIMEIRA COISA DO ARQUIVO)
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Funil MR Imóveis – Visão Geral",
     page_icon="🧩",
     layout="wide",
 )
+
+# ---------------------------------------------------------
+# BOOTSTRAP GLOBAL (LOGIN + NOTIFICAÇÕES)
+# ---------------------------------------------------------
+df = carregar_dados_planilha()
+iniciar_app(df)
 
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES
