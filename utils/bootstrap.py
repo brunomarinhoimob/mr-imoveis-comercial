@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import uuid
 
 from utils.notificacoes import verificar_notificacoes
 from login import tela_login
@@ -11,6 +12,7 @@ def iniciar_app(df: pd.DataFrame):
     - controla login
     - executa notificações
     - renderiza alertas fixos
+    - evita colisão de keys entre páginas
     """
 
     # -------------------------------------------------
@@ -22,6 +24,14 @@ def iniciar_app(df: pd.DataFrame):
     if not st.session_state.logado:
         tela_login()
         st.stop()
+
+    # -------------------------------------------------
+    # ID ÚNICO POR PÁGINA (ANTI-COLISÃO DE KEYS)
+    # -------------------------------------------------
+    if "page_scope_id" not in st.session_state:
+        st.session_state["page_scope_id"] = str(uuid.uuid4())
+
+    page_scope_id = st.session_state["page_scope_id"]
 
     # -------------------------------------------------
     # EXECUÇÃO DAS NOTIFICAÇÕES (BACKEND)
@@ -44,7 +54,6 @@ def iniciar_app(df: pd.DataFrame):
 
         st.markdown("### 🔔 Atualizações Recentes")
 
-        # copia segura (evita problema ao remover item)
         alertas = list(st.session_state["alertas_fixos"])
 
         for alerta in alertas:
@@ -58,15 +67,18 @@ def iniciar_app(df: pd.DataFrame):
                 )
 
             with col2:
-                if st.button("❌", key=f"fechar_alerta_{alerta['id']}"):
+                if st.button(
+                    "❌",
+                    key=f"fechar_alerta_{page_scope_id}_{alerta['id']}"
+                ):
 
-                    # remove o alerta visual
+                    # remove alerta visual
                     st.session_state["alertas_fixos"] = [
                         a for a in st.session_state["alertas_fixos"]
                         if a["id"] != alerta["id"]
                     ]
 
-                    # remove o id para não reaparecer
+                    # remove id para não reaparecer
                     if alerta["id"] in st.session_state["alertas_fixos_ids"]:
                         st.session_state["alertas_fixos_ids"].remove(alerta["id"])
 
