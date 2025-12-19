@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 from datetime import timedelta, datetime
 from login import tela_login
+from utils.notificacoes import verificar_notificacoes
 
 from utils.supremo_config import TOKEN_SUPREMO
 
@@ -35,6 +36,10 @@ if "logado" not in st.session_state:
 if not st.session_state.logado:
     tela_login()
     st.stop()
+# ---------------------------------------------------------
+# NOTIFICAÇÕES GLOBAIS (RODAM EM TODAS AS PÁGINAS)
+# ---------------------------------------------------------
+verificar_notificacoes(df)
 
 # ---------------------------------------------------------
 # ESTILO (CSS) – TEMA MIDNIGHT BLUE MR
