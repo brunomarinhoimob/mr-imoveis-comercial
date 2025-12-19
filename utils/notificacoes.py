@@ -111,7 +111,7 @@ def verificar_notificacoes(df: pd.DataFrame):
         if count_atual > antigo_count and status_atual != antigo_status:
 
             cliente_nome = chave_cliente.split("|")[0].strip()
-            alerta_id = f"{chave_cliente}|{antigo_status}|{status_atual}"
+            alerta_id = f"{chave_cliente}|{status_atual}"
 
             # evita duplicação mesmo com refresh
             if alerta_id not in st.session_state["alertas_fixos_ids"]:
