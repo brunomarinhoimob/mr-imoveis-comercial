@@ -3,8 +3,7 @@ import pandas as pd
 from utils.bootstrap import iniciar_app
 from app_dashboard import carregar_dados_planilha
 
-df = carregar_dados_planilha()
-iniciar_app(df)
+iniciar_app()
 
 
 st.set_page_config(

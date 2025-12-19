@@ -23,8 +23,7 @@ from app_dashboard import carregar_dados_planilha
 # ---------------------------------------------------------
 # BOOTSTRAP GLOBAL (LOGIN + NOTIFICAÇÕES) — UMA ÚNICA VEZ
 # ---------------------------------------------------------
-df = carregar_dados_planilha()
-iniciar_app(df)
+iniciar_app()
 
 # ---------------------------------------------------------
 # CONTEXTO DO USUÁRIO LOGADO

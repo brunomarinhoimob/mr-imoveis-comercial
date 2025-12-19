@@ -26,8 +26,7 @@ st_autorefresh(interval=30 * 1000, key="auto_refresh_global")
 # ---------------------------------------------------------
 # BOOTSTRAP GLOBAL (LOGIN + NOTIFICAÇÕES)
 # ---------------------------------------------------------
-df = carregar_dados_planilha()
-iniciar_app(df)
+iniciar_app()
 
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES

@@ -1,15 +1,16 @@
 import streamlit as st
-import pandas as pd
 import uuid
 
 from utils.notificacoes import verificar_notificacoes
 from login import tela_login
+from app_dashboard import carregar_dados_planilha
 
 
-def iniciar_app(df: pd.DataFrame):
+def iniciar_app():
     """
     Bootstrap global do app:
     - controla login
+    - carrega base única do sistema
     - executa notificações
     - renderiza alertas fixos
     - evita colisão de keys entre páginas
@@ -32,6 +33,11 @@ def iniciar_app(df: pd.DataFrame):
         st.session_state["page_scope_id"] = str(uuid.uuid4())
 
     page_scope_id = st.session_state["page_scope_id"]
+
+    # -------------------------------------------------
+    # CARREGA BASE ÚNICA (FONTE DA VERDADE)
+    # -------------------------------------------------
+    df = carregar_dados_planilha()
 
     # -------------------------------------------------
     # EXECUÇÃO DAS NOTIFICAÇÕES (BACKEND)
