@@ -36,10 +36,6 @@ if "logado" not in st.session_state:
 if not st.session_state.logado:
     tela_login()
     st.stop()
-# ---------------------------------------------------------
-# NOTIFICAÇÕES GLOBAIS (RODAM EM TODAS AS PÁGINAS)
-# ---------------------------------------------------------
-verificar_notificacoes(df)
 
 # ---------------------------------------------------------
 # ESTILO (CSS) – TEMA MIDNIGHT BLUE MR
