@@ -2,8 +2,10 @@ import streamlit as st
 import pandas as pd
 
 # ---------------------------------------------------------
-# NOTIFICAÇÕES (CACHE EM MEMÓRIA - SESSION_STATE)
-# REGRA: NOVA LINHA NO CLIENTE => STATUS MAIS RECENTE
+# NOTIFICAÇÕES
+# REGRA:
+# - NOVA LINHA NO CLIENTE
+# - STATUS DIFERENTE (TEXTO EXATO)
 # ---------------------------------------------------------
 def verificar_notificacoes(df: pd.DataFrame):
     if df is None or df.empty:
@@ -16,7 +18,7 @@ def verificar_notificacoes(df: pd.DataFrame):
     if not colunas.issubset(df.columns):
         return
 
-    # cache global por sessão
+    # cache por sessão
     if "notificacoes_cache" not in st.session_state:
         st.session_state["notificacoes_cache"] = {}
 
@@ -31,9 +33,7 @@ def verificar_notificacoes(df: pd.DataFrame):
     if df.empty:
         return
 
-    # -----------------------------
-    # ordenação (DIA se existir)
-    # -----------------------------
+    # ordenação segura (linha mais recente vence)
     df = df.copy()
     df["_ord"] = range(len(df))
 
@@ -41,9 +41,9 @@ def verificar_notificacoes(df: pd.DataFrame):
         df["_dia_dt"] = pd.to_datetime(df["DIA"], errors="coerce", dayfirst=True)
         df = df.sort_values(["_dia_dt", "_ord"])
     else:
-        df = df.sort_values(["_ord"])
+        df = df.sort_values("_ord")
 
-    # último status por cliente (linha mais recente)
+    # status mais recente por cliente (TEXTO PURO)
     ultimos = (
         df.groupby("CHAVE_CLIENTE", as_index=False)
           .tail(1)[["CHAVE_CLIENTE", "STATUS_BASE"]]
@@ -51,62 +51,44 @@ def verificar_notificacoes(df: pd.DataFrame):
           .to_dict()
     )
 
-    # total de linhas por cliente (detecta "linha nova")
     contagens = df["CHAVE_CLIENTE"].value_counts().to_dict()
 
-    # -----------------------------
-    # normalizador de cache antigo
-    # -----------------------------
-    def _normalizar_antigo(valor):
-        """
-        Converte cache antigo para dict padrão:
-        - dict -> mantém
-        - int -> {"count": int, "status": None}
-        - str -> {"count": 0, "status": str}
-        - None/outros -> None
-        """
-        if isinstance(valor, dict):
-            return {
-                "count": int(valor.get("count", 0) or 0),
-                "status": valor.get("status"),
-            }
-        if isinstance(valor, int):
-            return {"count": int(valor), "status": None}
-        if isinstance(valor, str):
-            return {"count": 0, "status": valor}
-        return None
-
-    # -----------------------------
-    # lógica de notificação
-    # -----------------------------
     for chave, status_atual in ultimos.items():
         if not status_atual:
             continue
 
-        count_atual = int(contagens.get(chave, 0))
-        antigo_raw = cache_usuario.get(chave)
-        antigo = _normalizar_antigo(antigo_raw)
+        # ⚠️ NÃO NORMALIZA TEXTO
+        status_atual = str(status_atual)
 
-        # primeira vez vendo esse cliente na sessão -> só registra
+        count_atual = int(contagens.get(chave, 0))
+        antigo = cache_usuario.get(chave)
+
+        # primeira vez: só aprende o estado
         if not antigo:
-            cache_usuario[chave] = {"count": count_atual, "status": status_atual}
+            cache_usuario[chave] = {
+                "count": count_atual,
+                "status": status_atual
+            }
             continue
 
-        antigo_count = int(antigo.get("count", 0) or 0)
+        antigo_count = int(antigo.get("count", 0))
         antigo_status = antigo.get("status")
 
-        # entrou linha nova?
+        # nova linha
         if count_atual > antigo_count:
-            # notifica só se status mudou (mudança real)
-            if antigo_status and antigo_status != status_atual:
+            # texto diferente = evento real
+            if antigo_status != status_atual:
                 cliente = str(chave).split("|")[0].strip()
                 st.toast(
                     f"🔔 Cliente {cliente}\n{antigo_status} → {status_atual}",
                     icon="🔔",
                 )
 
-        # atualiza cache sempre no formato novo
-        cache_usuario[chave] = {"count": count_atual, "status": status_atual}
+        # atualiza cache
+        cache_usuario[chave] = {
+            "count": count_atual,
+            "status": status_atual
+        }
 
     cache[chave_cache] = cache_usuario
     st.session_state["notificacoes_cache"] = cache
