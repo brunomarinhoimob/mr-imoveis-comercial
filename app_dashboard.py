@@ -312,6 +312,18 @@ def carregar_dados_planilha() -> pd.DataFrame:
         "SITUACAO ATUAL",
     ]
     col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
+# =========================================================
+# SITUAÇÃO EXATA DA PLANILHA (FONTE DA VERDADE)
+# =========================================================
+if col_situacao == "SITUAÇÃO":
+    df["SITUACAO_EXATA"] = (
+        df["SITUAÇÃO"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+else:
+    df["SITUACAO_EXATA"] = ""
 
     df["STATUS_BASE"] = ""
     if col_situacao:

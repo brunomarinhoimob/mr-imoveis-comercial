@@ -44,7 +44,7 @@ def processar_eventos(df: pd.DataFrame):
     if df is None or df.empty:
         return
 
-    colunas_necessarias = {"CHAVE_CLIENTE", "STATUS_BASE", "CORRETOR"}
+    colunas_necessarias = {"CHAVE_CLIENTE", "CORRETOR"}
     if not colunas_necessarias.issubset(df.columns):
         return
 
@@ -73,7 +73,7 @@ def processar_eventos(df: pd.DataFrame):
 
     for _, row in ultimos.iterrows():
         chave = row["CHAVE_CLIENTE"]
-        status_atual = row["STATUS_BASE"]
+        status_atual = row.get("SITUACAO_EXATA", "") or row.get("STATUS_BASE", "")
         corretor = row["CORRETOR"]
         cliente = chave.split("|")[0].strip()
 
