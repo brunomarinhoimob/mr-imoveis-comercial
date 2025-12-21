@@ -370,6 +370,8 @@ def carregar_dados_planilha() -> pd.DataFrame:
 # CARREGA BASE PRINCIPAL
 # ---------------------------------------------------------
 df = carregar_dados_planilha()
+from utils.notificacoes_json import processar_eventos
+processar_eventos(df)
 # ---------------------------------------------------------
 # NOME DO CORRETOR LOGADO (vem do login)
 # ---------------------------------------------------------
