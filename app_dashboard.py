@@ -367,16 +367,19 @@ def carregar_dados_planilha() -> pd.DataFrame:
     return df
 
 # ---------------------------------------------------------
+# CARREGA BASE PRINCIPAL
+# ---------------------------------------------------------
+df = carregar_dados_planilha()
+
+# ---------------------------------------------------------
 # BLOQUEIO GLOBAL DE DADOS PARA PERFIL CORRETOR
 # ---------------------------------------------------------
 if perfil == "corretor":
-            # =========================================================
-# CARREGA BASE PRINCIPAL
-# =========================================================
-df = carregar_dados_planilha()
+    df = df[df["CORRETOR"] == nome_corretor_logado]
 
-        df = df[df["CORRETOR"] == nome_corretor_logado]
-
+# ---------------------------------------------------------
+# VALIDAÇÃO DA BASE
+# ---------------------------------------------------------
 if df.empty:
     st.error("Erro ao carregar planilha.")
     st.stop()
