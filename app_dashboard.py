@@ -370,8 +370,7 @@ def carregar_dados_planilha() -> pd.DataFrame:
 # BLOQUEIO GLOBAL DE DADOS PARA PERFIL CORRETOR
 # ---------------------------------------------------------
 if perfil == "corretor":
-    if "CORRETOR" in df.columns:
-        # =========================================================
+            # =========================================================
 # CARREGA BASE PRINCIPAL
 # =========================================================
 df = carregar_dados_planilha()
