@@ -149,9 +149,40 @@ def carregar():
 df = carregar()
 
 # =========================================================
+# SIDEBAR — FILTROS DE EQUIPE / CORRETOR
+# =========================================================
+st.sidebar.title("Filtros 🔎")
+
+df_visivel = df.copy()
+
+if perfil == "corretor":
+    df_visivel = df_visivel[df_visivel["CORRETOR"] == nome_corretor]
+    st.sidebar.info(f"👤 Corretor: {nome_corretor}")
+else:
+    equipes = sorted([e for e in df_visivel["EQUIPE"].unique() if e])
+    equipe_sel = st.sidebar.selectbox(
+        "Equipe:",
+        ["Todas"] + equipes,
+        index=0
+    )
+
+    if equipe_sel != "Todas":
+        df_visivel = df_visivel[df_visivel["EQUIPE"] == equipe_sel]
+
+    corretores = sorted([c for c in df_visivel["CORRETOR"].unique() if c])
+    corretor_sel = st.sidebar.selectbox(
+        "Corretor:",
+        ["Todos"] + corretores,
+        index=0
+    )
+
+    if corretor_sel != "Todos":
+        df_visivel = df_visivel[df_visivel["CORRETOR"] == corretor_sel]
+
+# =========================================================
 # PERÍODO — SEMPRE BASEADO NA PLANILHA INTEIRA
 # =========================================================
-df_datas = df[df["DATA"].notna()]
+df_datas = df_visivel[df_visivel["DATA"].notna()]
 
 dt_min = df_datas["DATA"].min().date()
 dt_max = df_datas["DATA"].max().date()
@@ -167,17 +198,10 @@ periodo = st.sidebar.date_input(
 
 dt_ini, dt_fim = periodo
 
-df = df[
-    (df["DATA"] >= pd.to_datetime(dt_ini)) &
-    (df["DATA"] <= pd.to_datetime(dt_fim))
+df_visivel = df_visivel[
+    (df_visivel["DATA"] >= pd.to_datetime(dt_ini)) &
+    (df_visivel["DATA"] <= pd.to_datetime(dt_fim))
 ]
-
-# =========================================================
-# BLOQUEIO POR PERFIL
-# =========================================================
-if perfil == "corretor":
-    df = df[df["CORRETOR"] == nome_corretor]
-    st.sidebar.info(f"👤 Corretor: {nome_corretor}")
 
 # =========================================================
 # ÚLTIMA SITUAÇÃO POR CLIENTE
@@ -187,13 +211,13 @@ def ultima_linha(grupo: pd.DataFrame) -> pd.Series:
 
 
 df_resumo = (
-    df.groupby(["CLIENTE", "CPF"], as_index=False)
+    df_visivel.groupby(["CLIENTE", "CPF"], as_index=False)
     .apply(ultima_linha)
     .reset_index(drop=True)
 )
 
 # =========================================================
-# FILTRO POR SITUAÇÃO (LAYOUT ANTIGO)
+# FILTRO POR SITUAÇÃO
 # =========================================================
 st.markdown("### 🎛️ Filtro por Situação")
 
@@ -225,12 +249,12 @@ if df_view.empty:
     st.stop()
 
 # =========================================================
-# DATA FORMATADA (EXCLUSIVAMENTE DA PLANILHA)
+# DATA FORMATADA
 # =========================================================
 df_view["DATA_EXIBICAO"] = df_view["DATA"].dt.strftime("%d/%m/%Y")
 
 # =========================================================
-# EXIBIÇÃO FINAL — TABELA DE GESTÃO
+# EXIBIÇÃO FINAL
 # =========================================================
 st.markdown("---")
 st.markdown("## 📋 Carteira de Clientes")
