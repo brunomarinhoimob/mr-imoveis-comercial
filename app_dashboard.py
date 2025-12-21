@@ -247,7 +247,7 @@ def mes_ano_ptbr_para_date(valor: str):
 
 
 @st.cache_data(ttl=60)
-def carregar_dados_planilha() -> pd.DataFrame:
+ddef carregar_dados_planilha() -> pd.DataFrame:
     """
     Carrega e trata a base da planilha do Google Sheets.
     Cache de 5 minutos.
@@ -263,7 +263,7 @@ def carregar_dados_planilha() -> pd.DataFrame:
     else:
         df["DIA"] = pd.NaT
 
-    # DATA BASE (MÊS COMERCIAL) - TEXTO IGUAL À PLANILHA + REFERÊNCIA DE DATA
+    # DATA BASE (MÊS COMERCIAL)
     possiveis_cols_base = [
         "DATA BASE",
         "DATA_BASE",
@@ -303,7 +303,7 @@ def carregar_dados_planilha() -> pd.DataFrame:
         else:
             df[col] = "NÃO INFORMADO"
 
-    # STATUS BASE
+    # SITUAÇÃO
     possiveis_cols_situacao = [
         "SITUAÇÃO",
         "SITUAÇÃO ATUAL",
@@ -313,12 +313,10 @@ def carregar_dados_planilha() -> pd.DataFrame:
     ]
     col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
-    # =========================================================
-    # SITUAÇÃO EXATA DA PLANILHA (FONTE DA VERDADE)
-    # =========================================================
-    if col_situacao == "SITUAÇÃO":
+    # 👉 SITUAÇÃO EXATA (FONTE DA VERDADE)
+    if col_situacao:
         df["SITUACAO_EXATA"] = (
-            df["SITUAÇÃO"]
+            df[col_situacao]
             .fillna("")
             .astype(str)
             .str.strip()
@@ -326,9 +324,7 @@ def carregar_dados_planilha() -> pd.DataFrame:
     else:
         df["SITUACAO_EXATA"] = ""
 
-    # =========================================================
-    # STATUS_BASE (RESUMIDO – USADO EM KPIs / FUNIL)
-    # =========================================================
+    # STATUS_BASE (resumido)
     df["STATUS_BASE"] = ""
     if col_situacao:
         s = df[col_situacao].fillna("").astype(str).str.upper()
@@ -340,53 +336,35 @@ def carregar_dados_planilha() -> pd.DataFrame:
         df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
         df.loc[s.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
 
-    # =========================================================
     # VGV
-    # =========================================================
     if "OBSERVAÇÕES" in df.columns:
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0)
     else:
         df["VGV"] = 0
 
-    # =========================================================
-    # NOME / CPF BASE
-    # =========================================================
+    # NOME / CPF
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
     col_nome = next((c for c in possiveis_nome if c in df.columns), None)
     col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
 
-    if col_nome is None:
-        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
-    else:
-        df["NOME_CLIENTE_BASE"] = (
-            df[col_nome]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-
-    if col_cpf is None:
-        df["CPF_CLIENTE_BASE"] = ""
-    else:
-        df["CPF_CLIENTE_BASE"] = (
-            df[col_cpf]
-            .fillna("")
-            .astype(str)
-            .str.replace(r"\D", "", regex=True)
-        )
-
-    # =========================================================
-    # CHAVE_CLIENTE GLOBAL
-    # =========================================================
-    df["CHAVE_CLIENTE"] = (
-        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
-        + " | "
-        + df["CPF_CLIENTE_BASE"].fillna("")
+    df["NOME_CLIENTE_BASE"] = (
+        df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        if col_nome else "NÃO INFORMADO"
     )
 
+    df["CPF_CLIENTE_BASE"] = (
+        df[col_cpf].fillna("").astype(str).str.replace(r"\D", "", regex=True)
+        if col_cpf else ""
+    )
+
+    # CHAVE_CLIENTE
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"] + " | " + df["CPF_CLIENTE_BASE"]
+    )
+
+    return df
 
 # ---------------------------------------------------------
 # BLOQUEIO GLOBAL DE DADOS PARA PERFIL CORRETOR
