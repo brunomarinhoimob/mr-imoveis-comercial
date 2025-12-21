@@ -161,7 +161,21 @@ if df_global.empty:
     st.stop()
 
 # Padroniza datas
-df_global["DIA"] = pd.to_datetime(df_global["DIA"], errors="coerce")
+# ---------------------------------------------------------
+# PADRONIZA COLUNA DE DATA (DIA)
+# ---------------------------------------------------------
+possiveis_colunas_data = ["DIA", "DATA", "Data"]
+
+col_data = next(
+    (c for c in possiveis_colunas_data if c in df_global.columns),
+    None
+)
+
+if col_data is None:
+    st.error("A planilha não possui nenhuma coluna de data (DIA / DATA).")
+    st.stop()
+
+df_global["DIA"] = pd.to_datetime(df_global[col_data], errors="coerce")
 
 # DATA BASE
 if "DATA BASE" in df_global.columns:
