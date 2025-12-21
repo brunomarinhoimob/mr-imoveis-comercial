@@ -370,6 +370,20 @@ def carregar_dados_planilha() -> pd.DataFrame:
 # CARREGA BASE PRINCIPAL
 # ---------------------------------------------------------
 df = carregar_dados_planilha()
+# ---------------------------------------------------------
+# NOME DO CORRETOR LOGADO (vem do login)
+# ---------------------------------------------------------
+nome_corretor_logado = (
+    st.session_state.get("nome_corretor_logado")
+    or st.session_state.get("nome_corretor")
+    or st.session_state.get("usuario")
+    or st.session_state.get("username")
+    or st.session_state.get("nome")
+    or st.session_state.get("user")
+    or ""
+)
+
+nome_corretor_logado = str(nome_corretor_logado).upper().strip()
 
 # ---------------------------------------------------------
 # BLOQUEIO GLOBAL DE DADOS PARA PERFIL CORRETOR
