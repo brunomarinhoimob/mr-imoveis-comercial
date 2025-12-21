@@ -247,7 +247,7 @@ def mes_ano_ptbr_para_date(valor: str):
 
 
 @st.cache_data(ttl=60)
-def carregar_dados_planilha() -> pd.DataFrame:
+df carregar_dados_planilha() -> pd.DataFrame:
     """
     Carrega e trata a base da planilha do Google Sheets.
     Cache de 5 minutos.
