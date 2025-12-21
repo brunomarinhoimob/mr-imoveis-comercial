@@ -397,7 +397,12 @@ if perfil == "corretor":
 
     nome_corretor_logado = str(nome_corretor_logado).upper().strip()
 
-    df["CORRETOR"] = df["CORRETOR"].astype(str).upper().strip()
+    df["CORRETOR"] = (
+    df["CORRETOR"]
+    .astype(str)
+    .str.upper()
+    .str.strip()
+)
 
     df = df[df["CORRETOR"] == nome_corretor_logado]
 
