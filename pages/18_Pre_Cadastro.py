@@ -187,63 +187,26 @@ for i, row in df.iterrows():
             data_cap = row["DATA_CAPTURA"].strftime("%d/%m/%Y")
 
         st.markdown(
-    f"""
-    <div style="
-        border: 2px solid {border};
-        border-radius: 18px;
-        padding: 18px;
-        margin-bottom: 24px;
-        background: linear-gradient(180deg, #0f172a 0%, #020617 100%);
-        box-shadow: {glow};
-    ">
-
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h4 style="margin:0; font-size:18px; font-weight:600; color:#ffffff;">
-                {row['nome_pessoa']}
-            </h4>
-            <span style="
-                font-size:12px;
-                padding:5px 12px;
-                border-radius:999px;
-                background:{border};
-                color:#020617;
-                font-weight:700;
+            f"""
+            <div style="
+                border: 2px solid {border};
+                border-radius: 14px;
+                padding: 16px;
+                margin-bottom: 18px;
             ">
-                {badge}
-            </span>
-        </div>
+                <h4>{row['nome_pessoa']}</h4>
+                <strong>{badge}</strong><br><br>
 
-        <div style="margin-top:14px; font-size:14px; line-height:1.7; color:#e5e7eb;">
-            📧 Email: {row.get('email_pessoa','-')}<br>
-            📞 Telefone: {row.get('telefone_pessoa','-')}<br>
-            👤 Corretor: {row.get('nome_corretor','-')}<br>
-            🗓️ Captura: {data_cap}
-        </div>
+                📧 {row.get('email_pessoa','-')}<br>
+                📞 {row.get('telefone_pessoa','-')}<br>
+                👤 {row.get('nome_corretor','-')}<br>
+                🕒 {data_cap}<br><br>
 
-        <div style="
-            margin-top:14px;
-            padding:10px 12px;
-            background:#020617;
-            border-radius:12px;
-            font-size:13px;
-            color:#cbd5f5;
-        ">
-            📝 {obs}
-        </div>
+                📝 {obs}<br><br>
 
-        <div style="
-            margin-top:14px;
-            padding-top:10px;
-            border-top:1px solid #1e293b;
-            font-size:13px;
-            color:#93c5fd;
-            font-weight:600;
-        ">
-            📌 Situação: {row.get('nome_situacao','-')}
-        </div>
-
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+                📌 Situação: {row.get('nome_situacao','-')}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 

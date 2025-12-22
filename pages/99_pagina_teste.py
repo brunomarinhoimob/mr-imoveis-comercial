@@ -1,235 +1,191 @@
 # =========================================================
-# FUNIL DE LEADS — INTELIGÊNCIA COMERCIAL
+# PRÉ-CADASTRO – ANÁLISES PENDENTES (30 DIAS DE CAPTURA)
 # =========================================================
 
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+
+from streamlit_autorefresh import st_autorefresh
 from utils.supremo_config import TOKEN_SUPREMO
+from app_dashboard import carregar_dados_planilha
 
 # =========================================================
-# SEGURANÇA
+# TRAVA DE LOGIN
 # =========================================================
-if "logado" not in st.session_state or not st.session_state.logado:
-    st.warning("🔒 Acesso restrito. Faça login para continuar.")
+if not st.session_state.get("logado"):
     st.stop()
 
+if st.session_state.get("perfil") == "corretor":
+    st.error("⛔ Acesso restrito aos gestores.")
+    st.stop()
+
+# =========================================================
+# CONFIG DA PÁGINA
+# =========================================================
 st.set_page_config(
-    page_title="Funil de Leads | Inteligência Comercial",
-    page_icon="📊",
+    page_title="Pré-Cadastro | Análises Pendentes",
+    page_icon="📂",
     layout="wide"
 )
 
-st.title("📊 Funil de Leads — Inteligência Comercial")
-st.caption("Visão estratégica por Origem, Equipe e Corretor")
+st.title("📂 Pré-Cadastro – Análises Pendentes")
 
 # =========================================================
-# PLANILHA (FUNIL)
+# AUTO REFRESH (SEM F5)
 # =========================================================
-SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
-GID = "1574157905"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
-
-@st.cache_data(ttl=300)
-def carregar_planilha():
-    df = pd.read_csv(CSV_URL, dtype=str)
-    df.columns = df.columns.str.upper().str.strip()
-
-    for col in ["CLIENTE", "CORRETOR", "EQUIPE", "SITUAÇÃO", "DATA"]:
-        if col not in df.columns:
-            df[col] = ""
-
-    df["DATA"] = pd.to_datetime(df["DATA"], dayfirst=True, errors="coerce")
-    df = df.dropna(subset=["DATA"])
-
-    for col in ["CLIENTE", "CORRETOR", "EQUIPE"]:
-        df[col] = df[col].astype(str).str.upper().str.strip()
-
-    df["STATUS_RAW"] = df["SITUAÇÃO"].astype(str).str.upper()
-    df["STATUS_BASE"] = ""
-
-    regras = [
-        ("APROVADO BACEN", "APROVADO_BACEN"),
-        ("EM ANÁLISE", "ANALISE"),
-        ("REANÁLISE", "REANALISE"),
-        ("VENDA GERADA", "VENDA_GERADA"),
-        ("VENDA INFORMADA", "VENDA_INFORMADA"),
-        ("REPROV", "REPROVADO"),
-        ("PEND", "PENDENCIA"),
-        ("DESIST", "DESISTIU"),
-        ("APROVA", "APROVADO"),
-    ]
-
-    for chave, valor in regras:
-        mask = df["STATUS_RAW"].str.contains(chave, na=False)
-        df.loc[mask & (df["STATUS_BASE"] == ""), "STATUS_BASE"] = valor
-
-    return df[df["STATUS_BASE"] != ""]
+st_autorefresh(interval=30 * 1000, key="auto_refresh_pre_cadastro")
 
 # =========================================================
-# CRM — LEADS RECEBIDOS
+# CONFIG
 # =========================================================
-@st.cache_data(ttl=1800, show_spinner=False)
-def carregar_crm(data_ini, data_fim):
-    url = "https://api.supremocrm.com.br/v1/leads"
-    headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
+API_URL = "https://api.supremocrm.com.br/v1/leads"
+HEADERS = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
+SITUACAO_ALVO = "ANALISE PENDENTE"
+DIAS_JANELA = 30
+
+# =========================================================
+# FUNÇÕES AUXILIARES
+# =========================================================
+def normalizar(txt):
+    if pd.isna(txt):
+        return ""
+    return str(txt).strip().upper()
+
+# =========================================================
+# CARGA CRM (LIMITADA POR DATA DE CAPTURA)
+# =========================================================
+@st.cache_data(ttl=30)
+def carregar_leads_crm():
     dados = []
     pagina = 1
-    LIMITE_PAGINAS = 10
-    TIMEOUT = 30
+    data_limite = datetime.now() - timedelta(days=DIAS_JANELA)
 
-    while pagina <= LIMITE_PAGINAS:
-        try:
-            r = requests.get(
-                url,
-                headers=headers,
-                params={
-                    "pagina": pagina,
-                    "data_inicio": data_ini.strftime("%Y-%m-%d"),
-                    "data_fim": data_fim.strftime("%Y-%m-%d"),
-                },
-                timeout=TIMEOUT
-            )
+    while True:
+        r = requests.get(
+            API_URL,
+            headers=HEADERS,
+            params={"pagina": pagina},
+            timeout=20
+        )
 
-            if r.status_code != 200:
-                break
-
-            js = r.json()
-            if not js.get("data"):
-                break
-
-            dados.extend(js["data"])
-            pagina += 1
-
-        except requests.exceptions.RequestException:
+        if r.status_code != 200:
             break
 
-    if not dados:
-        return pd.DataFrame(
-            columns=["CLIENTE", "ORIGEM", "CAMPANHA", "DATA_CRM", "CORRETOR", "EQUIPE"]
+        js = r.json()
+        if not js.get("data"):
+            break
+
+        for lead in js["data"]:
+            data_captura = pd.to_datetime(
+                lead.get("data_captura"), errors="coerce"
+            )
+
+            # se não tem data, ignora
+            if pd.isna(data_captura):
+                continue
+
+            # se passou da janela, pode parar (leads vêm ordenados por data)
+            if data_captura < data_limite:
+                return pd.DataFrame(dados)
+
+            dados.append(lead)
+
+        pagina += 1
+
+    return pd.DataFrame(dados)
+
+# =========================================================
+# LOAD DADOS
+# =========================================================
+df_leads = carregar_leads_crm()
+df_plan = carregar_dados_planilha()
+
+if df_leads.empty:
+    st.success("🎉 Nenhuma análise pendente no momento.")
+    st.stop()
+
+# =========================================================
+# NORMALIZA CHAVES (ANTI-REANÁLISE)
+# =========================================================
+df_leads["CLIENTE_KEY"] = df_leads["nome_pessoa"].apply(normalizar)
+df_leads["CORRETOR_KEY"] = df_leads["nome_corretor"].apply(normalizar)
+
+df_plan["CLIENTE_KEY"] = df_plan["CLIENTE"].apply(normalizar)
+df_plan["CORRETOR_KEY"] = df_plan["CORRETOR"].apply(normalizar)
+
+# =========================================================
+# FILTRO – ANALISE PENDENTE (REGRA DE NEGÓCIO)
+# =========================================================
+df = df_leads[
+    df_leads["nome_situacao"].astype(str).str.upper() == SITUACAO_ALVO
+].copy()
+
+# =========================================================
+# MARCA REANÁLISE
+# =========================================================
+df["TIPO_ANALISE"] = df.apply(
+    lambda r: "REANÁLISE"
+    if (
+        (df_plan["CLIENTE_KEY"] == r["CLIENTE_KEY"]) &
+        (df_plan["CORRETOR_KEY"] == r["CORRETOR_KEY"])
+    ).any()
+    else "NOVA",
+    axis=1
+)
+
+# =========================================================
+# ORDENAÇÃO (FILA REAL = MAIS ANTIGO PRIMEIRO)
+# =========================================================
+df["DATA_CAPTURA"] = pd.to_datetime(df["data_captura"], errors="coerce")
+df = df.sort_values("DATA_CAPTURA")
+
+# =========================================================
+# TOPO
+# =========================================================
+st.markdown(f"## ⏳ Tem **{len(df)} análises** para subir")
+st.divider()
+
+# =========================================================
+# CARDS
+# =========================================================
+cols = st.columns(3)
+
+for i, row in df.iterrows():
+    with cols[i % 3]:
+
+        badge = "🆕 Análise nova" if row["TIPO_ANALISE"] == "NOVA" else "🔁 Reanálise"
+        border = "#22c55e" if row["TIPO_ANALISE"] == "NOVA" else "#f59e0b"
+
+        obs = row.get("anotacoes", "")
+        obs = obs[:200] + "..." if len(str(obs)) > 200 else obs
+
+        data_cap = "-"
+        if pd.notna(row.get("DATA_CAPTURA")):
+            data_cap = row["DATA_CAPTURA"].strftime("%d/%m/%Y")
+
+        st.markdown(
+            f"""
+            <div style="
+                border: 2px solid {border};
+                border-radius: 14px;
+                padding: 16px;
+                margin-bottom: 18px;
+            ">
+                <h4>{row['nome_pessoa']}</h4>
+                <strong>{badge}</strong><br><br>
+
+                📧 {row.get('email_pessoa','-')}<br>
+                📞 {row.get('telefone_pessoa','-')}<br>
+                👤 {row.get('nome_corretor','-')}<br>
+                🕒 {data_cap}<br><br>
+
+                📝 {obs}<br><br>
+
+                📌 Situação: {row.get('nome_situacao','-')}
+            </div>
+            """,
+            unsafe_allow_html=True
         )
-
-    df = pd.DataFrame(dados)
-
-    # CLIENTE
-    df["CLIENTE"] = df.get("nome_pessoa", "").astype(str).str.upper().str.strip()
-
-    # ORIGEM
-    if "nome_origem" in df.columns:
-        df["ORIGEM"] = df["nome_origem"].fillna("SEM ORIGEM").astype(str).str.upper()
-    else:
-        df["ORIGEM"] = "SEM ORIGEM"
-
-    # CAMPANHA
-    if "nome_campanha" in df.columns:
-        df["CAMPANHA"] = df["nome_campanha"].fillna("-").astype(str).str.upper()
-    else:
-        df["CAMPANHA"] = "-"
-
-    # DATA CRM
-    df["DATA_CRM"] = pd.to_datetime(df.get("data_captura"), errors="coerce")
-
-    # CORRETOR
-    if "nome_corretor" in df.columns:
-        df["CORRETOR"] = df["nome_corretor"].fillna("SEM CORRETOR").astype(str).str.upper()
-    else:
-        df["CORRETOR"] = "SEM CORRETOR"
-
-    # EQUIPE
-    if "nome_equipe" in df.columns:
-        df["EQUIPE"] = (
-            df["nome_equipe"]
-            .fillna("SEM EQUIPE")
-            .astype(str)
-            .str.upper()
-        )
-    else:
-        df["EQUIPE"] = "SEM EQUIPE"
-
-    return df[["CLIENTE", "ORIGEM", "CAMPANHA", "DATA_CRM", "CORRETOR", "EQUIPE"]]
-
-# =========================================================
-# BASE FUNIL (PLANILHA)
-# =========================================================
-df_funil = carregar_planilha()
-
-df_status_final = (
-    df_funil.sort_values("DATA")
-    .groupby("CLIENTE", as_index=False)
-    .last()
-)
-
-# =========================================================
-# PERÍODO PADRÃO (INDEPENDENTE)
-# =========================================================
-fim = date.today()
-ini = fim - timedelta(days=30)
-
-# =========================================================
-# FILTROS
-# =========================================================
-st.sidebar.header("Filtros")
-
-ini, fim = st.sidebar.date_input(
-    "Período",
-    value=(ini, fim)
-)
-
-# =========================================================
-# CARREGAMENTO DO CRM
-# =========================================================
-with st.spinner("🔄 Carregando leads do CRM (período selecionado)..."):
-    df_crm = carregar_crm(ini, fim)
-
-# =========================================================
-# BASE CONSOLIDADA
-# =========================================================
-df_base = df_crm.merge(
-    df_status_final[["CLIENTE", "STATUS_BASE"]],
-    on="CLIENTE",
-    how="left"
-)
-
-df_base["STATUS_BASE"] = df_base["STATUS_BASE"].fillna("SEM_ACAO")
-
-# =========================================================
-# KPIs GERAIS
-# =========================================================
-def kpis(df):
-    return (
-        df["CLIENTE"].nunique(),
-        df[df["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique(),
-        df[df["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique(),
-        df[df["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique(),
-    )
-
-leads, analises, aprovados, vendas = kpis(df_base)
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Leads CRM", leads)
-c2.metric("Análises", analises)
-c3.metric("Aprovados", aprovados)
-c4.metric("Vendas", vendas)
-
-# =========================================================
-# RANKING POR ORIGEM
-# =========================================================
-st.subheader("🏆 Ranking por Origem")
-
-ranking = df_base.groupby("ORIGEM").apply(
-    lambda x: pd.Series({
-        "Leads": x["CLIENTE"].nunique(),
-        "Análises": x[x["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique(),
-        "Aprovados": x[x["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique(),
-        "Vendas": x[x["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique(),
-    })
-).reset_index()
-
-ranking["% Análise"] = (ranking["Análises"] / ranking["Leads"] * 100).round(1)
-ranking["% Venda"] = (ranking["Vendas"] / ranking["Leads"] * 100).round(1)
-
-ranking = ranking.sort_values("% Venda", ascending=False)
-
-st.dataframe(ranking, use_container_width=True)
