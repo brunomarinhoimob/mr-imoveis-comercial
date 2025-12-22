@@ -214,10 +214,10 @@ for i, row in df.iterrows():
         </div>
 
         <div style="margin-top:14px; font-size:14px; line-height:1.7; color:#e5e7eb;">
-            <div>📧 <strong>Email:</strong> {row.get('email_pessoa','-')}</div>
-            <div>📞 <strong>Telefone:</strong> {row.get('telefone_pessoa','-')}</div>
-            <div>👤 <strong>Corretor:</strong> {row.get('nome_corretor','-')}</div>
-            <div>🗓️ <strong>Captura:</strong> {data_cap}</div>
+            📧 Email: {row.get('email_pessoa','-')}<br>
+            📞 Telefone: {row.get('telefone_pessoa','-')}<br>
+            👤 Corretor: {row.get('nome_corretor','-')}<br>
+            🗓️ Captura: {data_cap}
         </div>
 
         <div style="
@@ -246,3 +246,4 @@ for i, row in df.iterrows():
     """,
     unsafe_allow_html=True
 )
+
