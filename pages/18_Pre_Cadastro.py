@@ -87,9 +87,7 @@ def carregar_leads_crm():
             break
 
         for lead in js["data"]:
-            data_captura = pd.to_datetime(
-                lead.get("data_captura"), errors="coerce"
-            )
+            data_captura = pd.to_datetime(lead.get("data_captura"), errors="coerce")
 
             if pd.isna(data_captura):
                 continue
@@ -122,8 +120,14 @@ df_leads["CORRETOR_KEY"] = df_leads["nome_corretor"].apply(normalizar)
 df_plan["CLIENTE_KEY"] = df_plan["CLIENTE"].apply(normalizar)
 df_plan["CORRETOR_KEY"] = df_plan["CORRETOR"].apply(normalizar)
 
-# DATA REAL DA ANÁLISE (COLUNA A DA PLANILHA)
-df_plan["DATA"] = pd.to_datetime(df_plan["DATA"], errors="coerce")
+# =========================================================
+# DATA REAL DA ANÁLISE (COLUNA A DA PLANILHA) — parse BR robusto
+# =========================================================
+df_plan["DATA"] = df_plan["DATA"].astype(str).str.strip()
+
+dt1 = pd.to_datetime(df_plan["DATA"], errors="coerce", dayfirst=True)  # dd/mm/yyyy
+dt2 = pd.to_datetime(df_plan["DATA"], errors="coerce")                # fallback
+df_plan["DATA"] = dt1.fillna(dt2)
 
 # =========================================================
 # FILTRO – SOMENTE ANÁLISE PENDENTE
@@ -149,12 +153,9 @@ def classificar_analise(row):
     if pd.isna(ultima_data):
         return "NOVA"
 
-    dias = (pd.Timestamp.now() - ultima_data).days
+    dias = (pd.Timestamp.now().normalize() - ultima_data.normalize()).days
 
-    if dias <= LIMITE_REANALISE:
-        return "REANÁLISE"
-    else:
-        return "NOVA"
+    return "REANÁLISE" if dias <= LIMITE_REANALISE else "NOVA"
 
 df["TIPO_ANALISE"] = df.apply(classificar_analise, axis=1)
 
