@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from login import tela_login
-from app_dashboard import carregar_dados_planilha
+from utils.data_loader import carregar_dados_planilha
 from utils.notificacoes_json import processar_eventos
 
 
