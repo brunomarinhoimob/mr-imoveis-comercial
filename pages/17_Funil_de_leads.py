@@ -1,3 +1,4 @@
+# versao funil por origem - evento real
 # =========================================================
 # FUNIL DE LEADS – CONVERSÃO POR ORIGEM (EVENTO REAL)
 # =========================================================
