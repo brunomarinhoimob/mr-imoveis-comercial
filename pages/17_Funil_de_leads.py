@@ -1,5 +1,5 @@
 # =========================================================
-# FUNIL DE LEADS – ORIGEM, STATUS E CONVERSÃO
+# FUNIL DE LEADS – CONVERSÃO POR ORIGEM (EVENTO REAL)
 # =========================================================
 
 import streamlit as st
@@ -9,15 +9,19 @@ from datetime import date
 from utils.supremo_config import TOKEN_SUPREMO
 
 # =========================================================
-# CONFIGURAÇÃO
+# CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="Funil de Leads",
+    page_title="Funil de Leads | MR Imóveis",
     page_icon="📊",
     layout="wide"
 )
 
-st.title("📊 Funil de Leads – Origem, Status e Conversão")
+# =========================================================
+# TOPO – LOGO
+# =========================================================
+st.image("logo_mr.png", width=180)
+st.title("📊 FUNIL DE LEADS")
 
 # =========================================================
 # PLANILHA
@@ -62,7 +66,7 @@ def carregar_planilha():
     df = pd.read_csv(CSV_URL, dtype=str)
     df.columns = df.columns.str.upper().str.strip()
 
-    for col in ["CLIENTE", "CORRETOR", "EQUIPE", "SITUAÇÃO", "DATA"]:
+    for col in ["CLIENTE", "CORRETOR", "EQUIPE", "SITUAÇÃO", "DATA", "ORIGEM"]:
         if col not in df.columns:
             df[col] = ""
 
@@ -72,7 +76,7 @@ def carregar_planilha():
     df["DATA_BASE_LABEL"] = df.get("DATA BASE", "").astype(str).str.strip()
     df["DATA_BASE_DATE"] = df["DATA_BASE_LABEL"].apply(parse_data_base)
 
-    for col in ["CLIENTE", "CORRETOR", "EQUIPE"]:
+    for col in ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM"]:
         df[col] = df[col].astype(str).str.upper().str.strip()
 
     df["STATUS_RAW"] = df["SITUAÇÃO"].astype(str).str.upper().str.strip()
@@ -81,7 +85,6 @@ def carregar_planilha():
     regras = [
         ("APROVADO BACEN", "APROVADO_BACEN"),
         ("EM ANÁLISE", "ANALISE"),
-        ("REANÁLISE", "REANALISE"),
         ("VENDA GERADA", "VENDA_GERADA"),
         ("VENDA INFORMADA", "VENDA_INFORMADA"),
         ("REPROV", "REPROVADO"),
@@ -97,7 +100,7 @@ def carregar_planilha():
     return df[df["STATUS_BASE"] != ""]
 
 # =========================================================
-# CARGA CRM
+# CARGA CRM (ORIGEM DO LEAD)
 # =========================================================
 @st.cache_data(ttl=1800)
 def carregar_crm():
@@ -116,17 +119,15 @@ def carregar_crm():
         pagina += 1
 
     if not dados:
-        return pd.DataFrame(columns=["CLIENTE", "ORIGEM", "CAMPANHA"])
+        return pd.DataFrame(columns=["CLIENTE", "ORIGEM_CRM"])
 
     df = pd.DataFrame(dados)
     df["CLIENTE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
-    df["ORIGEM"] = df.get("nome_origem", "SEM CADASTRO NO CRM").fillna("SEM CADASTRO NO CRM")
-    df["CAMPANHA"] = df.get("nome_campanha", "-").fillna("-")
+    df["ORIGEM_CRM"] = df.get("nome_origem", "") \
+                         .fillna("") \
+                         .astype(str).str.upper().str.strip()
 
-    df["ORIGEM"] = df["ORIGEM"].astype(str).str.upper().str.strip()
-    df["CAMPANHA"] = df["CAMPANHA"].astype(str).str.upper().str.strip()
-
-    return df[["CLIENTE", "ORIGEM", "CAMPANHA"]]
+    return df[["CLIENTE", "ORIGEM_CRM"]]
 
 # =========================================================
 # DATASETS
@@ -134,9 +135,18 @@ def carregar_crm():
 df_hist = carregar_planilha()
 df_crm = carregar_crm()
 
+# =========================================================
+# ORIGEM FINAL (PLANILHA > CRM > SEM CADASTRO)
+# =========================================================
 df_hist = df_hist.merge(df_crm, on="CLIENTE", how="left")
+
+df_hist["ORIGEM"] = df_hist["ORIGEM"].where(
+    df_hist["ORIGEM"] != "",
+    df_hist["ORIGEM_CRM"]
+)
+
+df_hist["ORIGEM"] = df_hist["ORIGEM"].replace("", "SEM CADASTRO NO CRM")
 df_hist["ORIGEM"] = df_hist["ORIGEM"].fillna("SEM CADASTRO NO CRM")
-df_hist["CAMPANHA"] = df_hist["CAMPANHA"].fillna("-")
 
 # =========================================================
 # FILTROS
@@ -151,15 +161,15 @@ if modo == "DIA":
         "Período",
         value=(df_f["DATA"].min().date(), df_f["DATA"].max().date())
     )
-    df_f = df_f[(df_f["DATA"].dt.date >= ini) & (df_f["DATA"].dt.date <= fim)]
+    df_f = df_f[
+        (df_f["DATA"].dt.date >= ini) &
+        (df_f["DATA"].dt.date <= fim)
+    ]
 else:
     bases = sorted(df_f["DATA_BASE_LABEL"].dropna().unique(), key=parse_data_base)
     sel = st.sidebar.multiselect("Data Base", bases, default=bases)
     if sel:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
-
-if "CORRETOR" not in df_f.columns:
-    df_f["CORRETOR"] = ""
 
 equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique()))
 if equipe != "TODAS":
@@ -170,67 +180,75 @@ if corretor != "TODOS":
     df_f = df_f[df_f["CORRETOR"] == corretor]
 
 # =========================================================
-# STATUS ATUAL
+# KPI – EVENTO REAL
 # =========================================================
-st.subheader("📌 Status Atual do Funil")
-
-df_atual = df_f.sort_values("DATA").groupby("CLIENTE", as_index=False).last()
-kpi = df_atual["STATUS_BASE"].value_counts()
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Em Análise", int(kpi.get("ANALISE", 0)))
-c2.metric("Reanálise", int(kpi.get("REANALISE", 0)))
-c3.metric("Pendência", int(kpi.get("PENDENCIA", 0)))
-c4.metric("Reprovado", int(kpi.get("REPROVADO", 0)))
-
-c5, c6, c7, c8 = st.columns(4)
-c5.metric("Aprovado", int(kpi.get("APROVADO", 0)))
-c6.metric("Aprovado Bacen", int(kpi.get("APROVADO_BACEN", 0)))
-c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
-c8.metric("Leads no Funil", len(df_atual))
-
-# =========================================================
-# PERFORMANCE POR ORIGEM
-# =========================================================
-st.subheader("📈 Performance e Conversão por Origem")
-
-origem = st.selectbox("Origem", ["TODAS"] + sorted(df_f["ORIGEM"].unique()))
-df_o = df_f if origem == "TODAS" else df_f[df_f["ORIGEM"] == origem]
-
-leads = df_o["CLIENTE"].nunique()
-analises = df_o[df_o["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
-aprovados = df_o[df_o["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique()
-vendas = df_o[df_o["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique()
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Leads", leads)
-c2.metric("Análises", analises)
-c3.metric("Aprovados", aprovados)
-c4.metric("Vendas", vendas)
-
-c5, c6, c7, c8 = st.columns(4)
-c5.metric("Lead → Análise", f"{(analises/leads*100 if leads else 0):.1f}%")
-c6.metric("Análise → Aprovação", f"{(aprovados/analises*100 if analises else 0):.1f}%")
-c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}%")
-c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
-
-# =========================================================
-# TABELA (RESPEITA ORIGEM)
-# =========================================================
-st.divider()
-st.subheader("📋 Leads")
-
-df_tabela = (
-    df_o
-    .sort_values("DATA")
-    .groupby("CLIENTE", as_index=False)
-    .last()
+kpi = st.radio(
+    "Selecione o KPI",
+    [
+        "ANÁLISES",
+        "APROVADO",
+        "APROVADO BACEN",
+        "VENDA GERADA",
+        "VENDAS (GERADA + INFORMADA)"
+    ],
+    horizontal=True
 )
 
-tabela = df_tabela[
-    ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]
-].sort_values("DATA", ascending=False)
+if kpi == "ANÁLISES":
+    status_kpi = ["ANALISE"]   # 🔥 SEM REANÁLISE
+elif kpi == "APROVADO":
+    status_kpi = ["APROVADO"]
+elif kpi == "APROVADO BACEN":
+    status_kpi = ["APROVADO_BACEN"]
+elif kpi == "VENDA GERADA":
+    status_kpi = ["VENDA_GERADA"]
+else:
+    status_kpi = ["VENDA_GERADA", "VENDA_INFORMADA"]
 
-tabela.rename(columns={"DATA": "ULTIMA_ATUALIZACAO"}, inplace=True)
+df_kpi = df_f[df_f["STATUS_BASE"].isin(status_kpi)]
+total_kpi = len(df_kpi)
+
+st.subheader(f"🎯 {kpi} por Origem — Total: {total_kpi}")
+
+if total_kpi == 0:
+    st.warning("Nenhum registro para o KPI selecionado.")
+    st.stop()
+
+# =========================================================
+# CARDS POR ORIGEM
+# =========================================================
+dist = (
+    df_kpi
+    .groupby("ORIGEM")
+    .size()
+    .reset_index(name="QTDE")
+    .sort_values("QTDE", ascending=False)
+)
+
+dist["PERC"] = (dist["QTDE"] / total_kpi * 100).round(1)
+
+cols = st.columns(4)
+i = 0
+for _, row in dist.iterrows():
+    with cols[i]:
+        st.metric(
+            label=row["ORIGEM"],
+            value=int(row["QTDE"]),
+            delta=f'{row["PERC"]}%'
+        )
+    i += 1
+    if i == 4:
+        cols = st.columns(4)
+        i = 0
+
+# =========================================================
+# TABELA DETALHADA
+# =========================================================
+st.divider()
+st.subheader("📋 Eventos do KPI Selecionado")
+
+tabela = df_kpi[
+    ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "STATUS_BASE", "DATA"]
+].sort_values("DATA", ascending=False)
 
 st.dataframe(tabela, use_container_width=True)
