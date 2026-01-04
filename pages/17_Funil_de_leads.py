@@ -122,23 +122,56 @@ def carregar_crm():
     url = "https://api.supremocrm.com.br/v1/leads"
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
-    dados, pagina = [], 1
-    while len(dados) < 1000:
-        r = requests.get(url, headers=headers, params={"pagina": pagina}, timeout=20)
-        if r.status_code != 200:
-            break
-        js = r.json()
-        if not js.get("data"):
-            break
-        dados.extend(js["data"])
-        pagina += 1
+    dados = []
+    pagina = 1
+    LIMITE_LEADS = 300  # 🔒 limite seguro
+
+    try:
+        while len(dados) < LIMITE_LEADS:
+            r = requests.get(
+                url,
+                headers=headers,
+                params={"pagina": pagina},
+                timeout=30  # timeout mais seguro
+            )
+
+            if r.status_code != 200:
+                break
+
+            js = r.json()
+            if not js.get("data"):
+                break
+
+            dados.extend(js["data"])
+            pagina += 1
+
+    except requests.exceptions.RequestException as e:
+        # ⚠️ Falha no CRM não quebra o dashboard
+        st.warning("⚠️ Não foi possível carregar dados do CRM agora. Usando dados da planilha.")
+        return pd.DataFrame(columns=["CLIENTE", "ORIGEM_CRM"])
 
     if not dados:
         return pd.DataFrame(columns=["CLIENTE", "ORIGEM_CRM"])
 
+    # 🔽 corta exatamente no limite
+    dados = dados[:LIMITE_LEADS]
+
     df = pd.DataFrame(dados)
-    df["CLIENTE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
-    df["ORIGEM_CRM"] = df.get("nome_origem", "").fillna("").astype(str).str.upper().str.strip()
+
+    df["CLIENTE"] = (
+        df.get("nome_pessoa", "")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df["ORIGEM_CRM"] = (
+        df.get("nome_origem", "")
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
 
     return df[["CLIENTE", "ORIGEM_CRM"]]
 
