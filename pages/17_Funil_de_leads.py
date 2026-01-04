@@ -9,7 +9,7 @@ from datetime import date
 from utils.supremo_config import TOKEN_SUPREMO
 
 # =========================================================
-# BLOQUEIO DE LOGIN (IGUAL PÁGINA 03)
+# CONTROLE DE ACESSO (IGUAL PÁGINA 03)
 # =========================================================
 if "logado" not in st.session_state or not st.session_state.logado:
     st.warning("🔒 Acesso restrito. Faça login para continuar.")
@@ -20,7 +20,7 @@ if st.session_state.get("perfil") == "corretor":
     st.stop()
 
 # =========================================================
-# CONFIG DA PÁGINA
+# CONFIG
 # =========================================================
 st.set_page_config(
     page_title="Funil de Leads | MR Imóveis",
@@ -28,14 +28,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# =========================================================
-# TOPO – LOGO E TÍTULO
-# =========================================================
-try:
-    st.image("logo_mr.png", width=180)
-except Exception:
-    pass
-
+st.image("logo_mr.png", width=180)
 st.title("📊 FUNIL DE LEADS – Conversão por Origem")
 
 # =========================================================
@@ -115,26 +108,24 @@ def carregar_planilha():
     return df[df["STATUS_BASE"] != ""]
 
 # =========================================================
-# CARGA CRM – ORIGEM DO LEAD
+# CARGA CRM – ORIGEM (LIMITADO)
 # =========================================================
 @st.cache_data(ttl=1800)
 def carregar_crm():
     url = "https://api.supremocrm.com.br/v1/leads"
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
-    dados = []
-    pagina = 1
-    LIMITE_LEADS = 300  # 🔒 limite seguro
+    dados, pagina = [], 1
+    LIMITE = 300
 
     try:
-        while len(dados) < LIMITE_LEADS:
+        while len(dados) < LIMITE:
             r = requests.get(
                 url,
                 headers=headers,
                 params={"pagina": pagina},
-                timeout=30  # timeout mais seguro
+                timeout=30
             )
-
             if r.status_code != 200:
                 break
 
@@ -145,38 +136,20 @@ def carregar_crm():
             dados.extend(js["data"])
             pagina += 1
 
-    except requests.exceptions.RequestException as e:
-        # ⚠️ Falha no CRM não quebra o dashboard
-        st.warning("⚠️ Não foi possível carregar dados do CRM agora. Usando dados da planilha.")
+    except requests.exceptions.RequestException:
+        st.warning("⚠️ CRM indisponível no momento. Usando apenas dados da planilha.")
         return pd.DataFrame(columns=["CLIENTE", "ORIGEM_CRM"])
 
-    if not dados:
-        return pd.DataFrame(columns=["CLIENTE", "ORIGEM_CRM"])
-
-    # 🔽 corta exatamente no limite
-    dados = dados[:LIMITE_LEADS]
+    dados = dados[:LIMITE]
 
     df = pd.DataFrame(dados)
-
-    df["CLIENTE"] = (
-        df.get("nome_pessoa", "")
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
-
-    df["ORIGEM_CRM"] = (
-        df.get("nome_origem", "")
-        .fillna("")
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
+    df["CLIENTE"] = df.get("nome_pessoa", "").astype(str).str.upper().str.strip()
+    df["ORIGEM_CRM"] = df.get("nome_origem", "").fillna("").astype(str).str.upper().str.strip()
 
     return df[["CLIENTE", "ORIGEM_CRM"]]
 
 # =========================================================
-# DATASETS
+# DATASET FINAL
 # =========================================================
 df_hist = carregar_planilha()
 df_crm = carregar_crm()
@@ -196,6 +169,7 @@ df_hist["ORIGEM"] = df_hist["ORIGEM"].fillna("SEM CADASTRO NO CRM")
 # =========================================================
 st.sidebar.title("Filtros 🔎")
 
+# --- período
 modo = st.sidebar.radio("Modo de período", ["DIA", "DATA BASE"])
 df_f = df_hist.copy()
 
@@ -204,15 +178,26 @@ if modo == "DIA":
         "Período",
         value=(df_f["DATA"].min().date(), df_f["DATA"].max().date())
     )
-    df_f = df_f[
-        (df_f["DATA"].dt.date >= ini) &
-        (df_f["DATA"].dt.date <= fim)
-    ]
+    df_f = df_f[(df_f["DATA"].dt.date >= ini) & (df_f["DATA"].dt.date <= fim)]
 else:
     bases = sorted(df_f["DATA_BASE_LABEL"].dropna().unique(), key=parse_data_base)
     sel = st.sidebar.multiselect("Data Base", bases, default=bases)
     if sel:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
+
+# --- equipe
+equipes = sorted(df_f["EQUIPE"].dropna().unique())
+equipe_sel = st.sidebar.selectbox("Equipe", ["TODAS"] + equipes)
+
+if equipe_sel != "TODAS":
+    df_f = df_f[df_f["EQUIPE"] == equipe_sel]
+
+# --- corretor (dependente da equipe)
+corretores = sorted(df_f["CORRETOR"].dropna().unique())
+corretor_sel = st.sidebar.selectbox("Corretor", ["TODOS"] + corretores)
+
+if corretor_sel != "TODOS":
+    df_f = df_f[df_f["CORRETOR"] == corretor_sel]
 
 # =========================================================
 # KPI
@@ -230,7 +215,7 @@ kpi = st.radio(
 )
 
 if kpi == "ANÁLISES":
-    status_kpi = ["ANALISE"]   # 👈 sem reanálise
+    status_kpi = ["ANALISE"]
 elif kpi == "APROVADO":
     status_kpi = ["APROVADO"]
 elif kpi == "APROVADO BACEN":
@@ -241,36 +226,31 @@ else:
     status_kpi = ["VENDA_GERADA", "VENDA_INFORMADA"]
 
 df_kpi = df_f[df_f["STATUS_BASE"].isin(status_kpi)]
-total_kpi = len(df_kpi)
+total = len(df_kpi)
 
-st.subheader(f"🎯 {kpi} por Origem — Total: {total_kpi}")
+st.subheader(f"🎯 {kpi} por Origem — Total: {total}")
 
-if total_kpi == 0:
-    st.warning("Nenhum registro para o KPI selecionado.")
+if total == 0:
+    st.warning("Nenhum registro para os filtros selecionados.")
     st.stop()
 
 # =========================================================
 # CARDS
 # =========================================================
 dist = (
-    df_kpi
-    .groupby("ORIGEM")
+    df_kpi.groupby("ORIGEM")
     .size()
     .reset_index(name="QTDE")
     .sort_values("QTDE", ascending=False)
 )
 
-dist["PERC"] = (dist["QTDE"] / total_kpi * 100).round(1)
+dist["PERC"] = (dist["QTDE"] / total * 100).round(1)
 
 cols = st.columns(4)
 i = 0
 for _, row in dist.iterrows():
     with cols[i]:
-        st.metric(
-            label=row["ORIGEM"],
-            value=int(row["QTDE"]),
-            delta=f'{row["PERC"]}%'
-        )
+        st.metric(row["ORIGEM"], int(row["QTDE"]), f'{row["PERC"]}%')
     i += 1
     if i == 4:
         cols = st.columns(4)
@@ -282,8 +262,8 @@ for _, row in dist.iterrows():
 st.divider()
 st.subheader("📋 Eventos do KPI Selecionado")
 
-tabela = df_kpi[
-    ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "STATUS_BASE", "DATA"]
-].sort_values("DATA", ascending=False)
-
-st.dataframe(tabela, use_container_width=True)
+st.dataframe(
+    df_kpi[["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "STATUS_BASE", "DATA"]]
+    .sort_values("DATA", ascending=False),
+    use_container_width=True
+)
