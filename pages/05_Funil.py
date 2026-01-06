@@ -5,7 +5,7 @@ import altair as alt
 from datetime import date, timedelta
 
 from utils.bootstrap import iniciar_app
-from utils.data_loader import carregar_dados_planilha
+from app_dashboard import carregar_dados_planilha
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA (PRIMEIRA COISA DO ARQUIVO)
@@ -18,24 +18,11 @@ st.set_page_config(
 from streamlit_autorefresh import st_autorefresh
 
 st_autorefresh(interval=30 * 1000, key="auto_refresh_funil")
-# sinaliza refresh da planilha (para notificações)
-if "auto_refresh_funil" in st.session_state:
-    st.session_state["refresh_planilha"] = True
 
 # ---------------------------------------------------------
 # BOOTSTRAP (LOGIN + NOTIFICAÇÕES)
 # ---------------------------------------------------------
 iniciar_app()
-# ---------------------------------------------------------
-# CONTEXTO DO USUÁRIO (TRAVA DE DADOS POR PERFIL)
-# ---------------------------------------------------------
-perfil = st.session_state.get("perfil")
-
-nome_corretor_logado = (
-    st.session_state.get("nome_usuario", "")
-    .upper()
-    .strip()
-)
 
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES
@@ -216,10 +203,7 @@ def garantir_coluna_vgv(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------
 # CARREGAMENTO GERAL DA PLANILHA
 # ---------------------------------------------------------
-df_global = carregar_dados_planilha(
-    _refresh_key=st.session_state.get("refresh_planilha")
-)
-st.session_state.pop("refresh_planilha", None)
+df_global = carregar_dados_planilha()
 
 if df_global.empty:
     st.error("Erro ao carregar a planilha.")
@@ -363,14 +347,6 @@ visao = st.sidebar.radio(
 )
 
 df_painel = df_global.copy()
-# ---------------------------------------------------------
-# 🔒 TRAVA: CORRETOR VÊ APENAS OS PRÓPRIOS DADOS
-# ---------------------------------------------------------
-if perfil == "corretor" and "CORRETOR" in df_painel.columns:
-    df_painel = df_painel[
-        df_painel["CORRETOR"].astype(str).str.upper().str.strip()
-        == nome_corretor_logado
-    ]
 
 if tipo_periodo == "DIA" and data_ini and data_fim:
     df_painel = df_painel[(df_painel["DIA"].dt.date >= data_ini) & (df_painel["DIA"].dt.date <= data_fim)]
