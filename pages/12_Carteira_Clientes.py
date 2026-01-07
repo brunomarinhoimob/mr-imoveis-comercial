@@ -53,6 +53,8 @@ with col_title:
         "Corretores visualizam apenas seus próprios clientes."
     )
 
+
+
 # =========================================================
 # LOAD DATA (BLINDADO PARA DATA)
 # =========================================================
@@ -181,23 +183,27 @@ else:
 
     if corretor_sel != "Todos":
         df_visivel = df_visivel[df_visivel["CORRETOR"] == corretor_sel]
+# ---------------------------------------------------------
+# SELETOR DE PERÍODO (TOPO — FORMATO BR)
+# ---------------------------------------------------------
+st.markdown("---")
+col_periodo_esq, col_periodo_dir = st.columns([3, 2])
 
-# =========================================================
-# PERÍODO — SEMPRE BASEADO NA PLANILHA INTEIRA
-# =========================================================
-df_datas = df_visivel[df_visivel["DATA"].notna()]
+with col_periodo_dir:
+    df_datas = df_visivel[df_visivel["DATA"].notna()]
 
-dt_min = df_datas["DATA"].min().date()
-dt_max = df_datas["DATA"].max().date()
+    dt_min = df_datas["DATA"].min().date()
+    dt_max = df_datas["DATA"].max().date()
 
-inicio_default = max(dt_min, dt_max - timedelta(days=30))
+    inicio_default = max(dt_min, dt_max - timedelta(days=30))
 
-periodo = st.sidebar.date_input(
-    "Período:",
-    value=(inicio_default, dt_max),
-    min_value=dt_min,
-    max_value=dt_max
-)
+    periodo = st.date_input(
+        "📅 Período",
+        value=(inicio_default, dt_max),
+        min_value=dt_min,
+        max_value=dt_max,
+        format="DD/MM/YYYY"
+    )
 
 dt_ini, dt_fim = periodo
 
