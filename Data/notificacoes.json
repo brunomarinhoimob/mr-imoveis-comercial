@@ -4751,6 +4751,14 @@
       "tipo": "NOVO_CLIENTE",
       "timestamp": "2026-01-08T10:27:55",
       "lido": false
+    },
+    {
+      "id": "167ecda0-1eed-4e90-99e0-e27b3e002324",
+      "cliente": "ANTONIO MARCOS COSTA ARRUDA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-08T11:30:51",
+      "lido": false
     }
   ],
   "MARCIA MATOS": [

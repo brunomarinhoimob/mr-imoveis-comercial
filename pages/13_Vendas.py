@@ -573,17 +573,6 @@ with c5:
 with c6:
     st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
 
-c7, c8 = st.columns(2)
-with c7:
-    st.metric(
-        "Leads (CRM) no período",
-        "-" if total_leads_periodo is None else total_leads_periodo,
-    )
-with c8:
-    st.metric(
-        "Leads por venda (CRM)",
-        "-" if leads_por_venda is None else f"{leads_por_venda:.1f}",
-    )
 
 c9, c10, c11 = st.columns(3)
 with c9:
