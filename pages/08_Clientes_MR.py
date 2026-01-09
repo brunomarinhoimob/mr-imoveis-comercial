@@ -200,6 +200,10 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
     st.write(f"**Corretor:** `{ultima['CORRETOR']}`")
     st.write(f"**Construtora:** `{ultima['CONSTRUTORA'] or 'NÃO INFORMADO'}`")
     st.write(f"**Empreendimento:** `{ultima['EMPREENDIMENTO'] or 'NÃO INFORMADO'}`")
+    valor_renda = ultima.get("VALOR DA RENDA")
+
+if pd.notna(valor_renda) and str(valor_renda).strip() != "":
+    st.write(f"**Renda declarada:** `R$ {valor_renda}`")
 
     obs_final = formatar_observacao(ultima)
     if obs_final:
