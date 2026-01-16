@@ -630,8 +630,14 @@ with colH7:
 # Para não duplicar conteúdo no chat, você já está colando o arquivo inteiro.
 # ---------------------------------------------------------
 # ---------------------------------------------------------
-    # 🔥 PAINEL 3 — PLANEJAMENTO (META)
     # ---------------------------------------------------------
+# 🔥 PAINEL 3 — PLANEJAMENTO (META)
+# ---------------------------------------------------------
+st.markdown("---")
+
+colP_left, colP_center, colP_right = st.columns([1, 3, 1])
+
+with colP_center:
     st.markdown("## 🎯 Planejamento com Base nas 3 Últimas Data Base")
 
     # Meta sugerida = vendas_3m / 3 bases
@@ -651,17 +657,18 @@ with colH7:
         analises_necessarias = 0
         aprovacoes_necessarias = 0
 
-    colP1, colP2, colP3 = st.columns(3)
-    with colP1:
+    colM1, colM2, colM3 = st.columns(3)
+    with colM1:
         st.metric("Meta de Vendas (GERADAS)", meta_vendas)
-    with colP2:
+    with colM2:
         st.metric("Análises Necessárias", analises_necessarias)
-    with colP3:
+    with colM3:
         st.metric("Aprovações Necessárias", aprovacoes_necessarias)
 
-    st.caption("Cálculos baseados nas 3 últimas data base ANTERIORES à base atual, considerando apenas VENDA GERADA.")
-
-    st.markdown("---")
+    st.caption(
+        "Cálculos baseados nas 3 últimas data base ANTERIORES à base atual, "
+        "considerando apenas VENDA GERADA."
+    )
 
 # ---------------------------------------------------------
 # 🔥 META X REAL (GRÁFICO ACUMULADO)
