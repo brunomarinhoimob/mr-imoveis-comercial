@@ -12824,6 +12824,14 @@
       "tipo": "NOVO_CLIENTE",
       "timestamp": "2026-03-19T10:50:36",
       "lido": false
+    },
+    {
+      "id": "49dac769-90d4-4c14-af2c-40e5b5ca18a2",
+      "cliente": "REBECA MONTEIRO LIRA",
+      "status": "APROVADO",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-03-19T11:07:13",
+      "lido": false
     }
   ]
 }

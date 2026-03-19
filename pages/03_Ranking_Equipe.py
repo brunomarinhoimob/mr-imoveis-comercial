@@ -1,57 +1,39 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import altair as alt
 from datetime import timedelta, datetime
+
 if "logado" not in st.session_state or not st.session_state.logado:
     st.warning("🔒 Acesso restrito. Faça login para continuar.")
     st.stop()
-# ---------------------------------------------------------
-# BLOQUEIO DE PERFIL CORRETOR
-# ---------------------------------------------------------
-if st.session_state.get("perfil") == "corretor":
-    st.warning("🔒 Você não tem permissão para acessar esta página.")
-    st.stop()
 
-# ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA
-# ---------------------------------------------------------
 st.set_page_config(
-    page_title="Ranking por Equipe – MR Imóveis",
-    page_icon="👥",
+    page_title="Ranking de Corretores – Kratos",
+    page_icon="🏆",
     layout="wide",
 )
 
-# Logo MR Imóveis na lateral
 try:
-    st.sidebar.image("logo_mr.png", use_container_width=True)
+    st.sidebar.image("logo_kratos.png", use_container_width=True)
 except Exception:
     pass
 
-st.title("👥 Ranking por Equipe – MR Imóveis")
+st.title("🏆 Ranking de Análises por Corretor")
 
-# ---------------------------------------------------------
-# CONFIG: LINK DA PLANILHA
-# ---------------------------------------------------------
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_ANALISES = "1574157905"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
 
-# ---------------------------------------------------------
-# FUNÇÕES AUXILIARES
-# ---------------------------------------------------------
+
 def limpar_para_data(serie: pd.Series) -> pd.Series:
     dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
     return dt.dt.date
 
 
 def mes_ano_ptbr_para_date(valor: str):
-    """
-    Converte textos tipo 'novembro 2025' em date(2025, 11, 1).
-    Se não conseguir, retorna NaT.
-    """
     if pd.isna(valor):
         return pd.NaT
+
     s = str(valor).strip().lower()
     if not s:
         return pd.NaT
@@ -72,8 +54,8 @@ def mes_ano_ptbr_para_date(valor: str):
         "dezembro": 12,
     }
 
-    partes = s.split()
     try:
+        partes = s.split()
         mes_txt = partes[0]
         ano = int(partes[-1])
         mes_num = meses.get(mes_txt)
@@ -88,7 +70,6 @@ def carregar_dados() -> pd.DataFrame:
     df = pd.read_csv(CSV_URL)
     df.columns = [c.strip().upper() for c in df.columns]
 
-    # DATA / DIA
     if "DATA" in df.columns:
         df["DIA"] = limpar_para_data(df["DATA"])
     elif "DIA" in df.columns:
@@ -96,7 +77,6 @@ def carregar_dados() -> pd.DataFrame:
     else:
         df["DIA"] = pd.NaT
 
-    # DATA BASE (MÊS COMERCIAL) - TEXTO IGUAL À PLANILHA + REFERÊNCIA DE DATA
     possiveis_cols_base = [
         "DATA BASE",
         "DATA_BASE",
@@ -109,38 +89,31 @@ def carregar_dados() -> pd.DataFrame:
 
     if col_data_base:
         base_raw = df[col_data_base].astype(str).str.strip()
-        # Label exatamente como na planilha (apenas capitalização)
         df["DATA_BASE_LABEL"] = base_raw.str.lower().str.title()
-        # Converte "novembro 2025" -> 2025-11-01 para ordenar/filtrar
         df["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
 
-        # Se não conseguir converter nenhum, cai para DIA
         if df["DATA_BASE"].dropna().empty:
             df["DATA_BASE"] = df["DIA"]
             df["DATA_BASE_LABEL"] = df["DIA"].apply(
                 lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
             )
     else:
-        # Sem coluna de data base: usa DIA como base
         df["DATA_BASE"] = df["DIA"]
         df["DATA_BASE_LABEL"] = df["DIA"].apply(
             lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
         )
 
-    # EQUIPE / CORRETOR
-    for col in ["EQUIPE", "CORRETOR"]:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .fillna("NÃO INFORMADO")
-                .astype(str)
-                .str.upper()
-                .str.strip()
-            )
-        else:
-            df[col] = "NÃO INFORMADO"
+    if "CORRETOR" in df.columns:
+        df["CORRETOR"] = (
+            df["CORRETOR"]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+    else:
+        df["CORRETOR"] = "NÃO INFORMADO"
 
-    # STATUS_BASE
     possiveis_cols_situacao = [
         "SITUAÇÃO",
         "SITUAÇÃO ATUAL",
@@ -155,64 +128,10 @@ def carregar_dados() -> pd.DataFrame:
         s = df[col_situacao].fillna("").astype(str).str.upper()
         df.loc[s.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
         df.loc[s.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
-        df.loc[s.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
-        df.loc[s.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
-        df.loc[s.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
-        df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
-        # 👇 NOVO – tudo que tiver "DESIST" vira DESISTIU
-        df.loc[s.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
-
-    # VGV
-    if "OBSERVAÇÕES" in df.columns:
-        df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0)
-    else:
-        df["VGV"] = 0.0
-
-    # NOME / CPF BASE
-    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
-    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
-
-    col_nome = next((c for c in possiveis_nome if c in df.columns), None)
-    col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
-
-    if col_nome is None:
-        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
-    else:
-        df["NOME_CLIENTE_BASE"] = (
-            df[col_nome]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-
-    if col_cpf is None:
-        df["CPF_CLIENTE_BASE"] = ""
-    else:
-        df["CPF_CLIENTE_BASE"] = (
-            df[col_cpf]
-            .fillna("")
-            .astype(str)
-            .str.replace(r"\D", "", regex=True)
-        )
-
-    # 👇 NOVO – CHAVE_CLIENTE global (nome + CPF)
-    df["CHAVE_CLIENTE"] = (
-        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
-        + " | "
-        + df["CPF_CLIENTE_BASE"].fillna("")
-    )
 
     return df
 
 
-def formata_moeda(v: float) -> str:
-    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-# ---------------------------------------------------------
-# CARREGAR BASE
-# ---------------------------------------------------------
 df = carregar_dados()
 
 if df.empty:
@@ -220,24 +139,11 @@ if df.empty:
     st.stop()
 
 dias_validos = df["DIA"].dropna()
-bases_validas = df["DATA_BASE"].dropna()
 
-if dias_validos.empty and bases_validas.empty:
+if dias_validos.empty:
     st.error("Não foi possível identificar datas válidas na planilha.")
     st.stop()
 
-# ---------------------------------------------------------
-# NOVO – STATUS FINAL DO CLIENTE (HISTÓRICO COMPLETO)
-# ---------------------------------------------------------
-df_ordenado_global = df.sort_values("DIA")
-status_final_por_cliente = (
-    df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
-)
-status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
-
-# ---------------------------------------------------------
-# SIDEBAR – FILTRO DE PERÍODO + TIPO DE VENDA
-# ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
 
 modo_periodo = st.sidebar.radio(
@@ -295,31 +201,15 @@ else:
     if not bases_selecionadas:
         bases_selecionadas = opcoes
 
-# MESMA LÓGICA DO RANKING POR CORRETOR: filtro de tipo de venda
-opcao_venda = st.sidebar.radio(
-    "Tipo de venda para o ranking",
-    ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
-    index=0,
-)
-
-if opcao_venda == "Só VENDA GERADA":
-    status_venda_considerado = ["VENDA GERADA"]
-    desc_venda = "apenas VENDA GERADA"
-else:
-    status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
-    desc_venda = "VENDA GERADA + VENDA INFORMADA"
-
-# ---------------------------------------------------------
-# FILTRAGEM PRINCIPAL (PERÍODO)
-# ---------------------------------------------------------
 if tipo_periodo == "DIA":
     df_ref = df[
+        (df["DIA"].notna()) &
         (df["DIA"] >= data_ini) &
         (df["DIA"] <= data_fim)
     ].copy()
 else:
     df_ref = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
-    # calcula intervalo real de dias desse(s) meses para exibir
+
     dias_sel = df_ref["DIA"].dropna()
     if not dias_sel.empty:
         data_ini = dias_sel.min()
@@ -330,7 +220,6 @@ else:
 
 registros_ref = len(df_ref)
 
-# Texto do período para caption
 if tipo_periodo == "DIA":
     periodo_str = f"{data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
 else:
@@ -341,110 +230,33 @@ else:
 
 st.caption(
     f"Período: {periodo_str} • "
-    f"Registros considerados: {registros_ref} • "
-    f"Vendas consideradas no ranking: {desc_venda}"
+    f"Registros considerados: {registros_ref}"
 )
 
 if df_ref.empty:
     st.warning("Sem registros para os filtros selecionados.")
     st.stop()
 
-# ---------------------------------------------------------
-# CÁLCULOS DE RANKING POR EQUIPE
-# ---------------------------------------------------------
+df_analises = df_ref[df_ref["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"])].copy()
 
-# Análises = EM ANÁLISE + REANÁLISE
-df_analises = df_ref[df_ref["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"])]
-analises_por_eq = df_analises.groupby("EQUIPE").size().rename("ANALISES")
-
-# Aprovações
-df_aprov = df_ref[df_ref["STATUS_BASE"] == "APROVADO"]
-aprov_por_eq = df_aprov.groupby("EQUIPE").size().rename("APROVACOES")
-
-# ---------------------------------------------------------
-# Vendas (1 por cliente) + VGV – COM REGRA DO DESISTIU
-# ---------------------------------------------------------
-df_vendas = df_ref[df_ref["STATUS_BASE"].isin(status_venda_considerado)].copy()
-
-if not df_vendas.empty:
-    # garante CHAVE_CLIENTE
-    if "CHAVE_CLIENTE" not in df_vendas.columns:
-        df_vendas["CHAVE_CLIENTE"] = (
-            df_vendas["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
-            + " | "
-            + df_vendas["CPF_CLIENTE_BASE"].fillna("")
-        )
-
-    # junta STATUS_FINAL_CLIENTE do histórico completo
-    df_vendas = df_vendas.merge(
-        status_final_por_cliente,
-        on="CHAVE_CLIENTE",
-        how="left",
-    )
-
-    # remove clientes cujo último status global é DESISTIU
-    df_vendas = df_vendas[df_vendas["STATUS_FINAL_CLIENTE"] != "DESISTIU"]
-
-    if not df_vendas.empty:
-        df_vendas = df_vendas.sort_values("DIA")
-        # 1 registro por cliente (último do período)
-        df_vendas_ult = df_vendas.groupby("CHAVE_CLIENTE").tail(1)
-    else:
-        df_vendas_ult = pd.DataFrame()
-else:
-    df_vendas_ult = pd.DataFrame()
-
-vendas_por_eq = (
-    df_vendas_ult.groupby("EQUIPE").size().rename("VENDAS")
-    if not df_vendas_ult.empty
-    else pd.Series(dtype=int, name="VENDAS")
-)
-
-vgv_por_eq = (
-    df_vendas_ult.groupby("EQUIPE")["VGV"].sum().rename("VGV")
-    if not df_vendas_ult.empty
-    else pd.Series(dtype=float, name="VGV")
-)
-
-# Junta tudo
 ranking = (
-    pd.concat(
-        [analises_por_eq, aprov_por_eq, vendas_por_eq, vgv_por_eq],
-        axis=1,
-    )
-    .fillna(0)
+    df_analises.groupby("CORRETOR")
+    .size()
+    .rename("ANALISES")
     .reset_index()
 )
 
 if ranking.empty:
-    st.warning("Não há dados suficientes para montar o ranking.")
+    st.warning("Não há análises no período selecionado.")
     st.stop()
 
-# Tipos
 ranking["ANALISES"] = ranking["ANALISES"].astype(int)
-ranking["APROVACOES"] = ranking["APROVACOES"].astype(int)
-ranking["VENDAS"] = ranking["VENDAS"].astype(int)
-ranking["VGV"] = ranking["VGV"].astype(float)
 
-# Taxas
-ranking["TAXA_APROV_ANALISES"] = np.where(
-    ranking["ANALISES"] > 0,
-    ranking["APROVACOES"] / ranking["ANALISES"] * 100,
-    0.0,
-)
-ranking["TAXA_VENDAS_ANALISES"] = np.where(
-    ranking["ANALISES"] > 0,
-    ranking["VENDAS"] / ranking["ANALISES"] * 100,
-    0.0,
-)
-
-# Ordenação: VGV, VENDAS, APROVACOES, ANALISES
 ranking = ranking.sort_values(
-    by=["VGV", "VENDAS", "APROVACOES", "ANALISES"],
-    ascending=[False, False, False, False],
+    by=["ANALISES", "CORRETOR"],
+    ascending=[False, True],
 ).reset_index(drop=True)
 
-# Posições com medalha
 posicoes = []
 for i in range(len(ranking)):
     pos = i + 1
@@ -459,61 +271,30 @@ for i in range(len(ranking)):
 
 ranking["POSICAO"] = posicoes
 
-# ---------------------------------------------------------
-# FORMATAÇÃO TABELA
-# ---------------------------------------------------------
-ranking["VGV_FMT"] = ranking["VGV"].apply(formata_moeda)
-ranking["TAXA_APROV_ANALISES_FMT"] = ranking["TAXA_APROV_ANALISES"].map(lambda v: f"{v:.1f}%")
-ranking["TAXA_VENDAS_ANALISES_FMT"] = ranking["TAXA_VENDAS_ANALISES"].map(lambda v: f"{v:.1f}%")
-
 ranking_exibe = ranking[
-    [
-        "POSICAO",
-        "EQUIPE",
-        "VGV_FMT",
-        "VENDAS",
-        "ANALISES",
-        "APROVACOES",
-        "TAXA_APROV_ANALISES_FMT",
-        "TAXA_VENDAS_ANALISES_FMT",
-    ]
+    ["POSICAO", "CORRETOR", "ANALISES"]
 ].rename(
     columns={
         "POSICAO": "POSIÇÃO",
-        "EQUIPE": "EQUIPE",
-        "VGV_FMT": "VGV",
-        "VENDAS": "VENDAS",
+        "CORRETOR": "CORRETOR",
         "ANALISES": "ANÁLISES",
-        "APROVACOES": "APROVAÇÕES",
-        "TAXA_APROV_ANALISES_FMT": "TAXA_APROV_ANALISES",
-        "TAXA_VENDAS_ANALISES_FMT": "TAXA_VENDAS_ANALISES",
     }
 )
 
-st.markdown("### 📊 Tabela detalhada do ranking por equipe")
+st.markdown("### 📊 Ranking de análises por corretor")
 st.dataframe(ranking_exibe, use_container_width=True, hide_index=True)
 
-# ---------------------------------------------------------
-# GRÁFICO – VGV POR EQUIPE
-# ---------------------------------------------------------
-st.markdown("### 💰 VGV por equipe")
-
-chart_data = ranking.copy()
+st.markdown("### 📈 Análises por corretor")
 
 chart = (
-    alt.Chart(chart_data)
+    alt.Chart(ranking)
     .mark_bar()
     .encode(
-        x=alt.X("EQUIPE:N", sort="-y", title="Equipe"),
-        y=alt.Y("VGV:Q", title="VGV"),
+        x=alt.X("CORRETOR:N", sort="-y", title="Corretor"),
+        y=alt.Y("ANALISES:Q", title="Análises"),
         tooltip=[
-            alt.Tooltip("EQUIPE:N", title="Equipe"),
-            alt.Tooltip("VGV:Q", title="VGV", format=",.2f"),
-            alt.Tooltip("VENDAS:Q", title="Vendas"),
+            alt.Tooltip("CORRETOR:N", title="Corretor"),
             alt.Tooltip("ANALISES:Q", title="Análises"),
-            alt.Tooltip("APROVACOES:Q", title="Aprovações"),
-            alt.Tooltip("TAXA_APROV_ANALISES:Q", title="% Aprov./Análises", format=".1f"),
-            alt.Tooltip("TAXA_VENDAS_ANALISES:Q", title="% Vendas/Análises", format=".1f"),
         ],
     )
     .properties(height=450)
@@ -523,8 +304,8 @@ st.altair_chart(chart, use_container_width=True)
 
 st.markdown(
     "<hr><p style='text-align:center;color:#666;'>"
-    "Ranking por equipe baseado em análises, aprovações, vendas (1 por cliente) e VGV, "
-    "já considerando que clientes com último status DESISTIU têm suas vendas anuladas."
+    "Ranking por corretor baseado somente na quantidade de análises "
+    "(EM ANÁLISE + REANÁLISE) dentro do período selecionado."
     "</p>",
     unsafe_allow_html=True,
 )
