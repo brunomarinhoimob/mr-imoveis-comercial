@@ -561,6 +561,32 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "e4ac0aea-f97c-448b-9d06-fe0da68ec99f",
+      "cliente": "MARIA SILVANIR ALMEIDA PEREIRA",
+      "de": "",
+      "para": "APROVADO",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "abea3d9e-70a0-47c6-b2ab-eeb68734c06a",
+      "cliente": "MARIA EDUARDA RIBEIRO GOMES DA SILVA",
+      "de": "EM ANÁLISE",
+      "para": "APROVADO",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "2900f544-67cc-4789-8e12-a49d1ad84f97",
+      "cliente": "JOSE DALMIR ALVES SOUSA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "DEIVIANE": [
@@ -2197,6 +2223,56 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "c7542c2c-3ec3-4ea0-b564-6d8ec818a7dc",
+      "cliente": "JOAO VIDAL DE ALMEIDA",
+      "de": "EM ANÁLISE",
+      "para": "REPROVADO",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "11e13055-774f-485e-a8ee-7eb928a3ae99",
+      "cliente": "ROBERTO SILVA REINALDO",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-17T13:07:55",
+      "lido": false
+    },
+    {
+      "id": "ec6bb026-1ef0-4d62-b3e2-4b00aecce1a1",
+      "cliente": "JAMILLY FARIAS RODRIGUES",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "baf529f7-2170-402e-abc1-375ba72dd3bd",
+      "cliente": "ROBERTO SILVA REINALDO",
+      "de": "EM ANÁLISE",
+      "para": "",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "08b32e77-9f8f-488c-a0eb-9abee0e38279",
+      "cliente": "JOAO VITOR FERREIRA DA SILVA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "665cb94b-8974-42a0-be85-9d1e59ba7a03",
+      "cliente": "JOAO PAULO DE SOUZA FREITAS",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "MARIA DE FATIMA": [
@@ -3020,6 +3096,14 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "70d2b653-0974-42c9-95b5-9c91849d8486",
+      "cliente": "CLEIA SOUSA DE OLIVEIRA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "IVAN JUNIOR": [
@@ -3506,6 +3590,65 @@
       "para": "",
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
+      "lido": false
+    },
+    {
+      "id": "9ecb4a4d-c51c-4953-a5aa-85a52d73d0d1",
+      "cliente": "JOAO VICTOR DE FREITAS NUNES DA SILVA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "c857a42a-c085-4dc4-bb8e-41a400193335",
+      "cliente": "ARTENIO ROCHA PEREIRA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-17T13:07:55",
+      "lido": false
+    },
+    {
+      "id": "d7428604-8fb5-4c33-a4f3-b1fdb4c8688a",
+      "cliente": "RAFAEL RAMOS BRAGA",
+      "de": "APROVADO",
+      "para": "VENDA GERADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T15:36:08",
+      "lido": false
+    },
+    {
+      "id": "c381956e-4b46-4f0e-be59-49169a49a67a",
+      "cliente": "ARTENIO ROCHA PEREIRA",
+      "de": "EM ANÁLISE",
+      "para": "APROVADO",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "ebc836ec-2f87-4a0e-bf64-cf35ea39eb95",
+      "cliente": "MANOEL MARCIO DAMASCENO",
+      "de": "EM ANÁLISE",
+      "para": "",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "3da5e3ae-c839-4041-a8f2-daaa52fdae5a",
+      "cliente": "JANAINA MAIARA NOGUEIRA DA SILVA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "35118891-1b29-4ceb-a2ec-05ddd63f90bd",
+      "cliente": "ERDSON DA SILVA RABELO",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
       "lido": false
     }
   ],
@@ -4387,6 +4530,31 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "ad9875e1-9515-4a73-b45f-5d12dea34a0e",
+      "cliente": "JOAO PAULO DA SILVA LIMA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "b63bcd74-3c8d-4356-a410-cb79dc665040",
+      "cliente": "JOANA DARC RODRIGUES DE SOUZA",
+      "de": "",
+      "para": "EM ANÁLISE",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "dfa4358f-4d3f-44e5-8d6e-23e08f744e76",
+      "cliente": "ALAN FABIO BERNARDO GOMES",
+      "status": "APROVADO",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "PALOMA": [
@@ -4846,6 +5014,22 @@
       "para": "",
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
+      "lido": false
+    },
+    {
+      "id": "fec15e26-a888-4500-b259-ff0536f1cb00",
+      "cliente": "FRANCISCA GLEICIANE DA CRUZ MOTA",
+      "status": "",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "ab392bf1-7406-4820-a00d-88a0a4cba9b1",
+      "cliente": "JOANNA HILDA FERNANDES SOARES",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
       "lido": false
     }
   ],
@@ -5667,6 +5851,31 @@
       "para": "",
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
+      "lido": false
+    },
+    {
+      "id": "97c5e521-dcf2-4de5-958e-e95a1de058ba",
+      "cliente": "ANTONIA JULIA ABREU BARBOSA",
+      "de": "EM ANÁLISE",
+      "para": "VENDA GERADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T15:36:08",
+      "lido": false
+    },
+    {
+      "id": "f029a5fc-0c81-468a-92e0-d06c89c2be34",
+      "cliente": "CARLOS AUGUSTO FRANCO E SILVA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "a0196ba1-6b0f-4307-a250-b4850edc8e90",
+      "cliente": "FRANCISCO VITOR DE OLIVEIRA VAZ",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
       "lido": false
     }
   ],
@@ -6528,6 +6737,30 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "99f12ef1-dcc2-49b9-a5f7-e536cec62403",
+      "cliente": "MANUEL FERREIRA XAVIER NETO",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "b9df8f6e-3f36-49ec-bca9-75f9c1a46c44",
+      "cliente": "MARIA ALDENOURA SILVA",
+      "status": "VENDA INFORMADA",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "48a01a43-4d10-4444-819d-d59e4183ac4d",
+      "cliente": "ROBERTO MOURA DE LIMA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "FRANCISCO CELBER": [
@@ -6880,6 +7113,31 @@
       "para": "",
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
+      "lido": false
+    },
+    {
+      "id": "19f82fc7-6317-49d7-8b79-59b1b3cb69d2",
+      "cliente": "VISTAL DEL SOL",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "8d8be0a1-edb6-420c-bab8-4227efbc4ef2",
+      "cliente": "GEIZIELA MARIA LIMA DA SILVA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "e634a68b-9fed-4fa4-b514-100162980248",
+      "cliente": "JULIANE DA SILVA DE SOUZA",
+      "de": "APROVADO",
+      "para": "VENDA INFORMADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
       "lido": false
     }
   ],
@@ -7427,6 +7685,66 @@
       "para": "",
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
+      "lido": false
+    },
+    {
+      "id": "ba58a5ea-a5e4-4c9f-b410-f331723ab448",
+      "cliente": "JOSE ADRIANO DE SOUSA TEMOTEO",
+      "de": "",
+      "para": "REANÁLISE",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "845f3599-2880-4ed1-906b-2f7e446f4f2b",
+      "cliente": "GERSILANE LIMA LEAL COSTA",
+      "de": "EM ANÁLISE",
+      "para": "REANÁLISE",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "7e22185d-0c49-492d-ba64-c5c5b01b3d4b",
+      "cliente": "FRANCISCA LIDUINA LIBANIO CAMILO",
+      "status": "",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "17f4741e-6d07-4404-b4a8-d9b03b808822",
+      "cliente": "GERDEAN ALVES DE LIMA",
+      "de": "APROVADO",
+      "para": "VENDA GERADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T15:36:08",
+      "lido": false
+    },
+    {
+      "id": "87bc8ef0-6f5f-4c90-8e0c-b72c331f8f09",
+      "cliente": "NARCELIO TAVARES DA COSTA",
+      "status": "",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "f70279a2-4e43-4b26-ae14-f02ed5b46a2e",
+      "cliente": "EVERSON DOS SANTOS COELHO",
+      "de": "EM ANÁLISE",
+      "para": "",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "de8576bb-5a96-4368-a4b5-5d6f45d5fb12",
+      "cliente": "FRANCISCA NATALIA DA SILVA",
+      "status": "APROVADO",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
       "lido": false
     }
   ],
@@ -8343,6 +8661,47 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "efe2e715-ca5a-43d9-b120-7394c729049a",
+      "cliente": "ANTONIO ALAN DA SILVA MACARIO",
+      "de": "EM ANÁLISE",
+      "para": "APROVADO",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "6fc71465-4416-4cbb-a544-247ddc2f629a",
+      "cliente": "THALYTA LAYANE DA SILVA PEREIRA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "3e51a6da-6cb7-43ff-a6f8-910d31af76d6",
+      "cliente": "MANOEL MARTINS DE HOLANDA NETO",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "440b7c5e-12c1-4856-aa3c-58fb111671f6",
+      "cliente": "RAFAEL COSTA CONDE MENDES",
+      "status": "APROVADO",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "7efe560e-9454-4534-a32a-fbd7ff93c99c",
+      "cliente": "EVERTON FERREIRA DE ALMEIDA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "CLARA BRAGA": [
@@ -8791,6 +9150,76 @@
       "para": "",
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
+      "lido": false
+    },
+    {
+      "id": "688433bb-3b25-4200-82ed-211b9b3a22ad",
+      "cliente": "PEDRO HENRIQUE BESSA FEITOSA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "d1ed207d-a030-425f-b10f-80389575d560",
+      "cliente": "FRANCISCO MAURO PEREIRA DA COSTA",
+      "de": "EM ANÁLISE",
+      "para": "REPROVADO",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "ae52e13c-b867-4386-b977-8fdb6844d303",
+      "cliente": "ERBISSON DE SOUSA SILVA",
+      "de": "APROVADO",
+      "para": "VENDA GERADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T15:36:08",
+      "lido": false
+    },
+    {
+      "id": "a0a47b5b-f5dd-4f57-99d3-f1dcc917d854",
+      "cliente": "GILIARDE PINHEIRO DA SILVA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "4663ecfe-1b08-4328-857d-3f6412f96ddb",
+      "cliente": "ANTONIA JOYCE BARBOSA SENA",
+      "de": "EM ANÁLISE",
+      "para": "REPROVADO",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "78bda4c4-5618-4da2-b333-436418485d6e",
+      "cliente": "JONATHAN DOS SANTOS MARQUES",
+      "de": "EM ANÁLISE",
+      "para": "VENDA INFORMADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "f6748a2a-d63a-4c7f-99d3-a1b844dc7635",
+      "cliente": "WANDERSON VITAL DO NASCIMENTO",
+      "de": "EM ANÁLISE",
+      "para": "VENDA INFORMADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "279b1282-547f-4100-b48a-d07225b96e8f",
+      "cliente": "ETELVINA RAYLANE BORGES DE SOUSA",
+      "de": "APROVADO",
+      "para": "VENDA GERADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
       "lido": false
     }
   ],
@@ -10007,6 +10436,23 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "16eb216d-8555-484c-9586-1ee7a9566c0e",
+      "cliente": "PAULO RICARDO DA SILVA ALMEIDA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-17T13:07:55",
+      "lido": false
+    },
+    {
+      "id": "072f3445-fcbc-41a8-9e03-f1bd37bca756",
+      "cliente": "PAULO RICARDO DA SILVA ALMEIDA",
+      "de": "EM ANÁLISE",
+      "para": "",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "BRITO": [
@@ -10114,6 +10560,31 @@
       "status": "EM ANÁLISE",
       "tipo": "NOVO_CLIENTE",
       "timestamp": "2026-01-16T11:02:58",
+      "lido": false
+    },
+    {
+      "id": "6bf2ed00-331c-43ef-a881-ae139ca1e86a",
+      "cliente": "JOSE GABRIEL DO CARMO QUEIROZ",
+      "status": "APROVADO",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "fdd38328-6536-4775-a519-7480ab3c87ce",
+      "cliente": "PAMELA DANTAS DA SILVA",
+      "de": "",
+      "para": "EM ANÁLISE",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "8abbb8f0-b410-45e6-a3bc-a0d2cf4e551c",
+      "cliente": "GLEINILSON DE SOUSA CAVALCANTE",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
       "lido": false
     }
   ],
@@ -10704,6 +11175,31 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "8cdbebb5-1635-4bf5-9a62-b91a8727c416",
+      "cliente": "JONATHA DE SOUZA FREITAS",
+      "de": "EM ANÁLISE",
+      "para": "REPROVADO",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "8f8768e6-87f3-4910-93b1-f110ee95d061",
+      "cliente": "MARIONILDO FERREIRA GOES",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "6fbf485a-5597-40a8-a529-52135d5fe849",
+      "cliente": "EMANUELA MENDES DA SILVA",
+      "status": "APROVADO",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "DJACIR SILVA": [
@@ -11157,6 +11653,39 @@
       "tipo": "NOVO_CLIENTE",
       "timestamp": "2026-01-15T18:05:00",
       "lido": false
+    },
+    {
+      "id": "acc7a822-19ea-4b82-87ff-da34195d7bc7",
+      "cliente": "PRISCILA DA SILVA CUNHA",
+      "de": "EM ANÁLISE",
+      "para": "APROVADO",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "9ee77bed-98c6-48ca-8385-fe55388292d0",
+      "cliente": "PRYSCILA MIGUEL LEITE SILVA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "46f2cd45-0e94-43d4-8d2f-dd153be7ce87",
+      "cliente": "LUCAS IURI FREITAS OLIVEIRA",
+      "status": "REANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "94ea6b1d-b511-41c4-906d-28a780d174d8",
+      "cliente": "CHARLES ANDRADE SILVA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-03-19T10:50:36",
+      "lido": false
     }
   ],
   "LUANA BRAGA": [
@@ -11529,6 +12058,23 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "d9599bab-9a1e-4c27-8cd4-1a2eb5bf667d",
+      "cliente": "VICTOR ERIKES DA COSTA CONCEIÇAO",
+      "de": "APROVADO",
+      "para": "VENDA GERADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "f9a044f0-931a-4d73-a145-66659644a946",
+      "cliente": "THAIS MARIA SOUZA FREITAS",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "ALEXANDRE RODRIGUES": [
@@ -11856,6 +12402,22 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "b49dd1ac-1196-4deb-b472-cec78b6c65dd",
+      "cliente": "JOSEILA ASSUNÇÃO DA SILVA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "549384be-2583-4dea-bed9-24d82f79a879",
+      "cliente": "ADALBERTO MACIEL MANO DE CARVALHO FILHO",
+      "status": "REPROVADO",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "ARNOLD LENAR": [
@@ -11938,6 +12500,24 @@
       "status": "APROVADO",
       "tipo": "NOVO_CLIENTE",
       "timestamp": "2026-01-15T18:05:00",
+      "lido": false
+    },
+    {
+      "id": "aedb2a42-d778-4cdf-a478-a75e1a2ba288",
+      "cliente": "ELITON ROCHA DO MONTE",
+      "de": "EM ANÁLISE",
+      "para": "VENDA INFORMADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "ab2d062f-fc49-48f5-90dd-9eccf30ebb6e",
+      "cliente": "FRANCISCO HENRIQUE ALEXANDRE DE ALMEIDA",
+      "de": "EM ANÁLISE",
+      "para": "VENDA GERADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
       "lido": false
     }
   ],
@@ -12090,6 +12670,22 @@
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
       "lido": false
+    },
+    {
+      "id": "0565f6e3-269f-4689-be9b-b8706633b632",
+      "cliente": "LUCILENE ALVES DE BRITO",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "dffdd29d-b1ad-4035-9da3-11531e981199",
+      "cliente": "ADAN DE QUEIROZ",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
     }
   ],
   "TESTE": [],
@@ -12172,6 +12768,61 @@
       "para": "",
       "tipo": "MUDANCA_STATUS",
       "timestamp": "2026-01-16T12:25:06",
+      "lido": false
+    },
+    {
+      "id": "db5a9fd8-0cad-42d4-b7c1-a7b9282a1b2b",
+      "cliente": "WAXELL SOUSA E SILVA",
+      "de": "EM ANÁLISE",
+      "para": "APROVADO",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "5397954f-9bf1-4358-9cda-2873ccf90753",
+      "cliente": "ANGELO REGADAS DE BARROS",
+      "de": "APROVADO",
+      "para": "DESISTIU",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-17T10:27:15",
+      "lido": false
+    },
+    {
+      "id": "946bf49c-6d95-4350-82ad-99ca093a364d",
+      "cliente": "ANGELO REGADAS DE BARROS",
+      "de": "DESISTIU",
+      "para": "VENDA GERADA",
+      "tipo": "MUDANCA_STATUS",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    }
+  ],
+  "MATEUS FONSECA": [
+    {
+      "id": "2cb68a5b-c592-43da-aced-77b0eb3afe32",
+      "cliente": "TAMIRES DA SILVA SANTOS PEREIRA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    },
+    {
+      "id": "5d2a491f-c3f0-48ca-af6b-f69ccc4dab46",
+      "cliente": "JOSE EDILSON RODRIGUES",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-01-21T14:08:29",
+      "lido": false
+    }
+  ],
+  "JOAO CARLOS": [
+    {
+      "id": "e71613ac-ec17-4277-8b88-dd9a14f2b4af",
+      "cliente": "JARDEL DOMINGOS DE OLIVEIRA",
+      "status": "EM ANÁLISE",
+      "tipo": "NOVO_CLIENTE",
+      "timestamp": "2026-03-19T10:50:36",
       "lido": false
     }
   ]

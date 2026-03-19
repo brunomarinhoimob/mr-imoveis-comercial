@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import json
 from pathlib import Path
+import base64
 
 # Bootstrap inicial (só pra popular o users.json na primeira vez / quando faltar gente)
 from utils.auth_users import USUARIOS
@@ -17,7 +18,6 @@ def carregar_users_json() -> dict:
         try:
             with open(CAMINHO_USERS, "r", encoding="utf-8") as f:
                 data = json.load(f) or {}
-            # garante chaves em lowercase
             return {str(k).strip().lower(): v for k, v in data.items()}
         except Exception:
             return {}
@@ -30,10 +30,6 @@ def salvar_users_json(data: dict):
 
 
 def bootstrap_users_json():
-    """
-    Garante que users.json existe e tem pelo menos os usuários do auth_users.py.
-    IMPORTANTE: não sobrescreve senha já alterada no JSON.
-    """
     users = carregar_users_json()
 
     for login, info in (USUARIOS or {}).items():
@@ -48,7 +44,6 @@ def bootstrap_users_json():
                 "perfil": info.get("perfil", "corretor"),
             }
         else:
-            # garante campos mínimos sem mexer na senha atual do JSON
             users[k]["nome"] = users[k].get("nome") or info.get("nome", k.upper())
             users[k]["perfil"] = users[k].get("perfil") or info.get("perfil", "corretor")
             if "senha" not in users[k]:
@@ -58,21 +53,21 @@ def bootstrap_users_json():
 
 
 def validar_login(usuario: str, senha: str):
-    """
-    Retorna (ok, user_dict)
-    user_dict precisa ter: nome, perfil
-    """
     usuario = (usuario or "").strip().lower()
     senha = (senha or "").strip()
 
     users_json = carregar_users_json()
     user = users_json.get(usuario)
 
-    # valida SOMENTE no users.json (fonte única)
     if user and senha == str(user.get("senha", "")).strip():
         return True, user
 
     return False, None
+
+
+def image_to_base64(image_path: str) -> str:
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
 
 
 # =========================================================
@@ -80,12 +75,8 @@ def validar_login(usuario: str, senha: str):
 # =========================================================
 def tela_login():
 
-    # garante que o users.json existe e está populado
     bootstrap_users_json()
 
-    # -------------------------
-    # CSS (login clean)
-    # -------------------------
     st.markdown(
         """
         <style>
@@ -110,6 +101,20 @@ def tela_login():
             border-radius: 18px;
             border: 1px solid rgba(148, 163, 184, 0.22);
             box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+        }
+
+        .logo-wrap {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .logo-wrap img {
+            width: 260px;
+            max-width: 100%;
+            display: block;
+            border-radius: 10px;
         }
 
         .login-title {
@@ -144,15 +149,21 @@ def tela_login():
     st.markdown("<div class='login-wrap'>", unsafe_allow_html=True)
     st.markdown("<div class='login-card'>", unsafe_allow_html=True)
 
-    # Logo (se existir)
-    if os.path.exists("assets/logo_mr.png"):
-        st.image("assets/logo_mr.png", use_container_width=True)
-    elif os.path.exists("logo_mr.png"):
-        st.image("logo_mr.png", use_container_width=True)
+    # LOGO CENTRALIZADA PERFEITAMENTE
+    if os.path.exists("logo_kratos.png"):
+        logo_base64 = image_to_base64("logo_kratos.png")
+        st.markdown(
+            f"""
+            <div class="logo-wrap">
+                <img src="data:image/png;base64,{logo_base64}" alt="Logo Kratos">
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
-    st.markdown("<div class='login-title'>Dashboard MR</div>", unsafe_allow_html=True)
+    st.markdown("<div class='login-title'>Dashboard Kratos</div>", unsafe_allow_html=True)
     st.markdown("<div class='login-sub'>Acesse com seu usuário e senha</div>", unsafe_allow_html=True)
-    st.markdown("<div class='frase'>MR IMÓVEIS</div>", unsafe_allow_html=True)
+    st.markdown("<div class='frase'>EQUIPE KRATOS</div>", unsafe_allow_html=True)
 
     usuario = st.text_input("Usuário", placeholder="ex: marcello.barbosa")
     senha = st.text_input("Senha", type="password", placeholder="Digite sua senha")
