@@ -202,20 +202,32 @@ df_prev3 = df_scope[df_scope["DATA_BASE_LABEL"].isin(labels_prev3)].copy()
 
 
 # ---------------------------------------------------------
-# CONVERSÕES (BASEADAS NAS 3 BASES ANTERIORES) - VOLUME
+# CONVERSÕES
+# BASEADAS NAS 3 BASES ANTERIORES
+# CASO NÃO EXISTA HISTÓRICO, USA CONVERSÃO PADRÃO
+# REGRA PADRÃO: 7 ANÁLISES, 3 APROVAÇÕES PARA 1 VENDA
 # ---------------------------------------------------------
 vendas_prev3 = len(obter_vendas_unicas(df_prev3, status_final_por_cliente))
 anal_prev3 = contar_analises_volume(df_prev3)   # volume: análise + reanálise
 aprov_prev3 = contar_aprovacoes(df_prev3)
 
-anal_por_venda = (anal_prev3 / vendas_prev3) if vendas_prev3 > 0 else 0
-aprov_por_venda = (aprov_prev3 / vendas_prev3) if vendas_prev3 > 0 else 0
+CONVERSAO_PADRAO_ANALISES_POR_VENDA = 7
+CONVERSAO_PADRAO_APROVACOES_POR_VENDA = 3
+
+if vendas_prev3 > 0:
+    anal_por_venda = anal_prev3 / vendas_prev3
+    aprov_por_venda = aprov_prev3 / vendas_prev3
+    origem_conversao = "Conversão baseada nas 3 DATA_BASE anteriores"
+else:
+    anal_por_venda = CONVERSAO_PADRAO_ANALISES_POR_VENDA
+    aprov_por_venda = CONVERSAO_PADRAO_APROVACOES_POR_VENDA
+    origem_conversao = "Conversão padrão: 7 análises, 3 aprovações para 1 venda"
 
 
 # ---------------------------------------------------------
 # SIMULADOR
 # ---------------------------------------------------------
-st.markdown("### 🧮 Simulador de Produção (base: 3 DATA_BASE anteriores)")
+st.markdown("### 🧮 Simulador de Produção")
 vendas_desejadas = st.number_input("Vendas desejadas", min_value=0, step=1, value=0)
 
 if vendas_desejadas > 0:
@@ -223,6 +235,7 @@ if vendas_desejadas > 0:
     st.metric("Aprovações necessárias", format_int(math.ceil(vendas_desejadas * aprov_por_venda)))
 
 st.caption("Bases referência (anteriores): " + (" | ".join(labels_prev3) if labels_prev3 else "—"))
+st.caption(origem_conversao)
 
 
 # ---------------------------------------------------------
@@ -297,6 +310,8 @@ c1, c2, c3 = st.columns(3)
 c1.metric("Meta", format_int(meta_valor))
 c2.metric("Realizado", format_int(real_total))
 c3.metric("% Atingido", f"{pct:.1%}")
+
+
 # ---------------------------------------------------------
 # 📆 RITMO DIÁRIO NECESSÁRIO
 # ---------------------------------------------------------
@@ -305,7 +320,7 @@ from datetime import timedelta
 # Dias totais do mês comercial
 dias_totais = (dt_fim - dt_inicio).days + 1
 
-# Último dia real considerado (já existe no seu código)
+# Último dia real considerado
 ultimo_dia_real = df_real["DIA"].max().date()
 
 # Dias já ocorridos dentro do mês comercial
@@ -321,6 +336,7 @@ if dias_restantes > 0 and faltam > 0:
     ritmo_diario = faltam / dias_restantes
 else:
     ritmo_diario = 0
+
 st.markdown("### 📌 Produção necessária por dia")
 
 if dias_restantes <= 0:
@@ -343,6 +359,7 @@ else:
         )
     )
 
+
 # ---------------------------------------------------------
 # 📊 ACUMULADO – ÚLTIMAS 3 DATA_BASE
 # ---------------------------------------------------------
@@ -364,6 +381,7 @@ else:
     c3.metric("Vendas", format_int(vendas_3b))
 
     st.caption("Bases consideradas: " + " | ".join(labels_prev3))
+
 
 # ---------------------------------------------------------
 # 🍩 DONUT
@@ -422,5 +440,6 @@ st.altair_chart(chart, use_container_width=True)
 st.caption(
     "Real (Análises) conta apenas 'EM ANÁLISE'. "
     "Meta e conversões usam volume (análise + reanálise) nas 3 DATA_BASE anteriores. "
+    "Quando não há histórico de vendas, o simulador usa a conversão padrão de 7 análises, 3 aprovações para 1 venda. "
     "Real contabiliza somente até o último dia registrado na planilha dentro do período."
 )
