@@ -1,9 +1,11 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
+
 if "logado" not in st.session_state or not st.session_state.logado:
     st.warning("🔒 Acesso restrito. Faça login para continuar.")
     st.stop()
+
 # ---------------------------------------------------------
 # BLOQUEIO DE PERFIL CORRETOR
 # ---------------------------------------------------------
@@ -35,8 +37,8 @@ with col_logo:
 with col_tit:
     st.markdown("## Clientes Aprovados")
     st.caption(
-        "Aqui aparecem apenas clientes cuja **situação atual** está como "
-        "**APROVAÇÃO** (ou seja, a última ação registrada na base contém exatamente esse texto)."
+        "Aqui aparecem clientes cuja **situação atual** está como "
+        "**APROVAÇÃO**, **APROVADO BACEN** ou **APROVADO COM RESTRIÇÃO**."
     )
 
 # ---------------------------------------------------------
@@ -135,8 +137,17 @@ def carregar_dados():
         df.loc[status_upper.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
         df.loc[status_upper.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
 
-        # APROVADO SOMENTE QUANDO FOR "APROVAÇÃO"
-        df.loc[status_upper.str.contains(r"\bAPROVAÇÃO\b"), "STATUS_BASE"] = "APROVADO"
+        # APROVADOS
+        # considera:
+        # - APROVAÇÃO
+        # - APROVADO BACEN
+        # - APROVADO COM RESTRIÇÃO
+        df.loc[
+            status_upper.str.contains(r"\bAPROVAÇÃO\b", regex=True)
+            | status_upper.str.contains("APROVADO BACEN", regex=False)
+            | status_upper.str.contains("APROVADO COM RESTRIÇÃO", regex=False),
+            "STATUS_BASE"
+        ] = "APROVADO"
 
         df.loc[status_upper.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
         df.loc[status_upper.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
@@ -218,10 +229,39 @@ df_valid = df_valid.sort_values(by=[col_cliente, "DIA"])
 df_status_atual = df_valid.drop_duplicates(subset=[col_cliente], keep="last").copy()
 
 # apenas APROVADOS
-df_aprovados_atual = df_status_atual[df_status_atual["STATUS_BASE"] == "APROVADO"].copy()
+df_aprovados_atual = df_status_atual[
+    df_status_atual["STATUS_BASE"] == "APROVADO"
+].copy()
+
+# ---------------------------------------------------------
+# SELETOR DE TIPO DE APROVAÇÃO
+# ---------------------------------------------------------
+tipos_aprovacao = (
+    df_aprovados_atual["SITUACAO_ORIGINAL"]
+    .dropna()
+    .astype(str)
+    .str.upper()
+    .str.strip()
+    .sort_values()
+    .unique()
+    .tolist()
+)
+
+tipo_aprovacao_sel = st.selectbox(
+    "Tipo de aprovação:",
+    ["Todos"] + tipos_aprovacao,
+    index=0
+)
+
+if tipo_aprovacao_sel != "Todos":
+    df_aprovados_atual = df_aprovados_atual[
+        df_aprovados_atual["SITUACAO_ORIGINAL"]
+        .str.upper()
+        .str.strip() == tipo_aprovacao_sel
+    ].copy()
 
 if df_aprovados_atual.empty:
-    st.info("No momento não há clientes com APROVAÇÃO registrada.")
+    st.info("Nenhum cliente encontrado para esse tipo de aprovação.")
     st.stop()
 
 # ---------------------------------------------------------
@@ -543,7 +583,7 @@ colunas_preferidas = [
     "EQUIPE",
     "CORRETOR",
     "EMPREENDIMENTO_BASE",
-    "STATUS_BASE",
+    "SITUACAO_ORIGINAL",
     "DIA",
 ]
 colunas_existentes = [c for c in colunas_preferidas if c in df_filtrado.columns]
@@ -562,7 +602,7 @@ df_tabela = df_tabela.rename(
         "EQUIPE": "Equipe",
         "CORRETOR": "Corretor",
         "EMPREENDIMENTO_BASE": "Empreendimento",
-        "STATUS_BASE": "Status",
+        "SITUACAO_ORIGINAL": "Tipo de aprovação",
         "DIA": "Última atualização",
     }
 )
