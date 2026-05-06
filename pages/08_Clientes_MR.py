@@ -97,6 +97,48 @@ def obter_observacoes(linha):
     return observacoes
 
 
+def renderizar_texto_centralizado(titulo, texto):
+    texto = str(texto).strip()
+
+    texto_html = (
+        texto
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\n", "<br>")
+    )
+
+    st.markdown(
+        f"""
+        <div style="
+            margin-top: 12px;
+            margin-bottom: 18px;
+            padding: 18px 22px;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: rgba(15, 23, 42, 0.35);
+            text-align: center;
+            line-height: 1.65;
+            font-size: 1rem;
+            color: #f8fafc;
+            white-space: normal;
+        ">
+            <div style="
+                font-weight: 800;
+                margin-bottom: 10px;
+                color: #e2e8f0;
+            ">
+                {titulo}
+            </div>
+            <div>
+                {texto_html}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
 def obter_status_atual(grupo):
     # Remove registros sem data válida
     grupo = grupo[grupo["DIA"].notna()].copy()
@@ -119,6 +161,7 @@ def obter_status_atual(grupo):
 
     # Caso contrário, última movimentação real
     return grupo.iloc[-1]
+
 
 # =========================================================
 # CARREGAR BASE
@@ -160,6 +203,7 @@ def carregar_base():
     df["CHAVE"] = df["NOME_CLIENTE_BASE"] + "|" + df["CPF_CLIENTE_BASE"]
 
     return df
+
 
 df = carregar_base()
 
@@ -230,7 +274,7 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
     if pd.notna(valor_renda) and str(valor_renda).strip() != "":
         st.write(f"**Renda declarada:** `R$ {valor_renda}`")
 
-    # ✅ OBS E OBS2
+    # ✅ OBS E OBS2 CENTRALIZADAS
     observacoes = obter_observacoes(ultima)
 
     st.markdown("### 📝 Informações adicionais")
@@ -238,7 +282,7 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
     if observacoes:
         for coluna, texto in observacoes:
             nome_coluna = coluna.replace("OBSERVAÇÕES", "OBS").replace("OBSERVACOES", "OBS")
-            st.write(f"**{nome_coluna}:** {texto}")
+            renderizar_texto_centralizado(nome_coluna, texto)
     else:
         st.info("Sem informações adicionais cadastradas.")
 
