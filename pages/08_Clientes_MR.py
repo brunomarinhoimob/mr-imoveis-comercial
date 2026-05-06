@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 iniciar_app()
 
 st.set_page_config(
-    page_title="Clientes MR",
+    page_title="Clientes",
     page_icon="👥",
     layout="wide"
 )
@@ -37,7 +37,9 @@ def badge_status(texto):
         "EM ANÁLISE": "#2563eb",
         "REANÁLISE": "#9333ea",
         "APROVADO": "#16a34a",
+        "APROVAÇÃO": "#16a34a",
         "APROVADO BACEN": "#f97316",
+        "APROVADO COM RESTRIÇÃO": "#f97316",
         "REPROVADO": "#dc2626",
         "VENDA GERADA": "#15803d",
         "VENDA INFORMADA": "#166534",
@@ -56,22 +58,44 @@ def badge_status(texto):
     </span>
     """
 
-def formatar_observacao(linha):
-    texto = None
 
-    if "OBSERVAÇÕES 2" in linha and pd.notna(linha.get("OBSERVAÇÕES 2")):
-        texto = linha.get("OBSERVAÇÕES 2")
-    elif "OBSERVAÇÕES" in linha and pd.notna(linha.get("OBSERVAÇÕES")):
-        texto = linha.get("OBSERVAÇÕES")
+def texto_valido(valor):
+    if valor is None:
+        return False
 
-    if texto is None:
-        return None
+    if pd.isna(valor):
+        return False
 
-    texto = str(texto).strip()
-    if texto == "" or texto.lower() == "nan":
-        return None
+    texto = str(valor).strip()
 
-    return texto
+    if texto == "":
+        return False
+
+    if texto.lower() == "nan":
+        return False
+
+    return True
+
+
+def obter_observacoes(linha):
+    observacoes = []
+
+    colunas_obs = [
+        "OBS",
+        "OBS2",
+        "OBS 2",
+        "OBSERVAÇÕES",
+        "OBSERVAÇÕES 2",
+        "OBSERVACOES",
+        "OBSERVACOES 2",
+    ]
+
+    for coluna in colunas_obs:
+        if coluna in linha and texto_valido(linha.get(coluna)):
+            observacoes.append((coluna, str(linha.get(coluna)).strip()))
+
+    return observacoes
+
 
 def obter_status_atual(grupo):
     # Remove registros sem data válida
@@ -142,7 +166,7 @@ df = carregar_base()
 # =========================================================
 # BUSCA
 # =========================================================
-st.markdown("## 👥 Clientes – MR")
+st.markdown("## 👥 Clientes")
 
 col1, col2 = st.columns([1, 2])
 with col1:
@@ -201,16 +225,22 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
     st.write(f"**Construtora:** `{ultima['CONSTRUTORA'] or 'NÃO INFORMADO'}`")
     st.write(f"**Empreendimento:** `{ultima['EMPREENDIMENTO'] or 'NÃO INFORMADO'}`")
 
-    # ✅ RENDA (AGORA NO LUGAR CERTO)
+    # ✅ RENDA
     valor_renda = ultima.get("VALOR DA RENDA")
     if pd.notna(valor_renda) and str(valor_renda).strip() != "":
         st.write(f"**Renda declarada:** `R$ {valor_renda}`")
 
-    # Observação
-    obs_final = formatar_observacao(ultima)
-    if obs_final:
-        st.markdown("### 📝 Observação do cliente")
-        st.info(obs_final)
+    # ✅ OBS E OBS2
+    observacoes = obter_observacoes(ultima)
+
+    st.markdown("### 📝 Informações adicionais")
+
+    if observacoes:
+        for coluna, texto in observacoes:
+            nome_coluna = coluna.replace("OBSERVAÇÕES", "OBS").replace("OBSERVACOES", "OBS")
+            st.write(f"**{nome_coluna}:** {texto}")
+    else:
+        st.info("Sem informações adicionais cadastradas.")
 
     # Linha do tempo
     hist = grupo[grupo["DIA"].notna()].sort_values("DIA")[["DIA", "SITUACAO_ORIGINAL"]].copy()
@@ -219,4 +249,3 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
 
     st.markdown("#### 📜 Linha do tempo do cliente")
     st.dataframe(hist, use_container_width=True, hide_index=True)
-
