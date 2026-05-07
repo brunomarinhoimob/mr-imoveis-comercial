@@ -42,9 +42,9 @@ col_logo, col_title = st.columns([1, 6])
 
 with col_logo:
     try:
-        st.image("logo_mr.png", use_container_width=True)
+        st.image("logo_bruno_marinho.jpg", use_container_width=True)
     except:
-        st.write("MR IMÓVEIS")
+        pass
 
 with col_title:
     st.markdown("## 📂 Carteira de Clientes")
