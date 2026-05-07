@@ -1,12 +1,8 @@
 import streamlit as st
 import pandas as pd
-import requests
 from datetime import timedelta, datetime
 from login import tela_login
-from utils.supremo_config import TOKEN_SUPREMO
 from utils.notificacoes_json import processar_eventos
-
-
 
 
 # ---------------------------------------------------------
@@ -14,14 +10,14 @@ from utils.notificacoes_json import processar_eventos
 # ---------------------------------------------------------
 if "logado" not in st.session_state or not st.session_state.logado:
     st.set_page_config(
-        page_title="MR Imóveis | Inteligência Comercial",
+        page_title="Painel Comercial",
         page_icon="🏠",
         layout="centered",
         initial_sidebar_state="collapsed"
     )
 else:
     st.set_page_config(
-        page_title="Comercial Imobiliária – MR Imóveis",
+        page_title="Painel Comercial",
         page_icon="🏠",
         layout="wide"
     )
@@ -32,12 +28,16 @@ else:
 # ---------------------------------------------------------
 if "logado" not in st.session_state:
     st.session_state.logado = False
+
+
 # ---------------------------------------------------------
 # TELA DE LOGIN (BLOQUEIO TOTAL)
 # ---------------------------------------------------------
 if not st.session_state.logado:
     tela_login()
     st.stop()
+
+
 # ---------------------------------------------------------
 # AUTO REFRESH (para notificações e dados)
 # ---------------------------------------------------------
@@ -49,8 +49,9 @@ st_autorefresh(interval=30 * 1000, key="auto_refresh_dashboard")
 if "auto_refresh_dashboard" in st.session_state:
     st.session_state["refresh_planilha"] = True
 
+
 # ---------------------------------------------------------
-# ESTILO (CSS) – TEMA MIDNIGHT BLUE MR
+# ESTILO (CSS) – TEMA MIDNIGHT BLUE
 # ---------------------------------------------------------
 st.markdown(
     """
@@ -182,17 +183,22 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 # ---------------------------------------------------------
 # LOGO
 # ---------------------------------------------------------
-LOGO_PATH = "logo_mr.png"
+LOGO_PATH = "logo_bruno_marinho.jpg"
+
 try:
     st.sidebar.image(LOGO_PATH, use_container_width=True)
 except Exception:
     pass
+
 if st.sidebar.button("Sair"):
     st.session_state.logado = False
     st.rerun()
+
+
 # ---------------------------------------------------------
 # CONTROLE DE ACESSO POR PERFIL (MENU)
 # ---------------------------------------------------------
@@ -204,6 +210,7 @@ if perfil == "corretor":
     st.sidebar.markdown("- 🔎 Consulta de Clientes")
     st.sidebar.markdown("---")
     st.sidebar.warning("🔒 Demais páginas são restritas")
+
 
 # ---------------------------------------------------------
 # PLANILHA – GOOGLE SHEETS
@@ -225,6 +232,7 @@ def mes_ano_ptbr_para_date(valor: str):
     """
     if pd.isna(valor):
         return pd.NaT
+
     s = str(valor).strip().lower()
     if not s:
         return pd.NaT
@@ -246,13 +254,17 @@ def mes_ano_ptbr_para_date(valor: str):
     }
 
     partes = s.split()
+
     try:
         mes_txt = partes[0]
         ano = int(partes[-1])
         mes_num = meses.get(mes_txt)
+
         if mes_num is None:
             return pd.NaT
+
         return datetime(ano, mes_num, 1).date()
+
     except Exception:
         return pd.NaT
 
@@ -261,7 +273,6 @@ def mes_ano_ptbr_para_date(valor: str):
 def carregar_dados_planilha(_refresh_key=None) -> pd.DataFrame:
     """
     Carrega e trata a base da planilha do Google Sheets.
-    Cache de 5 minutos.
     """
     df = pd.read_csv(CSV_URL)
     df.columns = [c.strip().upper() for c in df.columns]
@@ -274,7 +285,7 @@ def carregar_dados_planilha(_refresh_key=None) -> pd.DataFrame:
     else:
         df["DIA"] = pd.NaT
 
-    # DATA BASE (MÊS COMERCIAL) - TEXTO IGUAL À PLANILHA + REFERÊNCIA DE DATA
+    # DATA BASE (MÊS COMERCIAL)
     possiveis_cols_base = [
         "DATA BASE",
         "DATA_BASE",
@@ -325,16 +336,30 @@ def carregar_dados_planilha(_refresh_key=None) -> pd.DataFrame:
     col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
     df["STATUS_BASE"] = ""
+
     if col_situacao:
         s = df[col_situacao].fillna("").astype(str).str.upper()
-        df.loc[s.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
-        df.loc[s.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
+
+        df.loc[s.str.contains("EM ANÁLISE", na=False), "STATUS_BASE"] = "EM ANÁLISE"
+        df.loc[s.str.contains("REANÁLISE", na=False), "STATUS_BASE"] = "REANÁLISE"
+
+        # APROVAÇÕES SEPARADAS
         df.loc[s.str.strip() == "APROVAÇÃO", "STATUS_BASE"] = "APROVADO"
-        df.loc[s.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
-        df.loc[s.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
-        df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
-        # 👇 NOVO – mapeia qualquer coisa com DESIST (DESISTIU, DESISTÊNCIA etc.)
-        df.loc[s.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
+
+        df.loc[
+            s.str.contains("APROVADO BACEN", na=False),
+            "STATUS_BASE"
+        ] = "APROVADO BACEN"
+
+        df.loc[
+            s.str.contains("APROVADO COM RESTRIÇÃO", na=False),
+            "STATUS_BASE"
+        ] = "APROVADO COM RESTRIÇÃO"
+
+        df.loc[s.str.contains("REPROV", na=False), "STATUS_BASE"] = "REPROVADO"
+        df.loc[s.str.contains("VENDA GERADA", na=False), "STATUS_BASE"] = "VENDA GERADA"
+        df.loc[s.str.contains("VENDA INFORMADA", na=False), "STATUS_BASE"] = "VENDA INFORMADA"
+        df.loc[s.str.contains("DESIST", na=False), "STATUS_BASE"] = "DESISTIU"
 
     # VGV
     if "OBSERVAÇÕES" in df.columns:
@@ -370,7 +395,7 @@ def carregar_dados_planilha(_refresh_key=None) -> pd.DataFrame:
             .str.replace(r"\D", "", regex=True)
         )
 
-    # 👇 NOVO – CHAVE_CLIENTE global (nome + CPF) para todas as regras
+    # CHAVE_CLIENTE global
     df["CHAVE_CLIENTE"] = (
         df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
         + " | "
@@ -380,15 +405,23 @@ def carregar_dados_planilha(_refresh_key=None) -> pd.DataFrame:
     return df
 
 
-# carrega a base (BASE COMPLETA)
+# ---------------------------------------------------------
+# CARREGA BASE COMPLETA
+# ---------------------------------------------------------
 df = carregar_dados_planilha(
     _refresh_key=st.session_state.get("refresh_planilha")
 )
 
-# 🔔 PROCESSA NOTIFICAÇÕES (ANTES DE QUALQUER FILTRO)
+
+# ---------------------------------------------------------
+# PROCESSA NOTIFICAÇÕES
+# ---------------------------------------------------------
 processar_eventos(df)
 
-# bootstrap do app (login, layout, etc)
+
+# ---------------------------------------------------------
+# BOOTSTRAP DO APP
+# ---------------------------------------------------------
 from utils.bootstrap import iniciar_app
 iniciar_app()
 
@@ -403,6 +436,7 @@ nome_corretor_logado = (
     .strip()
 )
 
+
 # ---------------------------------------------------------
 # BLOQUEIO GLOBAL DE DADOS PARA PERFIL CORRETOR
 # ---------------------------------------------------------
@@ -414,102 +448,16 @@ if df.empty:
     st.error("Erro ao carregar planilha.")
     st.stop()
 
-# 👇 NOVO – STATUS FINAL DO CLIENTE (HISTÓRICO COMPLETO DA PLANILHA)
+
+# ---------------------------------------------------------
+# STATUS FINAL DO CLIENTE
+# ---------------------------------------------------------
 df_ordenado_global = df.sort_values("DIA")
 status_final_por_cliente = (
     df_ordenado_global.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().fillna("")
 )
 status_final_por_cliente.name = "STATUS_FINAL_CLIENTE"
 
-# ---------------------------------------------------------
-# LEADS – API SUPREMO (CACHE 1 HORA)
-# ---------------------------------------------------------
-BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
-
-
-@st.cache_data(ttl=3600)
-def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFrame:
-    headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
-
-    dfs = []
-    total = 0
-    pagina = 1
-
-    while total < limit and pagina <= max_pages:
-        params = {"pagina": pagina}
-        try:
-            resp = requests.get(
-                BASE_URL_LEADS,
-                headers=headers,
-                params=params,
-                timeout=30,
-            )
-        except Exception:
-            break
-
-        if resp.status_code != 200:
-            break
-
-        try:
-            data = resp.json()
-        except Exception:
-            break
-
-        if isinstance(data, dict) and "data" in data:
-            df_page = pd.DataFrame(data["data"])
-        elif isinstance(data, list):
-            df_page = pd.DataFrame(data)
-        else:
-            df_page = pd.DataFrame()
-
-        if df_page.empty:
-            break
-
-        dfs.append(df_page)
-        total += len(df_page)
-        pagina += 1
-
-    if not dfs:
-        return pd.DataFrame()
-
-    df_all = pd.concat(dfs, ignore_index=True)
-
-    if "id" in df_all.columns:
-        df_all = df_all.drop_duplicates(subset="id")
-
-    if "data_captura" in df_all.columns:
-        df_all["data_captura"] = pd.to_datetime(
-            df_all["data_captura"], errors="coerce"
-        )
-        df_all["data_captura_date"] = df_all["data_captura"].dt.date
-    else:
-        df_all["data_captura_date"] = pd.NaT
-
-    if "nome_corretor" in df_all.columns:
-        df_all["nome_corretor_norm"] = (
-            df_all["nome_corretor"]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-    else:
-        df_all["nome_corretor_norm"] = "NÃO INFORMADO"
-
-    possiveis_equipes = ["equipe", "nome_equipe", "equipe_nome", "nome_equipe_lead"]
-    col_equipe = next((c for c in possiveis_equipes if c in df_all.columns), None)
-    if col_equipe:
-        df_all["equipe_lead_norm"] = (
-            df_all[col_equipe]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-    else:
-        df_all["equipe_lead_norm"] = "NÃO INFORMADO"
-
-    return df_all.head(limit)
 
 # ---------------------------------------------------------
 # SIDEBAR – FILTROS
@@ -547,6 +495,7 @@ if modo_periodo.startswith("Por DIA"):
         max_value=data_max,
     )
     data_ini, data_fim = periodo
+
 else:
     tipo_periodo = "DATA_BASE"
 
@@ -585,22 +534,6 @@ else:
 lista_corretor = sorted(base_cor["CORRETOR"].unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
-# ---------------------------------------------------------
-# BOTÃO ATUALIZAR LEADS
-# ---------------------------------------------------------
-st.sidebar.markdown("---")
-st.sidebar.write("🔄 Atualização de Leads (CRM)")
-
-btn_atualizar_leads = st.sidebar.button("Atualizar Leads do CRM agora")
-
-if btn_atualizar_leads:
-    st.cache_data.clear()
-    st.session_state.pop("df_leads", None)
-
-df_leads = carregar_leads_direto()
-
-if "df_leads" not in st.session_state:
-    st.session_state["df_leads"] = df_leads
 
 # ---------------------------------------------------------
 # FILTRO PRINCIPAL NA PLANILHA
@@ -612,7 +545,9 @@ if tipo_periodo == "DIA":
     ].copy()
 else:
     df_filtrado = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
+
     dias_sel = df_filtrado["DIA"].dropna()
+
     if not dias_sel.empty:
         data_ini = dias_sel.min()
         data_fim = dias_sel.max()
@@ -628,6 +563,7 @@ if corretor_sel != "Todos":
 
 registros_filtrados = len(df_filtrado)
 
+
 # ---------------------------------------------------------
 # TÍTULO / CAPTION
 # ---------------------------------------------------------
@@ -638,6 +574,7 @@ if tipo_periodo == "DIA":
     periodo_str = f"{data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
 else:
     label_periodo = "Período (DATA BASE)"
+
     if len(bases_selecionadas) == 1:
         periodo_str = bases_selecionadas[0]
     else:
@@ -647,8 +584,9 @@ st.caption(
     f"{label_periodo}: {periodo_str} • Registros filtrados: {registros_filtrados}"
 )
 
+
 # ---------------------------------------------------------
-# SELETOR DE VENDAS (GERADAS + INFORMADAS vs SOMENTE GERADAS)
+# SELETOR DE VENDAS
 # ---------------------------------------------------------
 filtro_vendas = st.radio(
     "Tipo de vendas consideradas nos indicadores:",
@@ -657,23 +595,26 @@ filtro_vendas = st.radio(
     horizontal=True,
 )
 
+
 # ---------------------------------------------------------
-# CÁLCULOS PRINCIPAIS (PLANILHA)
+# CÁLCULOS PRINCIPAIS
 # ---------------------------------------------------------
 em_analise = (df_filtrado["STATUS_BASE"] == "EM ANÁLISE").sum()
 reanalise = (df_filtrado["STATUS_BASE"] == "REANÁLISE").sum()
 aprovacoes = (df_filtrado["STATUS_BASE"] == "APROVADO").sum()
+aprovado_bacen = (df_filtrado["STATUS_BASE"] == "APROVADO BACEN").sum()
+aprovado_restricao = (df_filtrado["STATUS_BASE"] == "APROVADO COM RESTRIÇÃO").sum()
 reprovacoes = (df_filtrado["STATUS_BASE"] == "REPROVADO").sum()
 
 analises_total = em_analise + reanalise
 
-# Base de vendas: GERADA ou INFORMADA (todas as ocorrências)
+# Base de vendas: GERADA ou INFORMADA
 df_vendas_ref = df_filtrado[
     df_filtrado["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])
 ].copy()
 
 if not df_vendas_ref.empty:
-    # garante CHAVE_CLIENTE
+
     if "CHAVE_CLIENTE" not in df_vendas_ref.columns:
         df_vendas_ref["CHAVE_CLIENTE"] = (
             df_vendas_ref["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
@@ -681,24 +622,20 @@ if not df_vendas_ref.empty:
             + df_vendas_ref["CPF_CLIENTE_BASE"].fillna("")
         )
 
-    # 👇 NOVO – junta STATUS_FINAL_CLIENTE (histórico completo) e aplica regra DESISTIU
     df_vendas_ref = df_vendas_ref.merge(
         status_final_por_cliente,
         on="CHAVE_CLIENTE",
         how="left",
     )
 
-    # remove todas as vendas dos clientes cujo status final é DESISTIU
     df_vendas_ref = df_vendas_ref[
         df_vendas_ref["STATUS_FINAL_CLIENTE"] != "DESISTIU"
     ]
 
     if not df_vendas_ref.empty:
         df_vendas_ref = df_vendas_ref.sort_values("DIA")
-        # última ocorrência de cada cliente
         df_vendas_ult_base = df_vendas_ref.groupby("CHAVE_CLIENTE").tail(1)
 
-        # aplica filtro do botão
         if filtro_vendas == "Somente GERADAS":
             df_vendas_ult = df_vendas_ult_base[
                 df_vendas_ult_base["STATUS_BASE"] == "VENDA GERADA"
@@ -725,6 +662,7 @@ if not df_vendas_ref.empty:
         vendas_total = 0
         vgv_total = 0
         maior_vgv = 0
+
 else:
     venda_gerada = 0
     venda_informada = 0
@@ -738,78 +676,30 @@ taxa_aprov_analise = (aprovacoes / analises_total * 100) if analises_total else 
 taxa_venda_analise = (vendas_total / analises_total * 100) if analises_total else 0
 taxa_venda_aprov = (vendas_total / aprovacoes * 100) if aprovacoes else 0
 
+
 # ---------------------------------------------------------
 # CARDS – ANÁLISES & VENDAS
 # ---------------------------------------------------------
 st.subheader("Resumo de Análises & Vendas")
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 c1.metric("Em análise", em_analise)
 c2.metric("Reanálise", reanalise)
 c3.metric("Aprovações", aprovacoes)
-c4.metric("Reprovações", reprovacoes)
+c4.metric("Aprovado Bacen", aprovado_bacen)
+c5.metric("Aprov. Restrição", aprovado_restricao)
+c6.metric("Reprovações", reprovacoes)
 
-c5, c6, c7 = st.columns(3)
-c5.metric("Vendas GERADAS (clientes)", int(venda_gerada))
-c6.metric("Vendas INFORMADAS (clientes)", int(venda_informada))
-c7.metric("Total Vendas (clientes)", int(vendas_total))
+c7, c8, c9 = st.columns(3)
+c7.metric("Vendas GERADAS (clientes)", int(venda_gerada))
+c8.metric("Vendas INFORMADAS (clientes)", int(venda_informada))
+c9.metric("Total Vendas (clientes)", int(vendas_total))
 
-c8, c9, c10 = st.columns(3)
-c8.metric("Aprov./Análises", f"{taxa_aprov_analise:.1f}%")
-c9.metric("Vendas/Análises", f"{taxa_venda_analise:.1f}%")
-c10.metric("Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
+c10, c11, c12 = st.columns(3)
+c10.metric("Aprov./Análises", f"{taxa_aprov_analise:.1f}%")
+c11.metric("Vendas/Análises", f"{taxa_venda_analise:.1f}%")
+c12.metric("Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
 
-# ---------------------------------------------------------
-# LEADS – RESUMO (CRM)
-# ---------------------------------------------------------
-st.markdown("---")
-st.subheader("📈 Resumo de Leads (Supremo CRM)")
-
-df_leads_use = df_leads.copy()
-
-if not df_leads_use.empty and "data_captura_date" in df_leads_use.columns:
-    df_leads_use = df_leads_use.dropna(subset=["data_captura_date"])
-    df_leads_use = df_leads_use[
-        (df_leads_use["data_captura_date"] >= data_ini)
-        & (df_leads_use["data_captura_date"] <= data_fim)
-    ]
-
-    if equipe_sel != "Todas" and "equipe_lead_norm" in df_leads_use.columns:
-        df_leads_use = df_leads_use[
-            df_leads_use["equipe_lead_norm"] == equipe_sel
-        ]
-
-    if corretor_sel != "Todos" and "nome_corretor_norm" in df_leads_use.columns:
-        df_leads_use = df_leads_use[
-            df_leads_use["nome_corretor_norm"] == corretor_sel
-        ]
-
-    total_leads_periodo = len(df_leads_use)
-
-    if corretor_sel != "Todos":
-        label_leads = "Leads do corretor (período filtrado)"
-    elif equipe_sel != "Todas":
-        label_leads = "Leads da equipe (período filtrado)"
-    else:
-        label_leads = "Leads da imobiliária (período filtrado)"
-
-    cL1, cL2, cL3 = st.columns(3)
-    cL1.metric(label_leads, total_leads_periodo)
-
-    if "nome_corretor_norm" in df_leads_use.columns and not df_leads_use.empty:
-        qtd_corretor = df_leads_use["nome_corretor_norm"].nunique()
-        cL2.metric("Corretores com leads no período", qtd_corretor)
-
-        if qtd_corretor > 0:
-            media_leads = total_leads_periodo / qtd_corretor
-            cL3.metric("Média de leads por corretor", f"{media_leads:.1f}")
-        else:
-            cL3.metric("Média de leads por corretor", "-")
-    else:
-        cL2.metric("Corretores com leads no período", "-")
-        cL3.metric("Média de leads por corretor", "-")
-else:
-    st.info("Nenhum lead carregado ou campo 'data_captura' ausente na base.")
 
 # ---------------------------------------------------------
 # INDICADORES DE VGV
@@ -822,15 +712,14 @@ def format_currency(valor: float) -> str:
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-c11, c12, c13 = st.columns(3)
-c11.metric("VGV Total", format_currency(vgv_total))
-c12.metric("Ticket Médio", format_currency(ticket_medio))
-c13.metric("Maior VGV", format_currency(maior_vgv))
+c13, c14, c15 = st.columns(3)
+c13.metric("VGV Total", format_currency(vgv_total))
+c14.metric("Ticket Médio", format_currency(ticket_medio))
+c15.metric("Maior VGV", format_currency(maior_vgv))
 
 st.markdown(
     "<hr><p style='text-align:center; color:#6b7280;'>"
-    "Dashboard MR Imóveis integrado ao Google Sheets + Supremo CRM"
+    "Painel Comercial integrado ao Google Sheets"
     "</p>",
     unsafe_allow_html=True,
 )
-
