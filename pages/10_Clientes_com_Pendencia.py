@@ -21,16 +21,17 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# LOGO MR IMÓVEIS
+# LOGO
 # ---------------------------------------------------------
-LOGO_PATH = "logo_mr.png"
+LOGO_PATH = "logo_bruno_marinho.jpg"
 
 col_logo, col_tit = st.columns([1, 4])
+
 with col_logo:
     try:
         st.image(LOGO_PATH, use_container_width=True)
     except Exception:
-        st.write("MR Imóveis")
+        pass
 
 with col_tit:
     st.markdown("## Clientes com Pendência")
