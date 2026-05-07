@@ -162,7 +162,7 @@ df_scope = df.copy()
 if perfil == "corretor":
     df_scope = df_scope[df_scope["CORRETOR"] == nome_usuario]
 else:
-    visao = st.sidebar.radio("Visão", ["MR IMÓVEIS", "Equipe", "Corretor"])
+    visao = st.sidebar.radio("Visão", ["Imobiliária", "Equipe", "Corretor"])
     if visao == "Equipe":
         eq = st.sidebar.selectbox("Equipe", sorted(df_scope["EQUIPE"].unique()))
         df_scope = df_scope[df_scope["EQUIPE"] == eq]
