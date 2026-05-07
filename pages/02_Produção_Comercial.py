@@ -59,20 +59,26 @@ def carregar_base():
 
     df.columns = [c.strip().upper() for c in df.columns]
 
-    if "DATA" in df.columns:
+    if "DATA" not in df.columns:
+        df["DATA"] = pd.NaT
+    else:
         df["DATA"] = pd.to_datetime(
             df["DATA"],
             dayfirst=True,
             errors="coerce"
         )
 
-    for col in [
+    colunas_numericas = [
         "ATENDEU",
         "WHATSAPP ENVIADO",
         "CONTATO INVÁLIDO",
         "TOTAL"
-    ]:
-        if col in df.columns:
+    ]
+
+    for col in colunas_numericas:
+        if col not in df.columns:
+            df[col] = 0
+        else:
             df[col] = pd.to_numeric(
                 df[col],
                 errors="coerce"
@@ -101,11 +107,21 @@ if df.empty:
 # =========================================================
 # FILTRO DATA
 # =========================================================
-# Remove linhas sem data
+df["DATA"] = pd.to_datetime(
+    df["DATA"],
+    dayfirst=True,
+    errors="coerce"
+)
+
 df = df[df["DATA"].notna()].copy()
+
+if df.empty:
+    st.warning("Nenhuma data válida encontrada na aba PRODUÇÃO_COMERCIAL.")
+    st.stop()
 
 data_min = df["DATA"].min().date()
 data_max = df["DATA"].max().date()
+
 periodo = st.sidebar.date_input(
     "Período",
     value=(data_min, data_max),
@@ -113,12 +129,36 @@ periodo = st.sidebar.date_input(
     max_value=data_max
 )
 
-data_ini, data_fim = periodo
+if isinstance(periodo, tuple):
+    data_ini, data_fim = periodo
+else:
+    data_ini = periodo
+    data_fim = periodo
 
 df = df[
     (df["DATA"].dt.date >= data_ini) &
     (df["DATA"].dt.date <= data_fim)
 ].copy()
+
+if df.empty:
+    st.info("Nenhuma produção encontrada no período selecionado.")
+    st.stop()
+
+# =========================================================
+# RECALCULA TOTAL SE NECESSÁRIO
+# =========================================================
+df["TOTAL_CALCULADO"] = (
+    df["ATENDEU"] +
+    df["WHATSAPP ENVIADO"] +
+    df["CONTATO INVÁLIDO"]
+)
+
+df["TOTAL"] = df["TOTAL"].fillna(0)
+
+df.loc[df["TOTAL"] == 0, "TOTAL"] = df.loc[
+    df["TOTAL"] == 0,
+    "TOTAL_CALCULADO"
+]
 
 # =========================================================
 # KPIs
@@ -205,8 +245,16 @@ df_exibir = df.copy()
 
 df_exibir["DATA"] = df_exibir["DATA"].dt.strftime("%d/%m/%Y")
 
+colunas_exibir = [
+    "DATA",
+    "ATENDEU",
+    "WHATSAPP ENVIADO",
+    "CONTATO INVÁLIDO",
+    "TOTAL"
+]
+
 st.dataframe(
-    df_exibir,
+    df_exibir[colunas_exibir],
     use_container_width=True,
     hide_index=True
 )
@@ -217,7 +265,7 @@ st.dataframe(
 st.markdown("---")
 st.subheader("📌 Média diária")
 
-dias = len(df)
+dias = df["DATA"].dt.date.nunique()
 
 media_total = total_operacional / dias if dias > 0 else 0
 media_atendeu = total_atendeu / dias if dias > 0 else 0
