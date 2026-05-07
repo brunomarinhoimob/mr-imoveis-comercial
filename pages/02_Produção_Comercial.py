@@ -101,9 +101,11 @@ if df.empty:
 # =========================================================
 # FILTRO DATA
 # =========================================================
+# Remove linhas sem data
+df = df[df["DATA"].notna()].copy()
+
 data_min = df["DATA"].min().date()
 data_max = df["DATA"].max().date()
-
 periodo = st.sidebar.date_input(
     "Período",
     value=(data_min, data_max),
