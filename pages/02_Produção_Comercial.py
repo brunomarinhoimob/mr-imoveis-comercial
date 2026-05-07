@@ -70,6 +70,7 @@ def carregar_base():
 
     colunas_numericas = [
         "ATENDEU",
+        "PROSPECT",
         "WHATSAPP ENVIADO",
         "CONTATO INVÁLIDO",
         "TOTAL"
@@ -149,6 +150,7 @@ if df.empty:
 # =========================================================
 df["TOTAL_CALCULADO"] = (
     df["ATENDEU"] +
+    df["PROSPECT"] +
     df["WHATSAPP ENVIADO"] +
     df["CONTATO INVÁLIDO"]
 )
@@ -164,6 +166,7 @@ df.loc[df["TOTAL"] == 0, "TOTAL"] = df.loc[
 # KPIs
 # =========================================================
 total_atendeu = int(df["ATENDEU"].sum())
+total_prospect = int(df["PROSPECT"].sum())
 total_whatsapp = int(df["WHATSAPP ENVIADO"].sum())
 total_invalido = int(df["CONTATO INVÁLIDO"].sum())
 total_operacional = int(df["TOTAL"].sum())
@@ -173,10 +176,15 @@ taxa_atendimento = (
     if total_operacional > 0 else 0
 )
 
+taxa_prospect = (
+    (total_prospect / total_operacional) * 100
+    if total_operacional > 0 else 0
+)
+
 # =========================================================
 # CARDS
 # =========================================================
-c1, c2, c3, c4, c5 = st.columns(5)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 
 c1.metric(
     "📞 Total Operacional",
@@ -189,18 +197,23 @@ c2.metric(
 )
 
 c3.metric(
+    "🔥 Prospect",
+    total_prospect
+)
+
+c4.metric(
     "💬 WhatsApp",
     total_whatsapp
 )
 
-c4.metric(
+c5.metric(
     "🚫 Contato Inválido",
     total_invalido
 )
 
-c5.metric(
-    "📊 Taxa Atendimento",
-    f"{taxa_atendimento:.1f}%"
+c6.metric(
+    "📊 Taxa Prospect",
+    f"{taxa_prospect:.1f}%"
 )
 
 # =========================================================
@@ -216,6 +229,7 @@ chart = (
     .transform_fold(
         [
             "ATENDEU",
+            "PROSPECT",
             "WHATSAPP ENVIADO",
             "CONTATO INVÁLIDO"
         ],
@@ -248,6 +262,7 @@ df_exibir["DATA"] = df_exibir["DATA"].dt.strftime("%d/%m/%Y")
 colunas_exibir = [
     "DATA",
     "ATENDEU",
+    "PROSPECT",
     "WHATSAPP ENVIADO",
     "CONTATO INVÁLIDO",
     "TOTAL"
@@ -269,9 +284,10 @@ dias = df["DATA"].dt.date.nunique()
 
 media_total = total_operacional / dias if dias > 0 else 0
 media_atendeu = total_atendeu / dias if dias > 0 else 0
+media_prospect = total_prospect / dias if dias > 0 else 0
 media_whats = total_whatsapp / dias if dias > 0 else 0
 
-m1, m2, m3 = st.columns(3)
+m1, m2, m3, m4 = st.columns(4)
 
 m1.metric(
     "Média Operacional",
@@ -284,6 +300,11 @@ m2.metric(
 )
 
 m3.metric(
+    "Média Prospect",
+    f"{media_prospect:.1f}"
+)
+
+m4.metric(
     "Média WhatsApp",
     f"{media_whats:.1f}"
 )
