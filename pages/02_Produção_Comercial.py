@@ -268,7 +268,6 @@ df_processos_periodo = df_processos[
 # =========================================================
 df["TOTAL_CALCULADO"] = (
     df["ATENDEU"] +
-    df["PROSPECT"] +
     df["WHATSAPP ENVIADO"] +
     df["CONTATO INVÁLIDO"]
 )
