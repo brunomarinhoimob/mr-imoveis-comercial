@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
 # =========================================================
@@ -54,6 +55,71 @@ CSV_PRODUCAO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format
 CSV_PROCESSOS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PROCESSOS}"
 
 # =========================================================
+# FUNÇÕES AUXILIARES
+# =========================================================
+def mes_ano_ptbr_para_date(valor):
+    if pd.isna(valor):
+        return pd.NaT
+
+    s = str(valor).strip().lower()
+    if not s:
+        return pd.NaT
+
+    meses = {
+        "janeiro": 1,
+        "fevereiro": 2,
+        "março": 3,
+        "marco": 3,
+        "abril": 4,
+        "maio": 5,
+        "junho": 6,
+        "julho": 7,
+        "agosto": 8,
+        "setembro": 9,
+        "outubro": 10,
+        "novembro": 11,
+        "dezembro": 12,
+    }
+
+    try:
+        partes = s.split()
+        mes_txt = partes[0]
+        ano = int(partes[-1])
+        mes_num = meses.get(mes_txt)
+
+        if mes_num is None:
+            return pd.NaT
+
+        return datetime(ano, mes_num, 1).date()
+
+    except Exception:
+        return pd.NaT
+
+
+def tratar_data_base(df):
+    possiveis_cols_base = [
+        "DATA BASE",
+        "DATA_BASE",
+        "DT BASE",
+        "DATA REF",
+        "DATA REFERÊNCIA",
+        "DATA REFERENCIA",
+    ]
+
+    col_data_base = next((c for c in possiveis_cols_base if c in df.columns), None)
+
+    if col_data_base:
+        base_raw = df[col_data_base].fillna("").astype(str).str.strip()
+        df["DATA_BASE_LABEL"] = base_raw.str.lower().str.title()
+        df["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
+    else:
+        df["DATA_BASE_LABEL"] = ""
+        df["DATA_BASE"] = pd.NaT
+
+    return df
+
+
+# =========================================================
 # CARREGAR PRODUÇÃO COMERCIAL
 # =========================================================
 @st.cache_data(ttl=60)
@@ -70,6 +136,8 @@ def carregar_base():
             dayfirst=True,
             errors="coerce"
         )
+
+    df = tratar_data_base(df)
 
     colunas_numericas = [
         "ATENDEU",
@@ -114,6 +182,8 @@ def carregar_processos():
         )
     else:
         dfp["DATA"] = pd.NaT
+
+    dfp = tratar_data_base(dfp)
 
     possiveis_status = [
         "SITUAÇÃO",
@@ -208,7 +278,7 @@ if df.empty:
     st.stop()
 
 # =========================================================
-# FILTRO DATA
+# LIMPA DATAS VÁLIDAS
 # =========================================================
 df["DATA"] = pd.to_datetime(
     df["DATA"],
@@ -222,33 +292,79 @@ if df.empty:
     st.warning("Nenhuma data válida encontrada na aba PRODUÇÃO_COMERCIAL.")
     st.stop()
 
-data_min = df["DATA"].min().date()
-data_max = df["DATA"].max().date()
+# =========================================================
+# FILTROS: DATA OU DATA BASE
+# =========================================================
+st.sidebar.title("Filtros 🔎")
 
-periodo = st.sidebar.date_input(
-    "Período",
-    value=(data_min, data_max),
-    min_value=data_min,
-    max_value=data_max
+modo_periodo = st.sidebar.radio(
+    "Modo de filtro",
+    ["Por DATA BASE", "Por DATA"],
+    index=0
 )
 
-if isinstance(periodo, tuple):
-    data_ini, data_fim = periodo
+data_ini = None
+data_fim = None
+data_base_sel = None
+
+if modo_periodo == "Por DATA BASE":
+    bases_df = (
+        df[["DATA_BASE", "DATA_BASE_LABEL"]]
+        .dropna(subset=["DATA_BASE"])
+        .drop_duplicates()
+        .sort_values("DATA_BASE")
+    )
+
+    if bases_df.empty:
+        st.warning("Nenhuma DATA BASE válida encontrada na aba PRODUÇÃO_COMERCIAL.")
+        st.stop()
+
+    opcoes_base = bases_df["DATA_BASE_LABEL"].tolist()
+    ultima_base = opcoes_base[-1]
+
+    data_base_sel = st.sidebar.selectbox(
+        "DATA BASE",
+        options=opcoes_base,
+        index=opcoes_base.index(ultima_base)
+    )
+
+    df = df[df["DATA_BASE_LABEL"] == data_base_sel].copy()
+
+    if df.empty:
+        st.info("Nenhuma produção encontrada para essa DATA BASE.")
+        st.stop()
+
+    data_ini = df["DATA"].min().date()
+    data_fim = df["DATA"].max().date()
+
 else:
-    data_ini = periodo
-    data_fim = periodo
+    data_min = df["DATA"].min().date()
+    data_max = df["DATA"].max().date()
 
-df = df[
-    (df["DATA"].dt.date >= data_ini) &
-    (df["DATA"].dt.date <= data_fim)
-].copy()
+    periodo = st.sidebar.date_input(
+        "Período",
+        value=(data_min, data_max),
+        min_value=data_min,
+        max_value=data_max
+    )
 
-if df.empty:
-    st.info("Nenhuma produção encontrada no período selecionado.")
-    st.stop()
+    if isinstance(periodo, tuple):
+        data_ini, data_fim = periodo
+    else:
+        data_ini = periodo
+        data_fim = periodo
+
+    df = df[
+        (df["DATA"].dt.date >= data_ini) &
+        (df["DATA"].dt.date <= data_fim)
+    ].copy()
+
+    if df.empty:
+        st.info("Nenhuma produção encontrada no período selecionado.")
+        st.stop()
 
 # =========================================================
-# FILTRA CONTROLE DE PROCESSOS NO MESMO PERÍODO
+# FILTRA CONTROLE DE PROCESSOS NO MESMO PERÍODO / DATA BASE
 # =========================================================
 df_processos["DATA"] = pd.to_datetime(
     df_processos["DATA"],
@@ -258,10 +374,15 @@ df_processos["DATA"] = pd.to_datetime(
 
 df_processos = df_processos[df_processos["DATA"].notna()].copy()
 
-df_processos_periodo = df_processos[
-    (df_processos["DATA"].dt.date >= data_ini) &
-    (df_processos["DATA"].dt.date <= data_fim)
-].copy()
+if modo_periodo == "Por DATA BASE":
+    df_processos_periodo = df_processos[
+        df_processos["DATA_BASE_LABEL"] == data_base_sel
+    ].copy()
+else:
+    df_processos_periodo = df_processos[
+        (df_processos["DATA"].dt.date >= data_ini) &
+        (df_processos["DATA"].dt.date <= data_fim)
+    ].copy()
 
 # =========================================================
 # RECALCULA TOTAL SE NECESSÁRIO
@@ -513,6 +634,7 @@ df_exibir["DATA"] = df_exibir["DATA"].dt.strftime("%d/%m/%Y")
 
 colunas_exibir = [
     "DATA",
+    "DATA_BASE_LABEL",
     "ATENDEU",
     "PROSPECT",
     "WHATSAPP ENVIADO",
@@ -520,8 +642,16 @@ colunas_exibir = [
     "TOTAL"
 ]
 
+colunas_exibir = [c for c in colunas_exibir if c in df_exibir.columns]
+
+df_exibir = df_exibir.rename(
+    columns={
+        "DATA_BASE_LABEL": "DATA BASE"
+    }
+)
+
 st.dataframe(
-    df_exibir[colunas_exibir],
+    df_exibir.rename(columns={"DATA_BASE_LABEL": "DATA BASE"}),
     use_container_width=True,
     hide_index=True
 )
