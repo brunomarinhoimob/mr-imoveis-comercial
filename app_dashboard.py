@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import timedelta, datetime
 from login import tela_login
-from utils.notificacoes_json import processar_eventos
+
 
 
 # ---------------------------------------------------------
@@ -413,10 +413,6 @@ df = carregar_dados_planilha(
 )
 
 
-# ---------------------------------------------------------
-# PROCESSA NOTIFICAÇÕES
-# ---------------------------------------------------------
-processar_eventos(df)
 
 
 # ---------------------------------------------------------
