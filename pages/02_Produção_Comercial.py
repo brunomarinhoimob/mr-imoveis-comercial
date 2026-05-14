@@ -644,6 +644,8 @@ colunas_exibir = [
 
 colunas_exibir = [c for c in colunas_exibir if c in df_exibir.columns]
 
+df_exibir = df_exibir[colunas_exibir].copy()
+
 df_exibir = df_exibir.rename(
     columns={
         "DATA_BASE_LABEL": "DATA BASE"
@@ -651,7 +653,7 @@ df_exibir = df_exibir.rename(
 )
 
 st.dataframe(
-    df_exibir.rename(columns={"DATA_BASE_LABEL": "DATA BASE"}),
+    df_exibir,
     use_container_width=True,
     hide_index=True
 )
