@@ -364,7 +364,8 @@ else:
         st.stop()
 
 # =========================================================
-# FILTRA CONTROLE DE PROCESSOS NO MESMO PERÍODO / DATA BASE
+# FILTRA CONTROLE DE PROCESSOS
+# USA A DATA DA PRÓPRIA ABA DE PROCESSOS
 # =========================================================
 df_processos["DATA"] = pd.to_datetime(
     df_processos["DATA"],
@@ -372,13 +373,29 @@ df_processos["DATA"] = pd.to_datetime(
     errors="coerce"
 )
 
-df_processos = df_processos[df_processos["DATA"].notna()].copy()
+df_processos = df_processos[
+    df_processos["DATA"].notna()
+].copy()
 
+# =========================================================
+# FILTRO POR DATA BASE
+# =========================================================
 if modo_periodo == "Por DATA BASE":
+
+    # pega início e fim da base selecionada
+    data_ini_base = df["DATA"].min().date()
+    data_fim_base = df["DATA"].max().date()
+
     df_processos_periodo = df_processos[
-        df_processos["DATA_BASE_LABEL"] == data_base_sel
+        (df_processos["DATA"].dt.date >= data_ini_base) &
+        (df_processos["DATA"].dt.date <= data_fim_base)
     ].copy()
+
+# =========================================================
+# FILTRO POR DATA
+# =========================================================
 else:
+
     df_processos_periodo = df_processos[
         (df_processos["DATA"].dt.date >= data_ini) &
         (df_processos["DATA"].dt.date <= data_fim)
