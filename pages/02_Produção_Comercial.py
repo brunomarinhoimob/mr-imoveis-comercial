@@ -445,9 +445,21 @@ analises = int(
     .sum()
 )
 
+# =========================================================
+# APROVAÇÕES
+# =========================================================
 aprovacoes = int(
-    df_processos_periodo["STATUS_BASE"]
-    .isin(["APROVADO", "APROVADO BACEN", "APROVADO COM RESTRIÇÃO"])
+    (df_processos_periodo["STATUS_BASE"] == "APROVADO")
+    .sum()
+)
+
+aprovado_bacen = int(
+    (df_processos_periodo["STATUS_BASE"] == "APROVADO BACEN")
+    .sum()
+)
+
+aprovado_restricao = int(
+    (df_processos_periodo["STATUS_BASE"] == "APROVADO COM RESTRIÇÃO")
     .sum()
 )
 
@@ -539,7 +551,7 @@ c6.metric(
 st.markdown("---")
 st.subheader("🎯 Resultado gerado no período")
 
-r1, r2, r3 = st.columns(3)
+r1, r2, r3, r4, r5 = st.columns(5)
 
 r1.metric(
     "📄 Análises",
@@ -552,6 +564,16 @@ r2.metric(
 )
 
 r3.metric(
+    "🟡 Aprovado Restrição",
+    aprovado_restricao
+)
+
+r4.metric(
+    "🏦 Aprovado BACEN",
+    aprovado_bacen
+)
+
+r5.metric(
     "💰 Vendas",
     vendas
 )
