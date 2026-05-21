@@ -1,3 +1,10 @@
+Ah, agora entendi perfeitamente! Peço desculpa pela confusão anterior.
+
+Na lógica do teu script original, a contagem de análises junta duas coisas: `"EM ANÁLISE"` e `"REANÁLISE"`. O que tu queres é filtrar **estritamente** as linhas onde a coluna `STATUS_BASE` é exatamente igual a `"EM ANÁLISE"`, deixando de fora as reanálises na hora de calcular a percentagem e a quantidade de origens.
+
+Aqui está o código completo corrigido e revisado com essa regra exata. Podes substituir todo o conteúdo do teu ficheiro `02_Produção_Comercial.py`:
+
+```python
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -498,7 +505,7 @@ taxa_prospect = (
 )
 
 # =========================================================
-# PROCESSOS
+# PROCESSOS (CONTAGENS DIRETAS)
 # =========================================================
 analises = int(
     df_processos_periodo["STATUS_BASE"]
@@ -530,30 +537,24 @@ vendas = int(
 )
 
 # =========================================================
-# ORIGEM DAS ANÁLISES
+# FILTRO RESTRITO: CONTAR EXCLUSIVAMENTE "EM ANÁLISE"
 # =========================================================
-analises_quente = int(
-    df_processos_periodo[
-        (df_processos_periodo["STATUS_BASE"] == "EM ANÁLISE") &
+df_apenas_em_analise = df_processos_periodo[
+    df_processos_periodo["STATUS_BASE"] == "EM ANÁLISE"
+].copy()
 
-        (df_processos_periodo["ORIGEM"]
-        .str.contains("QUENTE"))
-    ]["CHAVE_CLIENTE"]
-    .nunique()
-)
+total_linhas_em_analise = len(df_apenas_em_analise)
 
-analises_frio = int(
-    df_processos_periodo[
-        (df_processos_periodo["STATUS_BASE"] == "EM ANÁLISE") &
+origens_alvo = ["INDICAÇÃO", "ORGÂNICO", "LISTA", "C2S"]
+recap_origens = {}
 
-        (df_processos_periodo["ORIGEM"]
-        .str.contains("FRIO"))
-    ]["CHAVE_CLIENTE"]
-    .nunique()
-)
+for orig in origens_alvo:
+    qtd = int((df_apenas_em_analise["ORIGEM"] == orig).sum())
+    pct = (qtd / total_linhas_em_analise * 100) if total_linhas_em_analise > 0 else 0
+    recap_origens[orig] = {"qtd": qtd, "pct": pct}
 
 # =========================================================
-# CARDS
+# CARDS DE VISUALIZAÇÃO GENERALISTA
 # =========================================================
 c1, c2, c3, c4 = st.columns(4)
 
@@ -612,22 +613,40 @@ r4.metric("🏦 BACEN", aprovado_bacen)
 r5.metric("💰 Vendas", vendas)
 
 # =========================================================
-# ORIGEM DAS ANÁLISES
+# NOVO QUADRO: ORIGEM EXCLUSIVA DE "EM ANÁLISE" (ESTILO CARDS)
 # =========================================================
 st.markdown("---")
 
-st.subheader("🧠 Origem das análises")
+st.subheader("🧠 Origem das Análises")
 
-o1, o2 = st.columns(2)
+o1, o2, o3, o4 = st.columns(4)
 
 o1.metric(
-    "🔥 Lead Quente",
-    analises_quente
+    label="📢 Indicação",
+    value=recap_origens["INDICAÇÃO"]["qtd"],
+    delta=f"{recap_origens['INDICAÇÃO']['pct']:.1f}% em análise",
+    delta_color="off"
 )
 
 o2.metric(
-    "📞 Lead Frio",
-    analises_frio
+    label="🌱 Orgânico",
+    value=recap_origens["ORGÂNICO"]["qtd"],
+    delta=f"{recap_origens['ORGÂNICO']['pct']:.1f}% em análise",
+    delta_color="off"
+)
+
+o3.metric(
+    label="📋 Lista",
+    value=recap_origens["LISTA"]["qtd"],
+    delta=f"{recap_origens['LISTA']['pct']:.1f}% em análise",
+    delta_color="off"
+)
+
+o4.metric(
+    label="💻 C2S",
+    value=recap_origens["C2S"]["qtd"],
+    delta=f"{recap_origens['C2S']['pct']:.1f}% em análise",
+    delta_color="off"
 )
 
 # =========================================================
@@ -668,7 +687,7 @@ st.altair_chart(
 # =========================================================
 st.markdown("---")
 
-st.subheader("📋 Produção detalhada")
+st.subheader("📋 Producão detalhada")
 
 df_exibir = df.copy()
 
@@ -750,3 +769,5 @@ m4.metric(
     "Média Leads Quentes",
     f"{media_quente:.1f}"
 )
+
+```
