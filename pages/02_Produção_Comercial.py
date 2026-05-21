@@ -1,8 +1,29 @@
-Ah, agora entendi perfeitamente! Peço desculpa pela confusão anterior.
+Tens toda a razão, Bruno! Peço desculpa. Olhando com atenção para a função `carregar_processos` que herdámos do teu código original, percebi onde está a rasteira.
 
-Na lógica do teu script original, a contagem de análises junta duas coisas: `"EM ANÁLISE"` e `"REANÁLISE"`. O que tu queres é filtrar **estritamente** as linhas onde a coluna `STATUS_BASE` é exatamente igual a `"EM ANÁLISE"`, deixando de fora as reanálises na hora de calcular a percentagem e a quantidade de origens.
+Mesmo que eu filtre por `"EM ANÁLISE"`, a função junta tudo no mesmo saco logo no início:
 
-Aqui está o código completo corrigido e revisado com essa regra exata. Podes substituir todo o conteúdo do teu ficheiro `02_Produção_Comercial.py`:
+```python
+# O que o teu código faz no início:
+dfp.loc[s.str.contains("EM ANÁLISE", na=False), "STATUS_BASE"] = "EM ANÁLISE"
+dfp.loc[s.str.contains("REANÁLISE", na=False), "STATUS_BASE"] = "REANÁLISE"
+
+```
+
+**O problema:** Se na tua planilha o texto original da célula for `"EM ANÁLISE / REANÁLISE"` ou contiver a palavra "ANÁLISE" em ambas, o filtro `.isin(["EM ANÁLISE"])` ou `== "EM ANÁLISE"` acaba por apanhar registos que não devia, porque a conversão inicial foi genérica ou a coluna `STATUS_ORIGINAL` não foi verificada de forma estrita.
+
+Para não haver margem para erros, eu preciso de saber exatamente **como está escrito o texto (o status) na célula da tua planilha do Google Sheets** quando a linha é estritamente uma análise nova.
+
+Por exemplo, na coluna **SITUAÇÃO** (ou STATUS) da folha "Controle de Processos":
+
+1. Escrevem exatamente `EM ANÁLISE`?
+2. Escrevem `Analise`?
+3. Existe outra coluna específica (como uma coluna chamada "TIPO") que define se é "Análise" ou "Reanálise"?
+
+### Como vamos resolver isto já:
+
+Vou modificar a lógica para ler diretamente a tua coluna original (sem passar por essa conversão antiga que misturava as coisas).
+
+Substitui o teu ficheiro pelo código abaixo. Nele, mudei o filtro para procurar **exatamente** o termo `"EM ANÁLISE"` puro na coluna de origem, ignorando qualquer linha que contenha `"REANÁLISE"` ou `"REANÁLISE"` no texto original:
 
 ```python
 import streamlit as st
@@ -359,7 +380,7 @@ df_processos = carregar_processos()
 # =========================================================
 # TÍTULO
 # =========================================================
-st.title("📞 Produção Comercial")
+st.title("📞  Produção Comercial")
 
 st.caption(
     "Controle operacional diário de prospecção comercial"
@@ -537,10 +558,10 @@ vendas = int(
 )
 
 # =========================================================
-# FILTRO RESTRITO: CONTAR EXCLUSIVAMENTE "EM ANÁLISE"
+# CORREÇÃO CRÍTICA FILTRO: IGNORA "REANÁLISE" COMPLETAMENTE
 # =========================================================
 df_apenas_em_analise = df_processos_periodo[
-    df_processos_periodo["STATUS_BASE"] == "EM ANÁLISE"
+    (df_processos_periodo["STATUS_ORIGINAL"] == "EM ANÁLISE")
 ].copy()
 
 total_linhas_em_analise = len(df_apenas_em_analise)
@@ -771,3 +792,5 @@ m4.metric(
 )
 
 ```
+
+Testa com este e avisa-me se bateu certo com o que querias ver nos cards!
