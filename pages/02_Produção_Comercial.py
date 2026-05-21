@@ -1,31 +1,3 @@
-Tens toda a razão, Bruno! Peço desculpa. Olhando com atenção para a função `carregar_processos` que herdámos do teu código original, percebi onde está a rasteira.
-
-Mesmo que eu filtre por `"EM ANÁLISE"`, a função junta tudo no mesmo saco logo no início:
-
-```python
-# O que o teu código faz no início:
-dfp.loc[s.str.contains("EM ANÁLISE", na=False), "STATUS_BASE"] = "EM ANÁLISE"
-dfp.loc[s.str.contains("REANÁLISE", na=False), "STATUS_BASE"] = "REANÁLISE"
-
-```
-
-**O problema:** Se na tua planilha o texto original da célula for `"EM ANÁLISE / REANÁLISE"` ou contiver a palavra "ANÁLISE" em ambas, o filtro `.isin(["EM ANÁLISE"])` ou `== "EM ANÁLISE"` acaba por apanhar registos que não devia, porque a conversão inicial foi genérica ou a coluna `STATUS_ORIGINAL` não foi verificada de forma estrita.
-
-Para não haver margem para erros, eu preciso de saber exatamente **como está escrito o texto (o status) na célula da tua planilha do Google Sheets** quando a linha é estritamente uma análise nova.
-
-Por exemplo, na coluna **SITUAÇÃO** (ou STATUS) da folha "Controle de Processos":
-
-1. Escrevem exatamente `EM ANÁLISE`?
-2. Escrevem `Analise`?
-3. Existe outra coluna específica (como uma coluna chamada "TIPO") que define se é "Análise" ou "Reanálise"?
-
-### Como vamos resolver isto já:
-
-Vou modificar a lógica para ler diretamente a tua coluna original (sem passar por essa conversão antiga que misturava as coisas).
-
-Substitui o teu ficheiro pelo código abaixo. Nele, mudei o filtro para procurar **exatamente** o termo `"EM ANÁLISE"` puro na coluna de origem, ignorando qualquer linha que contenha `"REANÁLISE"` ou `"REANÁLISE"` no texto original:
-
-```python
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -285,21 +257,15 @@ def carregar_processos():
 
     s = dfp["STATUS_ORIGINAL"]
 
-    dfp.loc[s.str.contains("EM ANÁLISE", na=False), "STATUS_BASE"] = "EM ANÁLISE"
-
-    dfp.loc[s.str.contains("REANÁLISE", na=False), "STATUS_BASE"] = "REANÁLISE"
-
-    dfp.loc[s.str.strip() == "APROVAÇÃO", "STATUS_BASE"] = "APROVADO"
-
-    dfp.loc[s.str.contains("APROVADO BACEN", na=False), "STATUS_BASE"] = "APROVADO BACEN"
-
-    dfp.loc[s.str.contains("APROVADO COM RESTRIÇÃO", na=False), "STATUS_BASE"] = "APROVADO COM RESTRIÇÃO"
-
-    dfp.loc[s.str.contains("REPROV", na=False), "STATUS_BASE"] = "REPROVADO"
-
-    dfp.loc[s.str.contains("VENDA GERADA", na=False), "STATUS_BASE"] = "VENDA GERADA"
-
-    dfp.loc[s.str.contains("VENDA INFORMADA", na=False), "STATUS_BASE"] = "VENDA INFORMADA"
+    # Mudança cirúrgica aqui para isolar perfeitamente
+    dfp.loc[s == "EM ANÁLISE", "STATUS_BASE"] = "EM ANÁLISE"
+    dfp.loc[s == "REANÁLISE", "STATUS_BASE"] = "REANÁLISE"
+    dfp.loc[s == "APROVAÇÃO", "STATUS_BASE"] = "APROVADO"
+    dfp.loc[s == "APROVADO BACEN", "STATUS_BASE"] = "APROVADO BACEN"
+    dfp.loc[s == "APROVADO COM RESTRIÇÃO", "STATUS_BASE"] = "APROVADO COM RESTRIÇÃO"
+    dfp.loc[s == "REPROVAÇÃO", "STATUS_BASE"] = "REPROVADO"
+    dfp.loc[s == "VENDA GERADA", "STATUS_BASE"] = "VENDA GERADA"
+    dfp.loc[s == "VENDA INFORMADA", "STATUS_BASE"] = "VENDA INFORMADA"
 
     # ORIGEM
     if "ORIGEM" not in dfp.columns:
@@ -526,7 +492,7 @@ taxa_prospect = (
 )
 
 # =========================================================
-# PROCESSOS (CONTAGENS DIRETAS)
+# PROCESSOS (CONTAGENS DIRETAS PARA O FUNIL)
 # =========================================================
 analises = int(
     df_processos_periodo["STATUS_BASE"]
@@ -558,20 +524,21 @@ vendas = int(
 )
 
 # =========================================================
-# CORREÇÃO CRÍTICA FILTRO: IGNORA "REANÁLISE" COMPLETAMENTE
+# FILTRO: APENAS E EXCLUSIVAMENTE "EM ANÁLISE"
 # =========================================================
-df_apenas_em_analise = df_processos_periodo[
-    (df_processos_periodo["STATUS_ORIGINAL"] == "EM ANÁLISE")
+df_estrito_em_analise = df_processos_periodo[
+    df_processos_periodo["STATUS_ORIGINAL"] == "EM ANÁLISE"
 ].copy()
 
-total_linhas_em_analise = len(df_apenas_em_analise)
+total_em_analise_estrito = len(df_estrito_em_analise)
 
-origens_alvo = ["INDICAÇÃO", "ORGÂNICO", "LISTA", "C2S"]
+# Mapeamos todas as origens que aparecem no menu suspenso do seu print
+origens_alvo = ["INDICAÇÃO", "ORGÂNICO", "LISTA", "C2S", "INSTAGRAM", "TRÁFEGO"]
 recap_origens = {}
 
 for orig in origens_alvo:
-    qtd = int((df_apenas_em_analise["ORIGEM"] == orig).sum())
-    pct = (qtd / total_linhas_em_analise * 100) if total_linhas_em_analise > 0 else 0
+    qtd = int((df_estrito_em_analise["ORIGEM"] == orig).sum())
+    pct = (qtd / total_em_analise_estrito * 100) if total_em_analise_estrito > 0 else 0
     recap_origens[orig] = {"qtd": qtd, "pct": pct}
 
 # =========================================================
@@ -623,7 +590,7 @@ st.subheader("🎯 Resultado")
 
 r1, r2, r3, r4, r5 = st.columns(5)
 
-r1.metric("📄 Análises", analises)
+r1.metric("📄 Análises (Geral)", analises)
 
 r2.metric("✅ Aprovações", aprovacoes)
 
@@ -634,39 +601,57 @@ r4.metric("🏦 BACEN", aprovado_bacen)
 r5.metric("💰 Vendas", vendas)
 
 # =========================================================
-# NOVO QUADRO: ORIGEM EXCLUSIVA DE "EM ANÁLISE" (ESTILO CARDS)
+# QUADRO DE CARDS: ORIGENS DA SITUAÇÃO "EM ANÁLISE"
 # =========================================================
 st.markdown("---")
 
-st.subheader("🧠 Origem das Análises")
+st.subheader(f"🧠 Origem das Análises Atuais (Total Puro: {total_em_analise_estrito})")
 
-o1, o2, o3, o4 = st.columns(4)
+# Criamos 3 colunas para a primeira linha de cards
+o1, o2, o3 = st.columns(3)
 
 o1.metric(
     label="📢 Indicação",
     value=recap_origens["INDICAÇÃO"]["qtd"],
-    delta=f"{recap_origens['INDICAÇÃO']['pct']:.1f}% em análise",
+    delta=f"{recap_origens['INDICAÇÃO']['pct']:.1f}% das análises",
     delta_color="off"
 )
 
 o2.metric(
     label="🌱 Orgânico",
     value=recap_origens["ORGÂNICO"]["qtd"],
-    delta=f"{recap_origens['ORGÂNICO']['pct']:.1f}% em análise",
+    delta=f"{recap_origens['ORGÂNICO']['pct']:.1f}% das análises",
     delta_color="off"
 )
 
 o3.metric(
     label="📋 Lista",
     value=recap_origens["LISTA"]["qtd"],
-    delta=f"{recap_origens['LISTA']['pct']:.1f}% em análise",
+    delta=f"{recap_origens['LISTA']['pct']:.1f}% das análises",
     delta_color="off"
 )
+
+# Criamos mais 3 colunas para a segunda linha de cards (novas origens identificadas no seu print)
+o4, o5, o6 = st.columns(3)
 
 o4.metric(
     label="💻 C2S",
     value=recap_origens["C2S"]["qtd"],
-    delta=f"{recap_origens['C2S']['pct']:.1f}% em análise",
+    delta=f"{recap_origens['C2S']['pct']:.1f}% das análises",
+    delta_color="off"
+)
+
+o5.metric(
+    label="📸 Instagram",
+    value=recap_origens["INSTAGRAM"]["qtd"],
+    delta=f"{recap_origens['INSTAGRAM']['pct']:.1f}% das análises",
+    delta_color="off"
+)
+
+o6.metric(
+    label="🎯 Tráfego",
+    value=recap_origens["TRÁFEGO"]["qtd"],
+    delta=f"{recap_origens['TRÁFEGO']['pct']:.1f}% das análises",
     delta_color="off"
 )
 
@@ -708,7 +693,7 @@ st.altair_chart(
 # =========================================================
 st.markdown("---")
 
-st.subheader("📋 Producão detalhada")
+st.subheader("📋 Produção detalhada")
 
 df_exibir = df.copy()
 
@@ -790,7 +775,3 @@ m4.metric(
     "Média Leads Quentes",
     f"{media_quente:.1f}"
 )
-
-```
-
-Testa com este e avisa-me se bateu certo com o que querias ver nos cards!
