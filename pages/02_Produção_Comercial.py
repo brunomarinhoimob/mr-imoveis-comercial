@@ -530,12 +530,11 @@ vendas = int(
 )
 
 # =========================================================
-# ORIGEM
+# ORIGEM DAS ANÁLISES
 # =========================================================
 analises_quente = int(
     df_processos_periodo[
-        (df_processos_periodo["STATUS_BASE"]
-        .isin(["EM ANÁLISE", "REANÁLISE"])) &
+        (df_processos_periodo["STATUS_BASE"] == "EM ANÁLISE") &
 
         (df_processos_periodo["ORIGEM"]
         .str.contains("QUENTE"))
@@ -545,45 +544,12 @@ analises_quente = int(
 
 analises_frio = int(
     df_processos_periodo[
-        (df_processos_periodo["STATUS_BASE"]
-        .isin(["EM ANÁLISE", "REANÁLISE"])) &
+        (df_processos_periodo["STATUS_BASE"] == "EM ANÁLISE") &
 
         (df_processos_periodo["ORIGEM"]
         .str.contains("FRIO"))
     ]["CHAVE_CLIENTE"]
     .nunique()
-)
-
-vendas_quente = int(
-    df_processos_periodo[
-        (df_processos_periodo["STATUS_BASE"]
-        .isin(["VENDA GERADA", "VENDA INFORMADA"])) &
-
-        (df_processos_periodo["ORIGEM"]
-        .str.contains("QUENTE"))
-    ]["CHAVE_CLIENTE"]
-    .nunique()
-)
-
-vendas_frio = int(
-    df_processos_periodo[
-        (df_processos_periodo["STATUS_BASE"]
-        .isin(["VENDA GERADA", "VENDA INFORMADA"])) &
-
-        (df_processos_periodo["ORIGEM"]
-        .str.contains("FRIO"))
-    ]["CHAVE_CLIENTE"]
-    .nunique()
-)
-
-conv_quente = (
-    (vendas_quente / analises_quente) * 100
-    if analises_quente > 0 else 0
-)
-
-conv_frio = (
-    (vendas_frio / analises_frio) * 100
-    if analises_frio > 0 else 0
 )
 
 # =========================================================
@@ -646,32 +612,22 @@ r4.metric("🏦 BACEN", aprovado_bacen)
 r5.metric("💰 Vendas", vendas)
 
 # =========================================================
-# ORIGEM
+# ORIGEM DAS ANÁLISES
 # =========================================================
 st.markdown("---")
 
-st.subheader("🔥 Origem das análises")
+st.subheader("🧠 Origem das análises")
 
-o1, o2, o3, o4 = st.columns(4)
+o1, o2 = st.columns(2)
 
 o1.metric(
-    "🔥 Análises Quente",
+    "🔥 Lead Quente",
     analises_quente
 )
 
 o2.metric(
-    "❄️ Análises Frio",
+    "📞 Lead Frio",
     analises_frio
-)
-
-o3.metric(
-    "🔥 Conversão Quente",
-    f"{conv_quente:.1f}%"
-)
-
-o4.metric(
-    "❄️ Conversão Frio",
-    f"{conv_frio:.1f}%"
 )
 
 # =========================================================
