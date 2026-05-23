@@ -44,15 +44,16 @@ div[data-testid="stMetricValue"] {
 """, unsafe_allow_html=True)
 
 # =========================================================
-# GOOGLE SHEETS
+# GOOGLE SHEETS (LINKS OTIMIZADOS PARA ATUALIZAÇÃO EM TEMPO REAL)
 # =========================================================
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 
 GID_PRODUCAO = "1161609337"
 GID_PROCESSOS = "1574157905"
 
-CSV_PRODUCAO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PRODUCAO}"
-CSV_PROCESSOS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PROCESSOS}"
+# Mudamos de /export para /pub para evitar que o Google Sheets trave o cache dos dados antigos
+CSV_PRODUCAO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/pub?output=csv&gid={GID_PRODUCAO}"
+CSV_PROCESSOS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/pub?output=csv&gid={GID_PROCESSOS}"
 
 # =========================================================
 # FUNÇÕES AUXILIARES
@@ -148,7 +149,7 @@ def tratar_data_base(df):
 # =========================================================
 # PRODUÇÃO COMERCIAL
 # =========================================================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10) # Reduzido o tempo de cache para atualizar mais rápido
 def carregar_base():
 
     df = pd.read_csv(CSV_PRODUCAO)
@@ -197,7 +198,7 @@ def carregar_base():
 # =========================================================
 # CONTROLE DE PROCESSOS
 # =========================================================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10) # Reduzido o tempo de cache para atualizar mais rápido
 def carregar_processos():
 
     dfp = pd.read_csv(CSV_PROCESSOS)
@@ -257,7 +258,7 @@ def carregar_processos():
 
     s = dfp["STATUS_ORIGINAL"]
 
-    # Mudança cirúrgica aqui para isolar perfeitamente
+    # Mapeamento estrito e limpo de cada status
     dfp.loc[s == "EM ANÁLISE", "STATUS_BASE"] = "EM ANÁLISE"
     dfp.loc[s == "REANÁLISE", "STATUS_BASE"] = "REANÁLISE"
     dfp.loc[s == "APROVAÇÃO", "STATUS_BASE"] = "APROVADO"
@@ -492,7 +493,7 @@ taxa_prospect = (
 )
 
 # =========================================================
-# PROCESSOS (CONTAGENS DIRETAS PARA O FUNIL)
+# PROCESSOS (CONTAGENS DIRETAS)
 # =========================================================
 analises = int(
     df_processos_periodo["STATUS_BASE"]
@@ -524,7 +525,7 @@ vendas = int(
 )
 
 # =========================================================
-# FILTRO: APENAS E EXCLUSIVAMENTE "EM ANÁLISE"
+# FILTRO ESTRITO: APENAS "EM ANÁLISE"
 # =========================================================
 df_estrito_em_analise = df_processos_periodo[
     df_processos_periodo["STATUS_ORIGINAL"] == "EM ANÁLISE"
@@ -532,7 +533,6 @@ df_estrito_em_analise = df_processos_periodo[
 
 total_em_analise_estrito = len(df_estrito_em_analise)
 
-# Mapeamos todas as origens que aparecem no menu suspenso do seu print
 origens_alvo = ["INDICAÇÃO", "ORGÂNICO", "LISTA", "C2S", "INSTAGRAM", "TRÁFEGO"]
 recap_origens = {}
 
@@ -590,7 +590,7 @@ st.subheader("🎯 Resultado")
 
 r1, r2, r3, r4, r5 = st.columns(5)
 
-r1.metric("📄 Análises (Geral)", analises)
+r1.metric("📄 Análises", analises)
 
 r2.metric("✅ Aprovações", aprovacoes)
 
@@ -601,57 +601,55 @@ r4.metric("🏦 BACEN", aprovado_bacen)
 r5.metric("💰 Vendas", vendas)
 
 # =========================================================
-# QUADRO DE CARDS: ORIGENS DA SITUAÇÃO "EM ANÁLISE"
+# NOVO QUADRO: ORIGEM EXCLUSIVA DE "EM ANÁLISE"
 # =========================================================
 st.markdown("---")
 
 st.subheader(f"🧠 Origem das Análises Atuais (Total Puro: {total_em_analise_estrito})")
 
-# Criamos 3 colunas para a primeira linha de cards
 o1, o2, o3 = st.columns(3)
 
 o1.metric(
     label="📢 Indicação",
     value=recap_origens["INDICAÇÃO"]["qtd"],
-    delta=f"{recap_origens['INDICAÇÃO']['pct']:.1f}% das análises",
+    delta=f"{recap_origens['INDICAÇÃO']['pct']:.1f}% em análise",
     delta_color="off"
 )
 
 o2.metric(
     label="🌱 Orgânico",
     value=recap_origens["ORGÂNICO"]["qtd"],
-    delta=f"{recap_origens['ORGÂNICO']['pct']:.1f}% das análises",
+    delta=f"{recap_origens['ORGÂNICO']['pct']:.1f}% em análise",
     delta_color="off"
 )
 
 o3.metric(
     label="📋 Lista",
     value=recap_origens["LISTA"]["qtd"],
-    delta=f"{recap_origens['LISTA']['pct']:.1f}% das análises",
+    delta=f"{recap_origens['LISTA']['pct']:.1f}% em análise",
     delta_color="off"
 )
 
-# Criamos mais 3 colunas para a segunda linha de cards (novas origens identificadas no seu print)
 o4, o5, o6 = st.columns(3)
 
 o4.metric(
     label="💻 C2S",
     value=recap_origens["C2S"]["qtd"],
-    delta=f"{recap_origens['C2S']['pct']:.1f}% das análises",
+    delta=f"{recap_origens['C2S']['pct']:.1f}% em análise",
     delta_color="off"
 )
 
 o5.metric(
     label="📸 Instagram",
     value=recap_origens["INSTAGRAM"]["qtd"],
-    delta=f"{recap_origens['INSTAGRAM']['pct']:.1f}% das análises",
+    delta=f"{recap_origens['INSTAGRAM']['pct']:.1f}% em análise",
     delta_color="off"
 )
 
 o6.metric(
     label="🎯 Tráfego",
     value=recap_origens["TRÁFEGO"]["qtd"],
-    delta=f"{recap_origens['TRÁFEGO']['pct']:.1f}% das análises",
+    delta=f"{recap_origens['TRÁFEGO']['pct']:.1f}% em análise",
     delta_color="off"
 )
 
