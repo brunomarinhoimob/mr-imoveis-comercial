@@ -51,9 +51,10 @@ SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_PRODUCAO = "1161609337"
 GID_PROCESSOS = "1574157905"
 
-# Mudamos de /export para /pub para evitar que o Google Sheets trave o cache dos dados antigos
-CSV_PRODUCAO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/pub?output=csv&gid={GID_PRODUCAO}"
-CSV_PROCESSOS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/pub?output=csv&gid={GID_PROCESSOS}"
+# Voltando para /export, que traz o dado em TEMPO REAL (Live Data). 
+# Deixe o controle de "cache" apenas na responsabilidade do Streamlit (com o ttl).
+CSV_PRODUCAO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PRODUCAO}"
+CSV_PROCESSOS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PROCESSOS}"
 
 # =========================================================
 # FUNÇÕES AUXILIARES
