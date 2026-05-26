@@ -281,18 +281,21 @@ taxa_prospect = (total_prospect / total_operacional) * 100 if total_operacional 
 # KPIS DE PROCESSOS (REGRA DA ÚLTIMA LINHA POR CLIENTE)
 # =========================================================
 if not df_processos_periodo.empty:
-    df_processos_periodo = df_processos_periodo.sort_values(by="DATA", ascending=True)
-    df_ultimos_status = df_processos_periodo.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().reset_index()
-    df_ultimas_origens = df_processos_periodo.groupby("CHAVE_CLIENTE")["ORIGEM"].last().reset_index()
-    df_clientes_unicos = pd.merge(df_ultimos_status, df_ultimas_origens, on="CHAVE_CLIENTE", how="left")
+    # Garante que estamos pegando o registro mais recente por cliente
+    df_lista_recente = df_processos_periodo.sort_values(by="DATA", ascending=True)
+    df_lista_recente = df_lista_recente.drop_duplicates(subset=["CHAVE_CLIENTE"], keep="last")
+    
+    # Normaliza para comparação (ignora acentos, caixa alta e espaços extras)
+    status_norm = df_lista_recente["STATUS_BASE"].str.upper().str.strip()
+    
+    # Contagens utilizando a normalização
+    analises = int(status_norm.isin(["EM ANÁLISE", "REANÁLISE"]).sum())
+    aprovacoes = int((status_norm == "APROVADO").sum())
+    aprovado_bacen = int((status_norm == "APROVADO BACEN").sum())
+    aprovado_restricao = int((status_norm == "APROVADO COM RESTRIÇÃO").sum())
+    vendas = int(status_norm.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum())
 else:
-    df_clientes_unicos = pd.DataFrame(columns=["CHAVE_CLIENTE", "STATUS_BASE", "ORIGEM"])
-
-analises = int(df_clientes_unicos["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"]).sum())
-aprovacoes = int((df_clientes_unicos["STATUS_BASE"] == "APROVADO").sum())
-aprovado_bacen = int((df_clientes_unicos["STATUS_BASE"] == "APROVADO BACEN").sum())
-aprovado_restricao = int((df_clientes_unicos["STATUS_BASE"] == "APROVADO COM RESTRIÇÃO").sum())
-vendas = int(df_clientes_unicos["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"]).sum())
+    analises = aprovacoes = aprovado_bacen = aprovado_restricao = vendas = 0
 
 # =========================================================
 # QUADRO DE ORIGENS (TODAS AS ANÁLISES ATIVAS)
