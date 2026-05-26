@@ -49,7 +49,7 @@ SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_PRODUCAO = "1161609337"
 GID_PROCESSOS = "1574157905"
 
-# Usando /export para buscar Live Data em vez do cache do Google
+# Usando /export para buscar Live Data em tempo real
 CSV_PRODUCAO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PRODUCAO}"
 CSV_PROCESSOS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PROCESSOS}"
 
@@ -158,20 +158,22 @@ def carregar_processos():
     else:
         dfp["STATUS_ORIGINAL"] = ""
 
-    dfp["STATUS_BASE"] = ""
+    dfp["STATUS_BASE"] = "OUTROS"
     s = dfp["STATUS_ORIGINAL"]
 
-    # Mapeamento estrito de status
+    # Mapeamento inteligente de status (incluindo tratamento de textos parciais)
     dfp.loc[s == "EM ANÁLISE", "STATUS_BASE"] = "EM ANÁLISE"
     dfp.loc[s == "REANÁLISE", "STATUS_BASE"] = "REANÁLISE"
     dfp.loc[s == "APROVAÇÃO", "STATUS_BASE"] = "APROVADO"
     dfp.loc[s == "APROVADO BACEN", "STATUS_BASE"] = "APROVADO BACEN"
     dfp.loc[s == "APROVADO COM RESTRIÇÃO", "STATUS_BASE"] = "APROVADO COM RESTRIÇÃO"
-    dfp.loc[s == "REPROVAÇÃO", "STATUS_BASE"] = "REPROVADO"
     dfp.loc[s == "VENDA GERADA", "STATUS_BASE"] = "VENDA GERADA"
     dfp.loc[s == "VENDA INFORMADA", "STATUS_BASE"] = "VENDA INFORMADA"
+    
+    # Captura variações de Pendência e Reprovação de forma robusta
+    dfp.loc[s.str.contains("PENDEN", na=False), "STATUS_BASE"] = "PENDÊNCIA"
+    dfp.loc[s.str.contains("REPROV", na=False), "STATUS_BASE"] = "REPROVADO"
 
-    # Origem
     if "ORIGEM" not in dfp.columns:
         dfp["ORIGEM"] = ""
     dfp["ORIGEM"] = dfp["ORIGEM"].fillna("").astype(str).str.upper().str.strip()
@@ -205,7 +207,6 @@ df_processos = carregar_processos()
 st.title("📞  Produção Comercial")
 st.caption("Controle operacional diário de prospecção comercial")
 
-# Validação Base
 if df.empty:
     st.warning("Sem dados.")
     st.stop()
@@ -251,17 +252,13 @@ else:
     df = df[(df["DATA"].dt.date >= data_ini) & (df["DATA"].dt.date <= data_fim)].copy()
 
 # =========================================================
-# CORREÇÃO DE PROCESSOS (Ignora limite de corte data_fim)
+# FILTRAGEM DE PROCESSOS (Sem travar no teto da produção)
 # =========================================================
 df_processos = df_processos[df_processos["DATA"].notna()].copy()
-
-# Pega os processos da data inicial pra frente (sem travar no dia 22 se a base de prospecção parou)
-df_processos_periodo = df_processos[
-    (df_processos["DATA"].dt.date >= data_ini)
-].copy()
+df_processos_periodo = df_processos[(df_processos["DATA"].dt.date >= data_ini)].copy()
 
 # =========================================================
-# CÁLCULOS TOTAIS
+# CÁLCULOS OPERACIONAIS
 # =========================================================
 df["TOTAL_CALCULADO"] = df["ATENDEU"] + df["WHATSAPP ENVIADO"] + df["CONTATO INVÁLIDO"]
 df["TOTAL"] = df["TOTAL"].fillna(0)
@@ -278,28 +275,25 @@ total_operacional = int(df["TOTAL"].sum())
 taxa_prospect = (total_prospect / total_operacional) * 100 if total_operacional > 0 else 0
 
 # =========================================================
-# KPIS DE PROCESSOS (TOTALIZAÇÃO PELA ÚLTIMA LINHA DE CADA CLIENTE)
+# LÓGICA DE CONTAGEM PELA ÚLTIMA LINHA REAL DE CADA CLIENTE
 # =========================================================
 if not df_processos_periodo.empty:
-    # Ordena cronologicamente para garantir o mapeamento do último status real
     df_processos_periodo = df_processos_periodo.sort_values(by="DATA", ascending=True)
-    
-    # Agrupa por cliente obtendo o último status e origem de cada um de forma definitiva
     df_ultimos_status = df_processos_periodo.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().reset_index()
     df_ultimas_origens = df_processos_periodo.groupby("CHAVE_CLIENTE")["ORIGEM"].last().reset_index()
     df_clientes_unicos = pd.merge(df_ultimos_status, df_ultimas_origens, on="CHAVE_CLIENTE", how="left")
 else:
     df_clientes_unicos = pd.DataFrame(columns=["CHAVE_CLIENTE", "STATUS_BASE", "ORIGEM"])
 
-# REGRA DOS CARDS:
-# O card 'Análises' agora reflete o TOTAL ABSOLUTO de clientes que passaram por análise no período
-analises = int(df_clientes_unicos["CHAVE_CLIENTE"].nunique())
-
-# Os demais cards contam o destino final exato (última linha) de cada um desses clientes
+# Contadores matemáticos precisos baseados na última linha
+total_clientes = int(df_clientes_unicos["CHAVE_CLIENTE"].nunique())
+em_analise = int(df_clientes_unicos["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"]).sum())
 aprovacoes = int((df_clientes_unicos["STATUS_BASE"] == "APROVADO").sum())
 aprovado_bacen = int((df_clientes_unicos["STATUS_BASE"] == "APROVADO BACEN").sum())
 aprovado_restricao = int((df_clientes_unicos["STATUS_BASE"] == "APROVADO COM RESTRIÇÃO").sum())
 vendas = int(df_clientes_unicos["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"]).sum())
+pendencias = int((df_clientes_unicos["STATUS_BASE"] == "PENDÊNCIA").sum())
+reprovacoes = int((df_clientes_unicos["STATUS_BASE"] == "REPROVADO").sum())
 
 # =========================================================
 # QUADRO DE ORIGENS (TODAS AS ANÁLISES ATIVAS)
@@ -316,7 +310,7 @@ for orig in origens_alvo:
     recap_origens[orig] = {"qtd": qtd, "pct": pct}
 
 # =========================================================
-# CARDS: VISUALIZAÇÃO GENERALISTA
+# BLOCOS VISUAIS: CARDS OPERACIONAIS
 # =========================================================
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("📞 Total Operacional", total_operacional)
@@ -332,17 +326,26 @@ p3.metric("💬 WhatsApp", total_whatsapp)
 p4.metric("🚫 Inválido", total_invalido)
 
 # =========================================================
-# CARDS: RESULTADO DAS ANÁLISES
+# NOVO DESIGN DOS CARDS DE RESULTADO (DISTRIBUIÇÃO COMPLETA)
 # =========================================================
 st.markdown("---")
-st.subheader("🎯 Resultado")
+st.subheader("🎯 Resultado dos Processos")
 
-r1, r2, r3, r4, r5 = st.columns(5)
-r1.metric("📄 Análises", analises)
-r2.metric("✅ Aprovações", aprovacoes)
-r3.metric("🟡 Restrição", aprovado_restricao)
-r4.metric("🏦 BACEN", aprovado_bacen)
-r5.metric("💰 Vendas", vendas)
+# Linha 1: Fila de Andamento / Situação Operacional
+st.markdown("##### ⏳ Fila Operacional")
+r_col1, r_col2, r_col3, r_col4 = st.columns(4)
+r_col1.metric("👥 Total de Clientes únicos", total_clientes)
+r_col2.metric("📄 Em Análise / Reanálise", em_analise)
+r_col3.metric("⏳ Pendências", pendencias)
+r_col4.metric("❌ Reprovações", reprovacoes)
+
+# Linha 2: Entregas de Sucesso / Conversões
+st.markdown("##### 🚀 Conversões")
+r_col5, r_col6, r_col7, r_col8 = st.columns(4)
+r_col5.metric("✅ Aprovações Puras", aprovacoes)
+r_col6.metric("🟡 Aprov. com Restrição", aprovado_restricao)
+r_col7.metric("🏦 Aprovado BACEN", aprovado_bacen)
+r_col8.metric("💰 Vendas Concluídas", vendas)
 
 # =========================================================
 # QUADRO: ORIGEM EXCLUSIVA DE "EM ANÁLISE"
@@ -383,7 +386,7 @@ chart = (
 st.altair_chart(chart, use_container_width=True)
 
 # =========================================================
-# TABELA 1: PRODUÇÃO DETALHADA
+# TABELA 1: PRODUÇÃO OPERACIONAL DETALHADA
 # =========================================================
 st.markdown("---")
 st.subheader("📋 Produção detalhada")
@@ -420,7 +423,7 @@ m3.metric("Média Prospect", f"{media_prospect:.1f}")
 m4.metric("Média Leads Quentes", f"{media_quente:.1f}")
 
 # =========================================================
-# NOVA TABELA 2: LISTAGEM DE ANÁLISES ATUALIZADAS (Último Status)
+# TABELA 2: LISTAGEM DE ANÁLISES ATUALIZADAS (Último Status)
 # =========================================================
 st.markdown("---")
 st.subheader("📋 Situação Real das Análises (Último Status)")
