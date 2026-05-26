@@ -49,7 +49,6 @@ SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_PRODUCAO = "1161609337"
 GID_PROCESSOS = "1574157905"
 
-# Usando /export para buscar Live Data em tempo real
 CSV_PRODUCAO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PRODUCAO}"
 CSV_PROCESSOS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PROCESSOS}"
 
@@ -147,8 +146,8 @@ def carregar_processos():
     dfp = tratar_data_base(dfp)
 
     possiveis_status = [
-        "SITUAÇÃO", "SITUACAO", "STATUS",
-        "SITUAÇÃO ATUAL", "SITUACAO ATUAL",
+        "SITUAÇÃO", "SITUACAO", "STATUS", "SITUAÇÃO ATUAL", "SITUACAO ATUAL",
+        "SITUAÇÃO DA ANÁLISE", "SITUACAO DA ANALISE", "STATUS DA ANALISE", "STATUS DA ANÁLISE"
     ]
 
     col_status = next((c for c in possiveis_status if c in dfp.columns), None)
@@ -161,7 +160,7 @@ def carregar_processos():
     dfp["STATUS_BASE"] = "OUTROS"
     s = dfp["STATUS_ORIGINAL"]
 
-    # Mapeamento inteligente de status (incluindo tratamento de textos parciais)
+    # Mapeamento inteligente de status
     dfp.loc[s == "EM ANÁLISE", "STATUS_BASE"] = "EM ANÁLISE"
     dfp.loc[s == "REANÁLISE", "STATUS_BASE"] = "REANÁLISE"
     dfp.loc[s == "APROVAÇÃO", "STATUS_BASE"] = "APROVADO"
@@ -170,13 +169,17 @@ def carregar_processos():
     dfp.loc[s == "VENDA GERADA", "STATUS_BASE"] = "VENDA GERADA"
     dfp.loc[s == "VENDA INFORMADA", "STATUS_BASE"] = "VENDA INFORMADA"
     
-    # Captura variações de Pendência e Reprovação de forma robusta
     dfp.loc[s.str.contains("PENDEN", na=False), "STATUS_BASE"] = "PENDÊNCIA"
     dfp.loc[s.str.contains("REPROV", na=False), "STATUS_BASE"] = "REPROVADO"
 
-    if "ORIGEM" not in dfp.columns:
+    # Mapeamento flexível de Origem
+    possiveis_origens = ["ORIGEM", "ORIGEM LEAD", "CANAL", "MEIO", "COMO CONHECEU", "ORIGEM DO CLIENTE", "ORIGEM DO LEAD"]
+    col_origem = next((c for c in possiveis_origens if c in dfp.columns), None)
+    
+    if col_origem:
+        dfp["ORIGEM"] = dfp[col_origem].fillna("").astype(str).str.upper().str.strip()
+    else:
         dfp["ORIGEM"] = ""
-    dfp["ORIGEM"] = dfp["ORIGEM"].fillna("").astype(str).str.upper().str.strip()
 
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE"]
@@ -252,10 +255,20 @@ else:
     df = df[(df["DATA"].dt.date >= data_ini) & (df["DATA"].dt.date <= data_fim)].copy()
 
 # =========================================================
-# FILTRAGEM DE PROCESSOS (Sem travar no teto da produção)
+# FILTRAGEM E RECONSTRUÇÃO DE DADOS EM BRANCO (HISTÓRICO)
 # =========================================================
 df_processos = df_processos[df_processos["DATA"].notna()].copy()
 df_processos_periodo = df_processos[(df_processos["DATA"].dt.date >= data_ini)].copy()
+
+if not df_processos_periodo.empty:
+    df_processos_periodo = df_processos_periodo.sort_values(by="DATA", ascending=True)
+    # Copia inteligentemente dados vazios (como origem) de linhas passadas do mesmo cliente
+    for col_propagate in ["ORIGEM", "CORRETOR", "GERENTE", "NOME_CLIENTE_BASE"]:
+        if col_propagate in df_processos_periodo.columns:
+            df_processos_periodo[col_propagate] = df_processos_periodo[col_propagate].astype(str).str.strip().replace("", None).replace("NAN", None).replace("NONE", None)
+            df_processos_periodo[col_propagate] = df_processos_periodo.groupby("CHAVE_CLIENTE")[col_propagate].ffill()
+            df_processos_periodo[col_propagate] = df_processos_periodo.groupby("CHAVE_CLIENTE")[col_propagate].bfill()
+            df_processos_periodo[col_propagate] = df_processos_periodo[col_propagate].fillna("")
 
 # =========================================================
 # CÁLCULOS OPERACIONAIS
@@ -278,14 +291,12 @@ taxa_prospect = (total_prospect / total_operacional) * 100 if total_operacional 
 # LÓGICA DE CONTAGEM PELA ÚLTIMA LINHA REAL DE CADA CLIENTE
 # =========================================================
 if not df_processos_periodo.empty:
-    df_processos_periodo = df_processos_periodo.sort_values(by="DATA", ascending=True)
     df_ultimos_status = df_processos_periodo.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().reset_index()
     df_ultimas_origens = df_processos_periodo.groupby("CHAVE_CLIENTE")["ORIGEM"].last().reset_index()
     df_clientes_unicos = pd.merge(df_ultimos_status, df_ultimas_origens, on="CHAVE_CLIENTE", how="left")
 else:
     df_clientes_unicos = pd.DataFrame(columns=["CHAVE_CLIENTE", "STATUS_BASE", "ORIGEM"])
 
-# Contadores matemáticos precisos baseados na última linha
 total_clientes = int(df_clientes_unicos["CHAVE_CLIENTE"].nunique())
 em_analise = int(df_clientes_unicos["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"]).sum())
 aprovacoes = int((df_clientes_unicos["STATUS_BASE"] == "APROVADO").sum())
@@ -296,9 +307,9 @@ pendencias = int((df_clientes_unicos["STATUS_BASE"] == "PENDÊNCIA").sum())
 reprovacoes = int((df_clientes_unicos["STATUS_BASE"] == "REPROVADO").sum())
 
 # =========================================================
-# QUADRO DE ORIGENS (TODAS AS ANÁLISES ATIVAS)
+# QUADRO DE ORIGENS (INCLUI EM ANÁLISE, REANÁLISE E PENDÊNCIA)
 # =========================================================
-df_analises_ativas = df_clientes_unicos[df_clientes_unicos["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"])].copy()
+df_analises_ativas = df_clientes_unicos[df_clientes_unicos["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE", "PENDÊNCIA"])].copy()
 total_em_analise_estrito = len(df_analises_ativas)
 
 origens_alvo = ["INDICAÇÃO", "ORGÂNICO", "LISTA", "C2S", "INSTAGRAM", "TRÁFEGO"]
@@ -326,12 +337,11 @@ p3.metric("💬 WhatsApp", total_whatsapp)
 p4.metric("🚫 Inválido", total_invalido)
 
 # =========================================================
-# NOVO DESIGN DOS CARDS DE RESULTADO (DISTRIBUIÇÃO COMPLETA)
+# CARDS DE RESULTADO DOS PROCESSOS
 # =========================================================
 st.markdown("---")
 st.subheader("🎯 Resultado dos Processos")
 
-# Linha 1: Fila de Andamento / Situação Operacional
 st.markdown("##### ⏳ Fila Operacional")
 r_col1, r_col2, r_col3, r_col4 = st.columns(4)
 r_col1.metric("👥 Total de Clientes únicos", total_clientes)
@@ -339,7 +349,6 @@ r_col2.metric("📄 Em Análise / Reanálise", em_analise)
 r_col3.metric("⏳ Pendências", pendencias)
 r_col4.metric("❌ Reprovações", reprovacoes)
 
-# Linha 2: Entregas de Sucesso / Conversões
 st.markdown("##### 🚀 Conversões")
 r_col5, r_col6, r_col7, r_col8 = st.columns(4)
 r_col5.metric("✅ Aprovações Puras", aprovacoes)
@@ -348,20 +357,20 @@ r_col7.metric("🏦 Aprovado BACEN", aprovado_bacen)
 r_col8.metric("💰 Vendas Concluídas", vendas)
 
 # =========================================================
-# QUADRO: ORIGEM EXCLUSIVA DE "EM ANÁLISE"
+# QUADRO: ORIGENS DAS ANÁLISES ATIVAS & PENDENTES
 # =========================================================
 st.markdown("---")
-st.subheader(f"🧠 Origem das Análises Atuais (Total Puro: {total_em_analise_estrito})")
+st.subheader(f"🧠 Origem das Análises Ativas & Pendentes (Total: {total_em_analise_estrito})")
 
 o1, o2, o3 = st.columns(3)
-o1.metric("📢 Indicação", recap_origens["INDICAÇÃO"]["qtd"], delta=f"{recap_origens['INDICAÇÃO']['pct']:.1f}% em análise", delta_color="off")
-o2.metric("🌱 Orgânico", recap_origens["ORGÂNICO"]["qtd"], delta=f"{recap_origens['ORGÂNICO']['pct']:.1f}% em análise", delta_color="off")
-o3.metric("📋 Lista", recap_origens["LISTA"]["qtd"], delta=f"{recap_origens['LISTA']['pct']:.1f}% em análise", delta_color="off")
+o1.metric("📢 Indicação", recap_origens["INDICAÇÃO"]["qtd"], delta=f"{recap_origens['INDICAÇÃO']['pct']:.1f}% na fila", delta_color="off")
+o2.metric("🌱 Orgânico", recap_origens["ORGÂNICO"]["qtd"], delta=f"{recap_origens['ORGÂNICO']['pct']:.1f}% na fila", delta_color="off")
+o3.metric("📋 Lista", recap_origens["LISTA"]["qtd"], delta=f"{recap_origens['LISTA']['pct']:.1f}% na fila", delta_color="off")
 
 o4, o5, o6 = st.columns(3)
-o4.metric("💻 C2S", recap_origens["C2S"]["qtd"], delta=f"{recap_origens['C2S']['pct']:.1f}% em análise", delta_color="off")
-o5.metric("📸 Instagram", recap_origens["INSTAGRAM"]["qtd"], delta=f"{recap_origens['INSTAGRAM']['pct']:.1f}% em análise", delta_color="off")
-o6.metric("🎯 Tráfego", recap_origens["TRÁFEGO"]["qtd"], delta=f"{recap_origens['TRÁFEGO']['pct']:.1f}% em análise", delta_color="off")
+o4.metric("💻 C2S", recap_origens["C2S"]["qtd"], delta=f"{recap_origens['C2S']['pct']:.1f}% na fila", delta_color="off")
+o5.metric("📸 Instagram", recap_origens["INSTAGRAM"]["qtd"], delta=f"{recap_origens['INSTAGRAM']['pct']:.1f}% na fila", delta_color="off")
+o6.metric("🎯 Tráfego", recap_origens["TRÁFEGO"]["qtd"], delta=f"{recap_origens['TRÁFEGO']['pct']:.1f}% na fila", delta_color="off")
 
 # =========================================================
 # GRÁFICO: EVOLUÇÃO DIÁRIA
@@ -389,7 +398,7 @@ st.altair_chart(chart, use_container_width=True)
 # TABELA 1: PRODUÇÃO OPERACIONAL DETALHADA
 # =========================================================
 st.markdown("---")
-st.subheader("📋 Produção detalhada")
+st.subheader("📋 Production Detalhada")
 
 df_exibir = df.copy()
 df_exibir["DATA"] = df_exibir["DATA"].dt.strftime("%d/%m/%Y")
