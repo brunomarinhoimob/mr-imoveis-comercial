@@ -297,40 +297,32 @@ vendas = int(df_clientes_unicos["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFO
 # =========================================================
 # QUADRO DE ORIGENS (TODAS AS ANÁLISES ATIVAS)
 # =========================================================
-# Garantimos a normalização para evitar erros de acentuação ou caixa
-df_analises_ativas = df_clientes_unicos[
-    df_clientes_unicos["STATUS_BASE"].str.upper().isin(["EM ANÁLISE", "REANÁLISE"])
-].copy()
-
+df_analises_ativas = df_clientes_unicos[df_clientes_unicos["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"])].copy()
 total_em_analise_estrito = len(df_analises_ativas)
 
 origens_alvo = ["INDICAÇÃO", "ORGÂNICO", "LISTA", "C2S", "INSTAGRAM", "TRÁFEGO"]
 recap_origens = {}
 
 for orig in origens_alvo:
-    # Compara a origem normalizada
-    qtd = int((df_analises_ativas["ORIGEM"].str.upper().fillna("").str.strip() == orig).sum())
+    qtd = int((df_analises_ativas["ORIGEM"] == orig).sum())
     pct = (qtd / total_em_analise_estrito * 100) if total_em_analise_estrito > 0 else 0
     recap_origens[orig] = {"qtd": qtd, "pct": pct}
 
 # =========================================================
-# CARDS: VISUALIZAÇÃO DE ORIGEM
+# CARDS: VISUALIZAÇÃO GENERALISTA
 # =========================================================
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("📞 Total Operacional", total_operacional)
+c2.metric("🔥 Leads Quentes", total_leads_quentes)
+c3.metric("❄️ Leads Frios", total_leads_frios)
+c4.metric("📊 Taxa Prospect", f"{taxa_prospect:.1f}%")
+
 st.markdown("---")
-st.subheader(f"🧠 Origem das Análises Atuais (Total Puro: {total_em_analise_estrito})")
-
-if total_em_analise_estrito == 0:
-    st.info("Nenhuma análise ativa encontrada para o período selecionado.")
-else:
-    o1, o2, o3 = st.columns(3)
-    o1.metric("📢 Indicação", recap_origens["INDICAÇÃO"]["qtd"], delta=f"{recap_origens['INDICAÇÃO']['pct']:.1f}%", delta_color="off")
-    o2.metric("🌱 Orgânico", recap_origens["ORGÂNICO"]["qtd"], delta=f"{recap_origens['ORGÂNICO']['pct']:.1f}%", delta_color="off")
-    o3.metric("📋 Lista", recap_origens["LISTA"]["qtd"], delta=f"{recap_origens['LISTA']['pct']:.1f}%", delta_color="off")
-
-    o4, o5, o6 = st.columns(3)
-    o4.metric("💻 C2S", recap_origens["C2S"]["qtd"], delta=f"{recap_origens['C2S']['pct']:.1f}%", delta_color="off")
-    o5.metric("📸 Instagram", recap_origens["INSTAGRAM"]["qtd"], delta=f"{recap_origens['INSTAGRAM']['pct']:.1f}%", delta_color="off")
-    o6.metric("🎯 Tráfego", recap_origens["TRÁFEGO"]["qtd"], delta=f"{recap_origens['TRÁFEGO']['pct']:.1f}%", delta_color="off")
+p1, p2, p3, p4 = st.columns(4)
+p1.metric("✅ Atendeu", total_atendeu)
+p2.metric("🔥 Prospect", total_prospect)
+p3.metric("💬 WhatsApp", total_whatsapp)
+p4.metric("🚫 Inválido", total_invalido)
 
 # =========================================================
 # CARDS: RESULTADO DAS ANÁLISES
