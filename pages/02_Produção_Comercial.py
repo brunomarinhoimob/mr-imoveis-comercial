@@ -294,16 +294,18 @@ if not df_processos_periodo.empty:
 # Normalizamos a coluna para evitar erros de escrita
 df_clientes_unicos["STATUS_NORMALIZADO"] = df_clientes_unicos["STATUS_BASE"].str.upper().str.strip()
 
-analises = int(df_clientes_unicos["STATUS_NORMALIZADO"].isin(["EM ANÁLISE", "REANÁLISE"]).sum())
+# Contagem ajustada para o padrão da planilha (SEM ACENTOS e apenas EM ANALISE)
+analises = int((df_clientes_unicos["STATUS_NORMALIZADO"] == "EM ANALISE").sum())
 aprovacoes = int((df_clientes_unicos["STATUS_NORMALIZADO"] == "APROVADO").sum())
 aprovado_bacen = int((df_clientes_unicos["STATUS_NORMALIZADO"] == "APROVADO BACEN").sum())
-aprovado_restricao = int((df_clientes_unicos["STATUS_NORMALIZADO"] == "APROVADO COM RESTRIÇÃO").sum())
-vendas = int(df_clientes_unicos["STATUS_NORMALIZADO"].isin(["VENDA GERADA", "VENDA INFORMADA"]).sum())
+aprovado_restricao = int((df_clientes_unicos["STATUS_NORMALIZADO"] == "APROVADO COM RESTRICAO").sum())
+vendas = int(df_clientes_unicos["STATUS_NORMALIZADO"].isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()))
 
 # =========================================================
 # QUADRO DE ORIGENS (TODAS AS ANÁLISES ATIVAS)
 # =========================================================
-df_analises_ativas = df_clientes_unicos[df_clientes_unicos["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"])].copy()
+# Filtra apenas o status exato "EM ANALISE" sem contar REANALISE
+df_analises_ativas = df_clientes_unicos[df_clientes_unicos["STATUS_NORMALIZADO"] == "EM ANALISE"].copy()
 total_em_analise_estrito = len(df_analises_ativas)
 
 origens_alvo = ["INDICAÇÃO", "ORGÂNICO", "LISTA", "C2S", "INSTAGRAM", "TRÁFEGO"]
