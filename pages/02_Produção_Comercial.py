@@ -278,17 +278,24 @@ total_operacional = int(df["TOTAL"].sum())
 taxa_prospect = (total_prospect / total_operacional) * 100 if total_operacional > 0 else 0
 
 # =========================================================
-# KPIS DE PROCESSOS (REGRA DA ÚLTIMA LINHA POR CLIENTE)
+# KPIS DE PROCESSOS (TOTALIZAÇÃO PELA ÚLTIMA LINHA DE CADA CLIENTE)
 # =========================================================
 if not df_processos_periodo.empty:
+    # Ordena cronologicamente para garantir o mapeamento do último status real
     df_processos_periodo = df_processos_periodo.sort_values(by="DATA", ascending=True)
+    
+    # Agrupa por cliente obtendo o último status e origem de cada um de forma definitiva
     df_ultimos_status = df_processos_periodo.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().reset_index()
     df_ultimas_origens = df_processos_periodo.groupby("CHAVE_CLIENTE")["ORIGEM"].last().reset_index()
     df_clientes_unicos = pd.merge(df_ultimos_status, df_ultimas_origens, on="CHAVE_CLIENTE", how="left")
 else:
     df_clientes_unicos = pd.DataFrame(columns=["CHAVE_CLIENTE", "STATUS_BASE", "ORIGEM"])
 
-analises = int(df_clientes_unicos["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"]).sum())
+# REGRA DOS CARDS:
+# O card 'Análises' agora reflete o TOTAL ABSOLUTO de clientes que passaram por análise no período
+analises = int(df_clientes_unicos["CHAVE_CLIENTE"].nunique())
+
+# Os demais cards contam o destino final exato (última linha) de cada um desses clientes
 aprovacoes = int((df_clientes_unicos["STATUS_BASE"] == "APROVADO").sum())
 aprovado_bacen = int((df_clientes_unicos["STATUS_BASE"] == "APROVADO BACEN").sum())
 aprovado_restricao = int((df_clientes_unicos["STATUS_BASE"] == "APROVADO COM RESTRIÇÃO").sum())
