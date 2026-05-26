@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import unicodedata
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
 # =========================================================
-# CONFIG
+# CONFIGURAÇÃO
 # =========================================================
 st.set_page_config(
     page_title="Produção Comercial",
@@ -16,7 +17,7 @@ st.set_page_config(
 st_autorefresh(interval=30 * 1000, key="auto_refresh_producao")
 
 # =========================================================
-# CSS
+# CSS (ESTILO VISUAL)
 # =========================================================
 st.markdown("""
 <style>
@@ -42,9 +43,9 @@ div[data-testid="stMetricValue"] {
 """, unsafe_allow_html=True)
 
 # =========================================================
-# GOOGLE SHEETS (LINKS OTIMIZADOS PARA TEMPO REAL)
+# GOOGLE SHEETS
 # =========================================================
-SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
+SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92 জনকে1XPCA6xM92bq8tTrn7UnunGRwCw"
 
 GID_PRODUCAO = "1161609337"
 GID_PROCESSOS = "1574157905"
@@ -53,15 +54,24 @@ CSV_PRODUCAO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format
 CSV_PROCESSOS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PROCESSOS}"
 
 # =========================================================
-# FUNÇÕES AUXILIARES
+# FUNÇÕES AUXILIARES E NORMALIZAÇÃO (SEM ACENTOS)
 # =========================================================
-def mes_ano_ptbr_para_date(valor):
-    if pd.isna(valor):
-        return pd.NaT
+def remover_acentos(texto):
+    """Remove acentos e caracteres especiais para evitar erros de digitação na folha"""
+    if pd.isna(texto):
+        return ""
+    try:
+        texto = str(texto)
+        # Transforma PENDÊNCIA em PENDENCIA, TRÁFEGO em TRAFEGO, etc.
+        texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
+        return texto.upper().strip()
+    except:
+        return str(texto).upper().strip()
 
+def mes_ano_ptbr_para_date(valor):
+    if pd.isna(valor): return pd.NaT
     s = str(valor).strip().lower()
-    if not s:
-        return pd.NaT
+    if not s: return pd.NaT
 
     meses = {
         "janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3,
@@ -69,25 +79,18 @@ def mes_ano_ptbr_para_date(valor):
         "agosto": 8, "setembro": 9, "outubro": 10,
         "novembro": 11, "dezembro": 12,
     }
-
     try:
         partes = s.split()
         mes_txt = partes[0]
         ano = int(partes[-1])
         mes_num = meses.get(mes_txt)
-        if mes_num is None:
-            return pd.NaT
+        if mes_num is None: return pd.NaT
         return datetime(ano, mes_num, 1).date()
     except:
         return pd.NaT
 
-
 def tratar_data_base(df):
-    possiveis_cols_base = [
-        "DATA BASE", "DATA_BASE", "DT BASE",
-        "DATA REF", "DATA REFERÊNCIA", "DATA REFERENCIA",
-    ]
-
+    possiveis_cols_base = ["DATA BASE", "DATA_BASE", "DT BASE", "DATA REF", "DATA REFERÊNCIA", "DATA REFERENCIA"]
     col_data_base = next((c for c in possiveis_cols_base if c in df.columns), None)
 
     if col_data_base:
@@ -97,11 +100,10 @@ def tratar_data_base(df):
     else:
         df["DATA_BASE_LABEL"] = ""
         df["DATA_BASE"] = pd.NaT
-
     return df
 
 # =========================================================
-# CARREGAR PRODUÇÃO COMERCIAL
+# CARREGAR PRODUÇÃO COMERCIAL (PROSPEÇÃO)
 # =========================================================
 @st.cache_data(ttl=10)
 def carregar_base():
@@ -115,21 +117,16 @@ def carregar_base():
 
     df = tratar_data_base(df)
 
-    colunas_numericas = [
-        "ATENDEU", "PROSPECT", "WHATSAPP ENVIADO",
-        "CONTATO INVÁLIDO", "LEADS QUENTES", "LEADS FRIOS", "TOTAL"
-    ]
-
+    colunas_numericas = ["ATENDEU", "PROSPECT", "WHATSAPP ENVIADO", "CONTATO INVÁLIDO", "LEADS QUENTES", "LEADS FRIOS", "TOTAL"]
     for col in colunas_numericas:
         if col not in df.columns:
             df[col] = 0
         else:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
     return df
 
 # =========================================================
-# CARREGAR PROCESSOS (ANÁLISES)
+# CARREGAR PROCESSOS (ANÁLISES) COM LIMPEZA BLINDADA
 # =========================================================
 @st.cache_data(ttl=10)
 def carregar_processos():
@@ -145,42 +142,40 @@ def carregar_processos():
 
     dfp = tratar_data_base(dfp)
 
-    possiveis_status = [
-        "SITUAÇÃO", "SITUACAO", "STATUS", "SITUAÇÃO ATUAL", "SITUACAO ATUAL",
-        "SITUAÇÃO DA ANÁLISE", "SITUACAO DA ANALISE", "STATUS DA ANALISE", "STATUS DA ANÁLISE"
-    ]
-
+    # 1. TRATAMENTO DO ESTADO
+    possiveis_status = ["SITUAÇÃO", "SITUACAO", "STATUS", "SITUAÇÃO ATUAL", "SITUACAO ATUAL", "SITUAÇÃO DA ANÁLISE", "SITUACAO DA ANALISE", "STATUS DA ANALISE", "STATUS DA ANÁLISE"]
     col_status = next((c for c in possiveis_status if c in dfp.columns), None)
 
     if col_status:
-        dfp["STATUS_ORIGINAL"] = dfp[col_status].fillna("").astype(str).str.upper().str.strip()
+        dfp["STATUS_ORIGINAL"] = dfp[col_status].apply(remover_acentos)
     else:
         dfp["STATUS_ORIGINAL"] = ""
 
     dfp["STATUS_BASE"] = "OUTROS"
     s = dfp["STATUS_ORIGINAL"]
 
-    # Mapeamento inteligente de status
-    dfp.loc[s == "EM ANÁLISE", "STATUS_BASE"] = "EM ANÁLISE"
-    dfp.loc[s == "REANÁLISE", "STATUS_BASE"] = "REANÁLISE"
-    dfp.loc[s == "APROVAÇÃO", "STATUS_BASE"] = "APROVADO"
+    dfp.loc[s == "EM ANALISE", "STATUS_BASE"] = "EM ANÁLISE"
+    dfp.loc[s == "REANALISE", "STATUS_BASE"] = "REANÁLISE"
+    dfp.loc[s == "APROVACAO", "STATUS_BASE"] = "APROVADO"
     dfp.loc[s == "APROVADO BACEN", "STATUS_BASE"] = "APROVADO BACEN"
-    dfp.loc[s == "APROVADO COM RESTRIÇÃO", "STATUS_BASE"] = "APROVADO COM RESTRIÇÃO"
+    dfp.loc[s == "APROVADO COM RESTRICAO", "STATUS_BASE"] = "APROVADO COM RESTRIÇÃO"
     dfp.loc[s == "VENDA GERADA", "STATUS_BASE"] = "VENDA GERADA"
     dfp.loc[s == "VENDA INFORMADA", "STATUS_BASE"] = "VENDA INFORMADA"
     
     dfp.loc[s.str.contains("PENDEN", na=False), "STATUS_BASE"] = "PENDÊNCIA"
     dfp.loc[s.str.contains("REPROV", na=False), "STATUS_BASE"] = "REPROVADO"
 
-    # Mapeamento flexível de Origem
+    # 2. TRATAMENTO DA ORIGEM (AGORA TAMBÉM SEM ACENTOS)
     possiveis_origens = ["ORIGEM", "ORIGEM LEAD", "CANAL", "MEIO", "COMO CONHECEU", "ORIGEM DO CLIENTE", "ORIGEM DO LEAD"]
     col_origem = next((c for c in possiveis_origens if c in dfp.columns), None)
     
     if col_origem:
-        dfp["ORIGEM"] = dfp[col_origem].fillna("").astype(str).str.upper().str.strip()
+        # Blindagem contra acentos (ex: TRÁFEGO -> TRAFEGO)
+        dfp["ORIGEM"] = dfp[col_origem].apply(remover_acentos)
     else:
         dfp["ORIGEM"] = ""
 
+    # 3. TRATAMENTO DO CLIENTE
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE"]
 
@@ -202,34 +197,29 @@ def carregar_processos():
     return dfp
 
 # =========================================================
-# CARREGAMENTO INICIAL
+# CARREGAMENTO INICIAL E VALIDAÇÃO
 # =========================================================
 df = carregar_base()
 df_processos = carregar_processos()
 
 st.title("📞  Produção Comercial")
-st.caption("Controle operacional diário de prospecção comercial")
+st.caption("Controlo operacional diário de prospeção comercial")
 
 if df.empty:
-    st.warning("Sem dados.")
+    st.warning("Sem dados na folha de produção.")
     st.stop()
 
 df = df[df["DATA"].notna()].copy()
-
 if df.empty:
-    st.warning("Sem datas válidas.")
+    st.warning("Sem datas válidas na folha de produção.")
     st.stop()
 
 # =========================================================
-# SIDEBAR / FILTROS
+# BARRA LATERAL / FILTROS
 # =========================================================
 st.sidebar.title("Filtros 🔎")
 
-modo_periodo = st.sidebar.radio(
-    "Modo de filtro",
-    ["Por DATA BASE", "Por DATA"],
-    index=0
-)
+modo_periodo = st.sidebar.radio("Modo de filtro", ["Por DATA BASE", "Por DATA"], index=0)
 
 if modo_periodo == "Por DATA BASE":
     bases_df = df[["DATA_BASE", "DATA_BASE_LABEL"]].dropna(subset=["DATA_BASE"]).drop_duplicates().sort_values("DATA_BASE")
@@ -244,7 +234,6 @@ if modo_periodo == "Por DATA BASE":
 else:
     data_min = df["DATA"].min().date()
     data_max = df["DATA"].max().date()
-
     periodo = st.sidebar.date_input("Período", value=(data_min, data_max), min_value=data_min, max_value=data_max)
 
     if isinstance(periodo, tuple):
@@ -255,14 +244,14 @@ else:
     df = df[(df["DATA"].dt.date >= data_ini) & (df["DATA"].dt.date <= data_fim)].copy()
 
 # =========================================================
-# FILTRAGEM E RECONSTRUÇÃO DE DADOS EM BRANCO (HISTÓRICO)
+# PROPAGAÇÃO DE DADOS VAZIOS (NOME E ORIGEM)
 # =========================================================
 df_processos = df_processos[df_processos["DATA"].notna()].copy()
 df_processos_periodo = df_processos[(df_processos["DATA"].dt.date >= data_ini)].copy()
 
 if not df_processos_periodo.empty:
     df_processos_periodo = df_processos_periodo.sort_values(by="DATA", ascending=True)
-    # Copia inteligentemente dados vazios (como origem) de linhas passadas do mesmo cliente
+    # Preenche as origens e corretores vazios nas atualizações de status
     for col_propagate in ["ORIGEM", "CORRETOR", "GERENTE", "NOME_CLIENTE_BASE"]:
         if col_propagate in df_processos_periodo.columns:
             df_processos_periodo[col_propagate] = df_processos_periodo[col_propagate].astype(str).str.strip().replace("", None).replace("NAN", None).replace("NONE", None)
@@ -271,7 +260,7 @@ if not df_processos_periodo.empty:
             df_processos_periodo[col_propagate] = df_processos_periodo[col_propagate].fillna("")
 
 # =========================================================
-# CÁLCULOS OPERACIONAIS
+# CÁLCULOS OPERACIONAIS DA PROSPEÇÃO
 # =========================================================
 df["TOTAL_CALCULADO"] = df["ATENDEU"] + df["WHATSAPP ENVIADO"] + df["CONTATO INVÁLIDO"]
 df["TOTAL"] = df["TOTAL"].fillna(0)
@@ -288,7 +277,7 @@ total_operacional = int(df["TOTAL"].sum())
 taxa_prospect = (total_prospect / total_operacional) * 100 if total_operacional > 0 else 0
 
 # =========================================================
-# LÓGICA DE CONTAGEM PELA ÚLTIMA LINHA REAL DE CADA CLIENTE
+# REGRAS DO ÚLTIMO ESTADO DO CLIENTE
 # =========================================================
 if not df_processos_periodo.empty:
     df_ultimos_status = df_processos_periodo.groupby("CHAVE_CLIENTE")["STATUS_BASE"].last().reset_index()
@@ -307,21 +296,34 @@ pendencias = int((df_clientes_unicos["STATUS_BASE"] == "PENDÊNCIA").sum())
 reprovacoes = int((df_clientes_unicos["STATUS_BASE"] == "REPROVADO").sum())
 
 # =========================================================
-# QUADRO DE ORIGENS (INCLUI EM ANÁLISE, REANÁLISE E PENDÊNCIA)
+# QUADRO DE ORIGENS (BUSCA INTELIGENTE BLINDADA)
 # =========================================================
 df_analises_ativas = df_clientes_unicos[df_clientes_unicos["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE", "PENDÊNCIA"])].copy()
 total_em_analise_estrito = len(df_analises_ativas)
 
-origens_alvo = ["INDICAÇÃO", "ORGÂNICO", "LISTA", "C2S", "INSTAGRAM", "TRÁFEGO"]
+# Dicionário -> "Nome visível no Cartão" : "Termo de busca na folha (limpo e sem acento)"
+origens_alvo = {
+    "INDICAÇÃO": "INDICACAO",
+    "ORGÂNICO": "ORGANICO",
+    "LISTA": "LISTA",
+    "C2S": "C2S",
+    "INSTAGRAM": "INSTA",      # Capta "INSTAGRAM", "INSTA", "INSTA PAGO", etc.
+    "TRÁFEGO": "TRAFEGO"
+}
 recap_origens = {}
 
-for orig in origens_alvo:
-    qtd = int((df_analises_ativas["ORIGEM"] == orig).sum())
-    pct = (qtd / total_em_analise_estrito * 100) if total_em_analise_estrito > 0 else 0
-    recap_origens[orig] = {"qtd": qtd, "pct": pct}
+for titulo_card, termo_busca in origens_alvo.items():
+    if total_em_analise_estrito > 0:
+        # Procura a palavra dentro do texto da origem, independentemente do que o corretor escrever
+        qtd = int((df_analises_ativas["ORIGEM"].str.contains(termo_busca, na=False)).sum())
+        pct = (qtd / total_em_analise_estrito * 100)
+    else:
+        qtd = 0
+        pct = 0
+    recap_origens[titulo_card] = {"qtd": qtd, "pct": pct}
 
 # =========================================================
-# BLOCOS VISUAIS: CARDS OPERACIONAIS
+# EXIBIÇÃO NO ECRÃ
 # =========================================================
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("📞 Total Operacional", total_operacional)
@@ -336,9 +338,6 @@ p2.metric("🔥 Prospect", total_prospect)
 p3.metric("💬 WhatsApp", total_whatsapp)
 p4.metric("🚫 Inválido", total_invalido)
 
-# =========================================================
-# CARDS DE RESULTADO DOS PROCESSOS
-# =========================================================
 st.markdown("---")
 st.subheader("🎯 Resultado dos Processos")
 
@@ -356,9 +355,6 @@ r_col6.metric("🟡 Aprov. com Restrição", aprovado_restricao)
 r_col7.metric("🏦 Aprovado BACEN", aprovado_bacen)
 r_col8.metric("💰 Vendas Concluídas", vendas)
 
-# =========================================================
-# QUADRO: ORIGENS DAS ANÁLISES ATIVAS & PENDENTES
-# =========================================================
 st.markdown("---")
 st.subheader(f"🧠 Origem das Análises Ativas & Pendentes (Total: {total_em_analise_estrito})")
 
@@ -372,33 +368,20 @@ o4.metric("💻 C2S", recap_origens["C2S"]["qtd"], delta=f"{recap_origens['C2S']
 o5.metric("📸 Instagram", recap_origens["INSTAGRAM"]["qtd"], delta=f"{recap_origens['INSTAGRAM']['pct']:.1f}% na fila", delta_color="off")
 o6.metric("🎯 Tráfego", recap_origens["TRÁFEGO"]["qtd"], delta=f"{recap_origens['TRÁFEGO']['pct']:.1f}% na fila", delta_color="off")
 
-# =========================================================
-# GRÁFICO: EVOLUÇÃO DIÁRIA
-# =========================================================
 st.markdown("---")
 st.subheader("📈 Evolução diária")
 
 chart = (
     alt.Chart(df)
-    .transform_fold(
-        ["ATENDEU", "PROSPECT", "WHATSAPP ENVIADO", "CONTATO INVÁLIDO", "LEADS QUENTES"],
-        as_=["Tipo", "Quantidade"]
-    )
+    .transform_fold(["ATENDEU", "PROSPECT", "WHATSAPP ENVIADO", "CONTATO INVÁLIDO", "LEADS QUENTES"], as_=["Tipo", "Quantidade"])
     .mark_line(point=True)
-    .encode(
-        x=alt.X("DATA:T", title="Data"),
-        y=alt.Y("Quantidade:Q", title="Quantidade"),
-        color="Tipo:N"
-    )
+    .encode(x=alt.X("DATA:T", title="Data"), y=alt.Y("Quantidade:Q", title="Quantidade"), color="Tipo:N")
     .properties(height=450)
 )
 st.altair_chart(chart, use_container_width=True)
 
-# =========================================================
-# TABELA 1: PRODUÇÃO OPERACIONAL DETALHADA
-# =========================================================
 st.markdown("---")
-st.subheader("📋 Production Detalhada")
+st.subheader("📋 Produção Detalhada")
 
 df_exibir = df.copy()
 df_exibir["DATA"] = df_exibir["DATA"].dt.strftime("%d/%m/%Y")
@@ -407,15 +390,11 @@ colunas_exibir = [c for c in colunas_exibir if c in df_exibir.columns]
 
 df_exibir = df_exibir[colunas_exibir].copy()
 df_exibir = df_exibir.rename(columns={"DATA_BASE_LABEL": "DATA BASE"})
-
 for col in df_exibir.columns:
     df_exibir[col] = df_exibir[col].astype(str)
 
 st.dataframe(df_exibir, use_container_width=True, hide_index=True)
 
-# =========================================================
-# MÉDIAS DIÁRIAS
-# =========================================================
 st.markdown("---")
 st.subheader("📌 Média diária")
 
@@ -431,9 +410,6 @@ m2.metric("Média Atendeu", f"{media_atendeu:.1f}")
 m3.metric("Média Prospect", f"{media_prospect:.1f}")
 m4.metric("Média Leads Quentes", f"{media_quente:.1f}")
 
-# =========================================================
-# TABELA 2: LISTAGEM DE ANÁLISES ATUALIZADAS (Último Status)
-# =========================================================
 st.markdown("---")
 st.subheader("📋 Situação Real das Análises (Último Status)")
 
@@ -475,4 +451,4 @@ if not df_processos_periodo.empty:
     
     st.dataframe(df_tabela_analises, use_container_width=True, hide_index=True)
 else:
-    st.info("Nenhuma análise encontrada no banco de dados a partir da data inicial informada.")
+    st.info("Nenhuma análise encontrada na base de dados a partir da data inicial informada.")
