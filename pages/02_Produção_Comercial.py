@@ -201,66 +201,42 @@ def carregar_processos():
     dfp.columns = [c.strip().upper() for c in dfp.columns]
 
     if "DATA" in dfp.columns:
-
-        dfp["DATA"] = pd.to_datetime(
-            dfp["DATA"],
-            dayfirst=True,
-            errors="coerce"
-        )
-
+        dfp["DATA"] = pd.to_datetime(dfp["DATA"], dayfirst=True, errors="coerce")
     elif "DIA" in dfp.columns:
-
-        dfp["DATA"] = pd.to_datetime(
-            dfp["DIA"],
-            dayfirst=True,
-            errors="coerce"
-        )
-
+        dfp["DATA"] = pd.to_datetime(dfp["DIA"], dayfirst=True, errors="coerce")
     else:
-
         dfp["DATA"] = pd.NaT
 
     dfp = tratar_data_base(dfp)
 
-    possiveis_status = [
-        "SITUAÇÃO",
-        "SITUACAO",
-        "STATUS",
-        "SITUAÇÃO ATUAL",
-        "SITUACAO ATUAL",
-    ]
-
-    col_status = next(
-        (c for c in possiveis_status if c in dfp.columns),
-        None
-    )
+    possiveis_status = ["SITUAÇÃO", "SITUACAO", "STATUS", "SITUAÇÃO ATUAL", "SITUACAO ATUAL"]
+    col_status = next((c for c in possiveis_status if c in dfp.columns), None)
 
     if col_status:
-
-        dfp["STATUS_ORIGINAL"] = (
-            dfp[col_status]
-            .fillna("")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-
+        dfp["STATUS_ORIGINAL"] = dfp[col_status].fillna("").astype(str).str.upper().str.strip()
     else:
-
         dfp["STATUS_ORIGINAL"] = ""
 
     dfp["STATUS_BASE"] = ""
 
-    s = dfp["STATUS_ORIGINAL"]
+    # ---- LIMPEZA DE ACENTOS E MAPEMENTO ----
+    s_sem_acento = (
+        dfp["STATUS_ORIGINAL"]
+        .str.normalize('NFKD')
+        .str.encode('ascii', errors='ignore')
+        .str.decode('utf-8')
+    )
 
-    dfp.loc[s == "EM ANÁLISE", "STATUS_BASE"] = "EM ANALISE"
-    dfp.loc[s == "REANÁLISE", "STATUS_BASE"] = "REANALISE"
-    dfp.loc[s == "APROVAÇÃO", "STATUS_BASE"] = "APROVADO"
-    dfp.loc[s == "APROVADO BACEN", "STATUS_BASE"] = "APROVADO BACEN"
-    dfp.loc[s == "APROVADO COM RESTRIÇÃO", "STATUS_BASE"] = "APROVADO COM RESTRICAO"
-    dfp.loc[s == "REPROVAÇÃO", "STATUS_BASE"] = "REPROVADO"
-    dfp.loc[s == "VENDA GERADA", "STATUS_BASE"] = "VENDA GERADA"
-    dfp.loc[s == "VENDA INFORMADA", "STATUS_BASE"] = "VENDA INFORMADA"
+    dfp.loc[s_sem_acento == "EM ANALISE", "STATUS_BASE"] = "EM ANALISE"
+    dfp.loc[s_sem_acento == "REANALISE", "STATUS_BASE"] = "REANALISE"
+    dfp.loc[s_sem_acento == "APROVACAO", "STATUS_BASE"] = "APROVADO"
+    dfp.loc[s_sem_acento == "APROVADO BACEN", "STATUS_BASE"] = "APROVADO BACEN"
+    dfp.loc[s_sem_acento == "APROVADO COM RESTRICAO", "STATUS_BASE"] = "APROVADO COM RESTRICAO"
+    dfp.loc[s_sem_acento == "REPROVACAO", "STATUS_BASE"] = "REPROVADO"
+    dfp.loc[s_sem_acento == "VENDA GERADA", "STATUS_BASE"] = "VENDA GERADA"
+    dfp.loc[s_sem_acento == "VENDA INFORMADA", "STATUS_BASE"] = "VENDA INFORMADA"
+    dfp.loc[s_sem_acento == "PENDENCIA", "STATUS_BASE"] = "PENDENCIA"
+    dfp.loc[s_sem_acento == "DESISTIU", "STATUS_BASE"] = "DESISTIU"
 
     if "ORIGEM" not in dfp.columns:
         dfp["ORIGEM"] = ""
@@ -271,61 +247,29 @@ def carregar_processos():
         .astype(str)
         .str.upper()
         .str.strip()
+        .str.normalize('NFKD')
+        .str.encode('ascii', errors='ignore')
+        .str.decode('utf-8')
     )
+    # ----------------------------------------
 
-    possiveis_nome = [
-        "NOME",
-        "CLIENTE",
-        "NOME CLIENTE"
-    ]
+    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE"]
+    possiveis_cpf = ["CPF", "CPF CLIENTE"]
 
-    possiveis_cpf = [
-        "CPF",
-        "CPF CLIENTE"
-    ]
-
-    col_nome = next(
-        (c for c in possiveis_nome if c in dfp.columns),
-        None
-    )
-
-    col_cpf = next(
-        (c for c in possiveis_cpf if c in dfp.columns),
-        None
-    )
+    col_nome = next((c for c in possiveis_nome if c in dfp.columns), None)
+    col_cpf = next((c for c in possiveis_cpf if c in dfp.columns), None)
 
     if col_nome:
-
-        dfp["NOME_CLIENTE_BASE"] = (
-            dfp[col_nome]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-
+        dfp["NOME_CLIENTE_BASE"] = dfp[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
     else:
-
         dfp["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
 
     if col_cpf:
-
-        dfp["CPF_CLIENTE_BASE"] = (
-            dfp[col_cpf]
-            .fillna("")
-            .astype(str)
-            .str.replace(r"\D", "", regex=True)
-        )
-
+        dfp["CPF_CLIENTE_BASE"] = dfp[col_cpf].fillna("").astype(str).str.replace(r"\D", "", regex=True)
     else:
-
         dfp["CPF_CLIENTE_BASE"] = ""
 
-    dfp["CHAVE_CLIENTE"] = (
-        dfp["NOME_CLIENTE_BASE"]
-        + " | "
-        + dfp["CPF_CLIENTE_BASE"]
-    )
+    dfp["CHAVE_CLIENTE"] = dfp["NOME_CLIENTE_BASE"] + " | " + dfp["CPF_CLIENTE_BASE"]
 
     return dfp
 
@@ -478,72 +422,76 @@ df_clientes_unicos = pd.DataFrame(
     columns=["CHAVE_CLIENTE", "STATUS_BASE", "ORIGEM"]
 )
 
+# =========================================================
+# BASE HISTÓRICA DE ANÁLISES
+# =========================================================
+df_historico_analises = pd.DataFrame()
+
 if not df_processos_periodo.empty:
 
+    # Ordena por data
     df_processos_periodo = (
         df_processos_periodo
         .sort_values(by="DATA", ascending=True)
+        .reset_index(drop=True)
     )
 
-    df_ultimos_status = (
+    # =====================================================
+    # HISTÓRICO COMPLETO DE ANÁLISES
+    # =====================================================
+    df_historico_analises = df_processos_periodo[
+        df_processos_periodo["STATUS_BASE"] == "EM ANALISE"
+    ].copy()
+
+    # =====================================================
+    # ÚLTIMO STATUS REAL DO CLIENTE
+    # =====================================================
+    df_ultimos_registros = (
         df_processos_periodo
-        .groupby("CHAVE_CLIENTE")["STATUS_BASE"]
+        .groupby("CHAVE_CLIENTE", as_index=False)
         .last()
-        .reset_index()
     )
 
-    df_ultimas_origens = (
-        df_processos_periodo
-        .groupby("CHAVE_CLIENTE")["ORIGEM"]
-        .last()
-        .reset_index()
-    )
-
-    df_clientes_unicos = pd.merge(
-        df_ultimos_status,
-        df_ultimas_origens,
-        on="CHAVE_CLIENTE",
-        how="left"
-    )
+    df_clientes_unicos = df_ultimos_registros.copy()
 
 # =========================================================
-# RESULTADOS
+# CONTAGEM DE ANÁLISES
 # =========================================================
-analises = int(
-    (df_clientes_unicos["STATUS_BASE"] == "EM ANALISE")
-    .sum()
+analises = len(df_historico_analises)
+
+# =========================================================
+# CONTAGEM STATUS ATUAL
+# =========================================================
+pendencias = int(
+    (df_clientes_unicos["STATUS_BASE"] == "PENDENCIA").sum()
+)
+
+desistencias = int(
+    (df_clientes_unicos["STATUS_BASE"] == "DESISTIU").sum()
 )
 
 aprovacoes = int(
-    (df_clientes_unicos["STATUS_BASE"] == "APROVADO")
-    .sum()
+    (df_clientes_unicos["STATUS_BASE"] == "APROVADO").sum()
 )
 
 aprovado_bacen = int(
-    (df_clientes_unicos["STATUS_BASE"] == "APROVADO BACEN")
-    .sum()
+    (df_clientes_unicos["STATUS_BASE"] == "APROVADO BACEN").sum()
 )
 
 aprovado_restricao = int(
-    (df_clientes_unicos["STATUS_BASE"] == "APROVADO COM RESTRICAO")
-    .sum()
+    (df_clientes_unicos["STATUS_BASE"] == "APROVADO COM RESTRICAO").sum()
 )
 
 vendas = int(
     df_clientes_unicos["STATUS_BASE"]
-    .isin([
-        "VENDA GERADA",
-        "VENDA INFORMADA"
-    ])
+    .isin(["VENDA GERADA", "VENDA INFORMADA"])
     .sum()
 )
-
 # =========================================================
 # ORIGENS
 # =========================================================
-df_analises_ativas = df_clientes_unicos[
-    df_clientes_unicos["STATUS_BASE"] == "EM ANALISE"
-].copy()
+
+df_analises_ativas = df_historico_analises.copy()
 
 total_em_analise_estrito = len(df_analises_ativas)
 
@@ -616,13 +564,15 @@ st.markdown("---")
 
 st.subheader("🎯 Resultado")
 
-r1, r2, r3, r4, r5 = st.columns(5)
+r1, r2, r3, r4, r5, r6, r7 = st.columns(7)
 
 r1.metric("📄 Análises", analises)
-r2.metric("✅ Aprovações", aprovacoes)
-r3.metric("🟡 Restrição", aprovado_restricao)
-r4.metric("🏦 BACEN", aprovado_bacen)
-r5.metric("💰 Vendas", vendas)
+r2.metric("⏳ Pendência", pendencias)
+r3.metric("✅ Aprovações", aprovacoes)
+r4.metric("🟡 Restrição", aprovado_restricao)
+r5.metric("🏦 BACEN", aprovado_bacen)
+r6.metric("💰 Vendas", vendas)
+r7.metric("❌ Desistência", desistencias)
 
 # =========================================================
 # ORIGEM DAS ANÁLISES
