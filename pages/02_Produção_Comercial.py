@@ -587,32 +587,32 @@ o1, o2, o3, o4, o5, o6 = st.columns(6)
 
 o1.metric(
     "📢 Indicação",
-    recap_origens["INDICACAO"]["qtd"]
+    f'{recap_origens["INDICACAO"]["qtd"]} • {recap_origens["INDICACAO"]["pct"]:.1f}%'
 )
 
 o2.metric(
     "🌱 Orgânico",
-    recap_origens["ORGANICO"]["qtd"]
+    f'{recap_origens["ORGANICO"]["qtd"]} • {recap_origens["ORGANICO"]["pct"]:.1f}%'
 )
 
 o3.metric(
     "📋 Lista",
-    recap_origens["LISTA"]["qtd"]
+    f'{recap_origens["LISTA"]["qtd"]} • {recap_origens["LISTA"]["pct"]:.1f}%'
 )
 
 o4.metric(
     "💻 C2S",
-    recap_origens["C2S"]["qtd"]
+    f'{recap_origens["C2S"]["qtd"]} • {recap_origens["C2S"]["pct"]:.1f}%'
 )
 
 o5.metric(
     "📸 Instagram",
-    recap_origens["INSTAGRAM"]["qtd"]
+    f'{recap_origens["INSTAGRAM"]["qtd"]} • {recap_origens["INSTAGRAM"]["pct"]:.1f}%'
 )
 
 o6.metric(
     "🎯 Tráfego",
-    recap_origens["TRAFEGO"]["qtd"]
+    f'{recap_origens["TRAFEGO"]["qtd"]} • {recap_origens["TRAFEGO"]["pct"]:.1f}%'
 )
 
 # =========================================================
