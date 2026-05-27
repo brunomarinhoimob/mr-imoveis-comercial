@@ -585,6 +585,60 @@ st.subheader(
 
 o1, o2, o3, o4, o5, o6 = st.columns(6)
 
+cards_origem = [
+    ("📢 Indicação", "INDICACAO", o1),
+    ("🌱 Orgânico", "ORGANICO", o2),
+    ("📋 Lista", "LISTA", o3),
+    ("💻 C2S", "C2S", o4),
+    ("📸 Instagram", "INSTAGRAM", o5),
+    ("🎯 Tráfego", "TRAFEGO", o6),
+]
+
+for titulo, chave, coluna in cards_origem:
+
+    qtd = recap_origens[chave]["qtd"]
+    pct = recap_origens[chave]["pct"]
+
+    coluna.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(145deg, #0f172a 0%, #020617 100%);
+            border: 1px solid rgba(148,163,184,0.20);
+            padding: 18px;
+            border-radius: 18px;
+            text-align: center;
+        ">
+
+            <div style="
+                color: #94a3b8;
+                font-size: 14px;
+                margin-bottom: 10px;
+            ">
+                {titulo}
+            </div>
+
+            <div style="
+                color: white;
+                font-size: 34px;
+                font-weight: 700;
+                line-height: 1;
+            ">
+                {qtd}
+            </div>
+
+            <div style="
+                color: #94a3b8;
+                font-size: 13px;
+                margin-top: 6px;
+            ">
+                {pct:.1f}%
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 o1.metric(
     "📢 Indicação",
     f'{recap_origens["INDICACAO"]["qtd"]} • {recap_origens["INDICACAO"]["pct"]:.1f}%'
