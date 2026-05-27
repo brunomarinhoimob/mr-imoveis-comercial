@@ -584,26 +584,6 @@ st.subheader(
 )
 
 o1, o2, o3, o4, o5, o6 = st.columns(6)
-
-cards_origem = [
-    ("📢 Indicação", "INDICACAO", o1),
-    ("🌱 Orgânico", "ORGANICO", o2),
-    ("📋 Lista", "LISTA", o3),
-    ("💻 C2S", "C2S", o4),
-    ("📸 Instagram", "INSTAGRAM", o5),
-    ("🎯 Tráfego", "TRAFEGO", o6),
-]
-
-for titulo, chave, coluna in cards_origem:
-
-    qtd = recap_origens[chave]["qtd"]
-    pct = recap_origens[chave]["pct"]
-
-    coluna.markdown(
-        f"""
-        
-o1, o2, o3, o4, o5, o6 = st.columns(6)
-
 o1.metric(
     "📢 Indicação",
     f'{recap_origens["INDICACAO"]["qtd"]} ({recap_origens["INDICACAO"]["pct"]:.1f}%)'
