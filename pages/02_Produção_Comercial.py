@@ -639,35 +639,61 @@ for titulo, chave, coluna in cards_origem:
         unsafe_allow_html=True
     )
 
-o1.metric(
-    "📢 Indicação",
-    f'{recap_origens["INDICACAO"]["qtd"]} • {recap_origens["INDICACAO"]["pct"]:.1f}%'
-)
+o1, o2, o3, o4, o5, o6 = st.columns(6)
 
-o2.metric(
-    "🌱 Orgânico",
-    f'{recap_origens["ORGANICO"]["qtd"]} • {recap_origens["ORGANICO"]["pct"]:.1f}%'
-)
+cards_origem = [
+    ("📢 Indicação", "INDICACAO", o1),
+    ("🌱 Orgânico", "ORGANICO", o2),
+    ("📋 Lista", "LISTA", o3),
+    ("💻 C2S", "C2S", o4),
+    ("📸 Instagram", "INSTAGRAM", o5),
+    ("🎯 Tráfego", "TRAFEGO", o6),
+]
 
-o3.metric(
-    "📋 Lista",
-    f'{recap_origens["LISTA"]["qtd"]} • {recap_origens["LISTA"]["pct"]:.1f}%'
-)
+for titulo, chave, coluna in cards_origem:
 
-o4.metric(
-    "💻 C2S",
-    f'{recap_origens["C2S"]["qtd"]} • {recap_origens["C2S"]["pct"]:.1f}%'
-)
+    qtd = recap_origens[chave]["qtd"]
+    pct = recap_origens[chave]["pct"]
 
-o5.metric(
-    "📸 Instagram",
-    f'{recap_origens["INSTAGRAM"]["qtd"]} • {recap_origens["INSTAGRAM"]["pct"]:.1f}%'
-)
+    coluna.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(145deg, #0f172a 0%, #020617 100%);
+            border: 1px solid rgba(148,163,184,0.20);
+            padding: 18px;
+            border-radius: 18px;
+            text-align: center;
+        ">
 
-o6.metric(
-    "🎯 Tráfego",
-    f'{recap_origens["TRAFEGO"]["qtd"]} • {recap_origens["TRAFEGO"]["pct"]:.1f}%'
-)
+            <div style="
+                color: #94a3b8;
+                font-size: 14px;
+                margin-bottom: 10px;
+            ">
+                {titulo}
+            </div>
+
+            <div style="
+                color: white;
+                font-size: 42px;
+                font-weight: 800;
+                line-height: 1;
+            ">
+                {qtd}
+            </div>
+
+            <div style="
+                color: #64748b;
+                font-size: 12px;
+                margin-top: 8px;
+            ">
+                {pct:.1f}%
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # =========================================================
 # GRÁFICO
