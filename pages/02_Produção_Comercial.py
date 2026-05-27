@@ -566,13 +566,42 @@ st.subheader("🎯 Resultado")
 
 r1, r2, r3, r4, r5, r6, r7 = st.columns(7)
 
-r1.metric("📄 Análises", analises)
-r2.metric("⏳ Pendência", pendencias)
-r3.metric("✅ Aprovações", aprovacoes)
-r4.metric("🟡 Restrição", aprovado_restricao)
-r5.metric("🏦 BACEN", aprovado_bacen)
-r6.metric("💰 Vendas", vendas)
-r7.metric("❌ Desistência", desistencias)
+base_pct = analises if analises > 0 else 1
+
+r1.metric(
+    "📄 Análises",
+    analises
+)
+
+r2.metric(
+    "⏳ Pendência",
+    f"{pendencias} ({(pendencias/base_pct)*100:.1f}%)"
+)
+
+r3.metric(
+    "✅ Aprovações",
+    f"{aprovacoes} ({(aprovacoes/base_pct)*100:.1f}%)"
+)
+
+r4.metric(
+    "🟡 Restrição",
+    f"{aprovado_restricao} ({(aprovado_restricao/base_pct)*100:.1f}%)"
+)
+
+r5.metric(
+    "🏦 BACEN",
+    f"{aprovado_bacen} ({(aprovado_bacen/base_pct)*100:.1f}%)"
+)
+
+r6.metric(
+    "💰 Vendas",
+    f"{vendas} ({(vendas/base_pct)*100:.1f}%)"
+)
+
+r7.metric(
+    "❌ Desistência",
+    f"{desistencias} ({(desistencias/base_pct)*100:.1f}%)"
+)
 
 # =========================================================
 # ORIGEM DAS ANÁLISES
