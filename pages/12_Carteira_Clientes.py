@@ -232,14 +232,16 @@ st.markdown("### 🎛️ Filtro por Situação")
 
 situacoes_base = [
     "EM ANÁLISE",
+    "REANALISE",
     "APROVAÇÃO",
     "APROVADO BACEN",
-    "PENDÊNCIA",
+    "APROVADO COM RESTRIÇÃO",
     "REPROVAÇÃO",
-    "REANÁLISE",
-    "VENDA GERADA",
     "VENDA INFORMADA",
+    "VENDA GERADA",
+    "PENDENCIA",
     "DESISTIU",
+    "VISITA REALIZADA",
 ]
 
 situacoes_sel = st.multiselect(
