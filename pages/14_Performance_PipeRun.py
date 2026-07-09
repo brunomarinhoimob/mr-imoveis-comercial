@@ -5,7 +5,7 @@ import streamlit as st
 
 from utils.bootstrap import iniciar_app
 from utils.piperun_client import PiperunClient, date_params, get_piperun_base_url, get_piperun_token
-from utils.piperun_metrics import build_performance
+from utils.piperun_metrics import build_performance, build_reference_maps
 
 
 st.set_page_config(
@@ -31,6 +31,26 @@ ACTION_ENDPOINTS = [
     "visits",
     "events",
     "actions",
+]
+
+USER_ENDPOINTS = [
+    "users",
+    "account/users",
+    "user",
+]
+
+STAGE_ENDPOINTS = [
+    "stages",
+    "pipeline-stages",
+    "pipeline_stages",
+    "pipelines/stages",
+]
+
+ACTIVITY_TYPE_ENDPOINTS = [
+    "activityTypes",
+    "activity-types",
+    "activity_types",
+    "activities/types",
 ]
 
 
@@ -86,10 +106,32 @@ def carregar_piperun(
 
     actions_df = pd.concat(action_frames, ignore_index=True) if action_frames else pd.DataFrame()
 
+    users_result = client.fetch_first_available(
+        USER_ENDPOINTS,
+        params={},
+        max_pages=3,
+        per_page=per_page,
+    )
+    stages_result = client.fetch_first_available(
+        STAGE_ENDPOINTS,
+        params={},
+        max_pages=10,
+        per_page=per_page,
+    )
+    activity_types_result = client.fetch_first_available(
+        ACTIVITY_TYPE_ENDPOINTS,
+        params={},
+        max_pages=5,
+        per_page=per_page,
+    )
+
     return {
         "deals_result": deals_result,
         "actions_df": actions_df,
         "action_status": pd.DataFrame(action_status),
+        "users_result": users_result,
+        "stages_result": stages_result,
+        "activity_types_result": activity_types_result,
     }
 
 
@@ -156,6 +198,9 @@ with st.spinner("Consultando PipeRun..."):
 deals_result = carga["deals_result"]
 actions_df = carga["actions_df"]
 action_status = carga["action_status"]
+users_result = carga["users_result"]
+stages_result = carga["stages_result"]
+activity_types_result = carga["activity_types_result"]
 
 if not deals_result.ok:
     st.error("Nao consegui carregar leads/cards/oportunidades do PipeRun.")
@@ -164,12 +209,19 @@ if not deals_result.ok:
         st.dataframe(action_status, use_container_width=True, hide_index=True)
     st.stop()
 
+reference_maps = build_reference_maps(
+    users_raw=users_result.data if users_result.ok else pd.DataFrame(),
+    stages_raw=stages_result.data if stages_result.ok else pd.DataFrame(),
+    activity_types_raw=activity_types_result.data if activity_types_result.ok else pd.DataFrame(),
+)
+
 metricas = build_performance(
     deals_raw=deals_result.data,
     actions_raw=actions_df,
     data_ini=data_ini,
     data_fim=data_fim,
     remanejo_dias=int(remanejo_dias),
+    reference_maps=reference_maps,
 )
 
 df_geral = metricas["geral"]
@@ -271,11 +323,44 @@ else:
         st.markdown("**Colunas de leads/cards**")
         st.dataframe(pd.DataFrame({"coluna": list(deals_result.data.columns)}), use_container_width=True, hide_index=True)
 
+        st.markdown("**Tabelas auxiliares**")
+        st.write(
+            {
+                "usuarios": {
+                    "endpoint": users_result.endpoint,
+                    "ok": users_result.ok,
+                    "linhas": len(users_result.data),
+                    "erro": users_result.error,
+                },
+                "etapas": {
+                    "endpoint": stages_result.endpoint,
+                    "ok": stages_result.ok,
+                    "linhas": len(stages_result.data),
+                    "erro": stages_result.error,
+                },
+                "tipos_atividade": {
+                    "endpoint": activity_types_result.endpoint,
+                    "ok": activity_types_result.ok,
+                    "linhas": len(activity_types_result.data),
+                    "erro": activity_types_result.error,
+                },
+            }
+        )
+
     with c2:
         st.markdown("**Endpoints de acoes**")
         st.dataframe(action_status, use_container_width=True, hide_index=True)
         st.markdown("**Colunas de acoes**")
         st.dataframe(pd.DataFrame({"coluna": list(actions_df.columns)}), use_container_width=True, hide_index=True)
+
+    with st.expander("Amostra de usuarios"):
+        st.dataframe(users_result.data.head(20), use_container_width=True)
+
+    with st.expander("Amostra de etapas"):
+        st.dataframe(stages_result.data.head(30), use_container_width=True)
+
+    with st.expander("Amostra de tipos de atividade"):
+        st.dataframe(activity_types_result.data.head(30), use_container_width=True)
 
     with st.expander("Amostra de leads/cards"):
         st.dataframe(deals_result.data.head(20), use_container_width=True)

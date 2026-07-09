@@ -80,6 +80,64 @@ def infer_action_columns(df: pd.DataFrame) -> PiperunColumnMap:
     )
 
 
+def make_lookup(df: pd.DataFrame, id_candidates: Iterable[str], name_candidates: Iterable[str]) -> Dict[str, str]:
+    if df is None or df.empty:
+        return {}
+
+    id_col = first_existing(df.columns, id_candidates)
+    name_col = first_existing(df.columns, name_candidates)
+
+    if not id_col or not name_col:
+        return {}
+
+    lookup = {}
+    for _, row in df[[id_col, name_col]].dropna(subset=[id_col]).iterrows():
+        key = str(row[id_col]).strip()
+        value = normalize_text(row[name_col])
+        if key and value:
+            lookup[key] = value
+
+    return lookup
+
+
+def build_reference_maps(
+    users_raw: pd.DataFrame | None = None,
+    stages_raw: pd.DataFrame | None = None,
+    activity_types_raw: pd.DataFrame | None = None,
+) -> Dict[str, Dict[str, str]]:
+    users = users_raw if users_raw is not None else pd.DataFrame()
+    stages = stages_raw if stages_raw is not None else pd.DataFrame()
+    activity_types = activity_types_raw if activity_types_raw is not None else pd.DataFrame()
+
+    user_name = make_lookup(
+        users,
+        ["id", "user_id", "owner_id"],
+        ["name", "nome", "user.name", "owner.name", "email"],
+    )
+    user_team = make_lookup(
+        users,
+        ["id", "user_id", "owner_id"],
+        ["team.name", "team", "equipe", "group.name", "department.name"],
+    )
+    stage_name = make_lookup(
+        stages,
+        ["id", "stage_id", "pipeline_stage_id"],
+        ["name", "nome", "title", "stage.name", "description"],
+    )
+    activity_type_name = make_lookup(
+        activity_types,
+        ["id", "activity_type_id", "type_id"],
+        ["name", "nome", "title", "type", "description"],
+    )
+
+    return {
+        "user_name": user_name,
+        "user_team": user_team,
+        "stage_name": stage_name,
+        "activity_type_name": activity_type_name,
+    }
+
+
 def prepare_deals(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
@@ -117,6 +175,52 @@ def prepare_actions(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def enrich_with_references(
+    deals: pd.DataFrame,
+    actions: pd.DataFrame,
+    deals_raw: pd.DataFrame,
+    actions_raw: pd.DataFrame,
+    reference_maps: Dict[str, Dict[str, str]] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    refs = reference_maps or {}
+    user_name = refs.get("user_name", {})
+    user_team = refs.get("user_team", {})
+    stage_name = refs.get("stage_name", {})
+    activity_type_name = refs.get("activity_type_name", {})
+
+    if not deals.empty:
+        if "owner_id" in deals_raw.columns and user_name:
+            mapped = deals_raw["owner_id"].astype(str).str.strip().map(user_name)
+            deals["responsavel"] = mapped.fillna(deals["responsavel"]).replace("", "SEM RESPONSAVEL")
+
+        if "owner_id" in deals_raw.columns and user_team:
+            mapped = deals_raw["owner_id"].astype(str).str.strip().map(user_team)
+            deals["equipe"] = mapped.fillna(deals["equipe"]).replace("", "SEM EQUIPE")
+
+        if "stage_id" in deals_raw.columns and stage_name:
+            mapped = deals_raw["stage_id"].astype(str).str.strip().map(stage_name)
+            deals["etapa"] = mapped.fillna(deals["etapa"])
+
+    if not actions.empty:
+        owner_source = "owner_id" if "owner_id" in actions_raw.columns else "user_id" if "user_id" in actions_raw.columns else ""
+        if owner_source and user_name:
+            mapped = actions_raw[owner_source].astype(str).str.strip().map(user_name)
+            actions["responsavel"] = mapped.fillna(actions["responsavel"]).replace("", "SEM RESPONSAVEL")
+
+        if owner_source and user_team:
+            mapped = actions_raw[owner_source].astype(str).str.strip().map(user_team)
+            actions["equipe"] = mapped.fillna(actions["equipe"]).replace("", "SEM EQUIPE")
+
+        if "activity_type_id" in actions_raw.columns and activity_type_name:
+            mapped = actions_raw["activity_type_id"].astype(str).str.strip().map(activity_type_name)
+            actions["tipo_acao"] = mapped.fillna(actions["tipo_acao"]).replace("", "ACAO")
+
+        if "user_name" in actions_raw.columns:
+            actions["responsavel"] = actions_raw["user_name"].apply(normalize_text).replace("", actions["responsavel"])
+
+    return deals, actions
+
+
 def contains_stage(series: pd.Series, words: Iterable[str]) -> pd.Series:
     text = series.fillna("").astype(str).map(normalize_text)
     mask = pd.Series(False, index=series.index)
@@ -131,9 +235,11 @@ def build_performance(
     data_ini,
     data_fim,
     remanejo_dias: int = 2,
+    reference_maps: Dict[str, Dict[str, str]] | None = None,
 ) -> Dict[str, pd.DataFrame]:
     deals = prepare_deals(deals_raw)
     actions = prepare_actions(actions_raw)
+    deals, actions = enrich_with_references(deals, actions, deals_raw, actions_raw, reference_maps)
 
     if not deals.empty:
         deals_periodo = deals[
