@@ -295,9 +295,18 @@ def build_performance(
     funil = pd.DataFrame(columns=dims)
     if not deals_periodo.empty:
         tmp = deals_periodo.copy()
-        tmp["analises_enviadas"] = contains_stage(tmp["etapa"], ["ANALISE DE CREDITO", "ANALISE"])
-        tmp["aprovacoes"] = contains_stage(tmp["etapa"], ["APROVACAO", "APROVADO"])
-        tmp["reprovados"] = contains_stage(tmp["etapa"], ["REPROVADO", "REPROVACAO"])
+        tmp["analises_enviadas"] = contains_stage(
+            tmp["etapa"],
+            ["ANALISE DE CREDITO", "ANALISE", "1 ANALISE", "1A ANALISE", "1ª ANALISE"],
+        )
+        tmp["aprovacoes"] = contains_stage(
+            tmp["etapa"],
+            ["APROVACAO", "APROVADO", "APROVADA"],
+        )
+        tmp["reprovados"] = contains_stage(
+            tmp["etapa"],
+            ["REPROVADO", "REPROVACAO", "RECUSA", "RECUSADO", "RECUSADA"],
+        )
         funil = tmp.groupby(dims).agg(
             analises_enviadas=("analises_enviadas", "sum"),
             aprovacoes=("aprovacoes", "sum"),
