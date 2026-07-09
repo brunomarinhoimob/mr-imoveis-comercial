@@ -216,7 +216,9 @@ def enrich_with_references(
             actions["tipo_acao"] = mapped.fillna(actions["tipo_acao"]).replace("", "ACAO")
 
         if "user_name" in actions_raw.columns:
-            actions["responsavel"] = actions_raw["user_name"].apply(normalize_text).replace("", actions["responsavel"])
+            mapped = actions_raw["user_name"].apply(normalize_text)
+            has_user_name = mapped.astype(str).str.len() > 0
+            actions.loc[has_user_name, "responsavel"] = mapped[has_user_name]
 
     return deals, actions
 
