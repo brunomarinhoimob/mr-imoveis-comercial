@@ -1,203 +1,3 @@
-from __future__ import annotations
-
-import unicodedata
-from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional
-
-import pandas as pd
-
-
-@dataclass
-class PiperunColumnMap:
-    id: str = ""
-    title: str = ""
-    created_at: str = ""
-    owner: str = ""
-    owner_id: str = ""
-    team: str = ""
-    stage: str = ""
-    last_action_at: str = ""
-    action_type: str = ""
-    action_owner: str = ""
-    action_date: str = ""
-    previous_owner: str = ""
-
-
-def normalize_text(value) -> str:
-    if pd.isna(value):
-        return ""
-    text = str(value).strip().upper()
-    text = unicodedata.normalize("NFKD", text).encode("ascii", errors="ignore").decode("ascii")
-    return " ".join(text.split())
-
-
-def first_existing(columns: Iterable[str], candidates: Iterable[str]) -> str:
-    available = {str(c).lower(): c for c in columns}
-    normalized = {normalize_text(c).replace(" ", "_").lower(): c for c in columns}
-
-    for candidate in candidates:
-        key = candidate.lower()
-        if key in available:
-            return available[key]
-        if key in normalized:
-            return normalized[key]
-
-    for candidate in candidates:
-        key = candidate.lower()
-        for col_lower, real_col in available.items():
-            if key in col_lower:
-                return real_col
-
-    return ""
-
-
-def infer_deal_columns(df: pd.DataFrame) -> PiperunColumnMap:
-    cols = df.columns
-    return PiperunColumnMap(
-        id=first_existing(cols, ["id", "deal_id", "opportunity_id", "card_id"]),
-        title=first_existing(cols, ["title", "name", "nome", "deal_title", "person.name", "customer.name"]),
-        created_at=first_existing(cols, ["created_at", "created", "data_criacao", "data_captura", "createdAt"]),
-        owner=first_existing(cols, ["owner.name", "user.name", "responsible.name", "responsavel", "owner", "nome_corretor", "user_name"]),
-        owner_id=first_existing(cols, ["owner.id", "user.id", "responsible.id", "owner_id", "user_id", "id_usuario"]),
-        team=first_existing(cols, ["team.name", "team", "equipe", "company_team.name", "pipeline.name"]),
-        stage=first_existing(cols, ["stage.name", "stage", "step.name", "status.name", "column.name", "etapa", "coluna", "pipeline_stage.name"]),
-        last_action_at=first_existing(cols, ["last_activity_at", "last_action_at", "updated_at", "data_ultima_interacao", "last_note_at"]),
-        previous_owner=first_existing(cols, ["previous_owner.name", "old_owner.name", "from_user.name", "usuario_anterior", "responsavel_anterior"]),
-    )
-
-
-def infer_action_columns(df: pd.DataFrame) -> PiperunColumnMap:
-    cols = df.columns
-    return PiperunColumnMap(
-        id=first_existing(cols, ["id", "activity_id", "note_id"]),
-        title=first_existing(cols, ["title", "description", "note", "text", "content", "name", "nome"]),
-        created_at=first_existing(cols, ["created_at", "created", "data_criacao"]),
-        owner=first_existing(cols, ["owner.name", "user.name", "responsible.name", "responsavel", "owner", "nome_usuario", "user_name"]),
-        owner_id=first_existing(cols, ["owner.id", "user.id", "responsible.id", "owner_id", "user_id", "id_usuario"]),
-        team=first_existing(cols, ["team.name", "team", "equipe"]),
-        action_type=first_existing(cols, ["type", "activity_type", "tipo", "kind", "category", "nome_tipo", "activity_type.name"]),
-        action_date=first_existing(cols, ["done_at", "date", "data", "created_at", "scheduled_at", "data_realizacao"]),
-    )
-
-
-def make_lookup(df: pd.DataFrame, id_candidates: Iterable[str], name_candidates: Iterable[str]) -> Dict[str, str]:
-    if df is None or df.empty:
-        return {}
-
-    id_col = first_existing(df.columns, id_candidates)
-    name_col = first_existing(df.columns, name_candidates)
-
-    if not id_col or not name_col:
-        return {}
-
-    lookup = {}
-    for _, row in df[[id_col, name_col]].dropna(subset=[id_col]).iterrows():
-        key = str(row[id_col]).strip()
-        value = normalize_text(row[name_col])
-        if key and value:
-            lookup[key] = value
-
-    return lookup
-
-
-def build_reference_maps(
-    users_raw: pd.DataFrame | None = None,
-    stages_raw: pd.DataFrame | None = None,
-    activity_types_raw: pd.DataFrame | None = None,
-    corretor_equipe_map: Dict[str, str] | None = None,
-) -> Dict[str, Dict[str, str]]:
-    users = users_raw if users_raw is not None else pd.DataFrame()
-    stages = stages_raw if stages_raw is not None else pd.DataFrame()
-    activity_types = activity_types_raw if activity_types_raw is not None else pd.DataFrame()
-
-    user_name = make_lookup(
-        users,
-        ["id", "user_id", "owner_id"],
-        ["name", "nome", "user.name", "owner.name", "email"],
-    )
-    user_team = make_lookup(
-        users,
-        ["id", "user_id", "owner_id"],
-        ["team.name", "team", "equipe", "group.name", "department.name"],
-    )
-    stage_name = make_lookup(
-        stages,
-        ["id", "stage_id", "pipeline_stage_id"],
-        ["name", "nome", "title", "stage.name", "description"],
-    )
-    activity_type_name = make_lookup(
-        activity_types,
-        ["id", "activity_type_id", "type_id"],
-        ["name", "nome", "title", "type", "description"],
-    )
-
-    return {
-        "user_name": user_name,
-        "user_team": user_team,
-        "corretor_equipe": corretor_equipe_map or {},
-        "stage_name": stage_name,
-        "activity_type_name": activity_type_name,
-    }
-
-
-def prepare_deals(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
-        return pd.DataFrame()
-
-    cmap = infer_deal_columns(df)
-    out = pd.DataFrame(index=df.index)
-    out["lead_id"] = df[cmap.id].astype(str) if cmap.id else df.index.astype(str)
-    out["lead"] = df[cmap.title].astype(str) if cmap.title else ""
-    out["created_at"] = pd.to_datetime(df[cmap.created_at], errors="coerce") if cmap.created_at else pd.NaT
-    out["responsavel"] = df[cmap.owner].apply(normalize_text) if cmap.owner else "SEM RESPONSAVEL"
-    out["responsavel_id"] = df[cmap.owner_id].astype(str) if cmap.owner_id else ""
-    out["equipe"] = df[cmap.team].apply(normalize_text) if cmap.team else "SEM EQUIPE"
-    out["etapa"] = df[cmap.stage].apply(normalize_text) if cmap.stage else ""
-    out["last_action_at"] = pd.to_datetime(df[cmap.last_action_at], errors="coerce") if cmap.last_action_at else pd.NaT
-    out["responsavel_anterior"] = df[cmap.previous_owner].apply(normalize_text) if cmap.previous_owner else ""
-
-    return out
-
-
-def prepare_actions(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
-        return pd.DataFrame()
-
-    cmap = infer_action_columns(df)
-    out = pd.DataFrame(index=df.index)
-    out["acao_id"] = df[cmap.id].astype(str) if cmap.id else df.index.astype(str)
-    out["descricao"] = df[cmap.title].astype(str) if cmap.title else ""
-    out["responsavel"] = df[cmap.owner].apply(normalize_text) if cmap.owner else "SEM RESPONSAVEL"
-    out["responsavel_id"] = df[cmap.owner_id].astype(str) if cmap.owner_id else ""
-    out["equipe"] = df[cmap.team].apply(normalize_text) if cmap.team else "SEM EQUIPE"
-    out["tipo_acao"] = df[cmap.action_type].apply(normalize_text) if cmap.action_type else "ACAO"
-    out["data_acao"] = pd.to_datetime(df[cmap.action_date], errors="coerce") if cmap.action_date else pd.NaT
-
-    out.loc[out["tipo_acao"].eq(""), "tipo_acao"] = "ACAO"
-    return out
-
-
-def enrich_with_references(
-    deals: pd.DataFrame,
-    actions: pd.DataFrame,
-    deals_raw: pd.DataFrame,
-    actions_raw: pd.DataFrame,
-    reference_maps: Dict[str, Dict[str, str]] | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    refs = reference_maps or {}
-    user_name = refs.get("user_name", {})
-    user_team = refs.get("user_team", {})
-    corretor_equipe = refs.get("corretor_equipe", {})
-    stage_name = refs.get("stage_name", {})
-    activity_type_name = refs.get("activity_type_name", {})
-
-    if not deals.empty:
-        if "owner_id" in deals_raw.columns and user_name:
-            mapped = deals_raw["owner_id"].astype(str).str.strip().map(user_name)
-            deals["responsavel"] = mapped.fillna(deals["responsavel"]).replace("", "SEM RESPONSAVEL")
-
-        if "owner_id" in deals_raw.columns and user_team:
-            mapped = deals_raw["owner_id"].astype(str).str.strip().map(user_team)
             deals["equipe"] = mapped.fillna(deals["equipe"]).replace("", "SEM EQUIPE")
 
         if "stage_id" in deals_raw.columns and stage_name:
@@ -213,11 +13,13 @@ def enrich_with_references(
         owner_source = "owner_id" if "owner_id" in actions_raw.columns else "user_id" if "user_id" in actions_raw.columns else ""
         if owner_source and user_name:
             mapped = actions_raw[owner_source].astype(str).str.strip().map(user_name)
-            actions["responsavel"] = mapped.fillna(actions["responsavel"]).replace("", "SEM RESPONSAVEL")
+            has_owner = mapped.fillna("").astype(str).str.len() > 0
+            actions.loc[has_owner, "responsavel"] = mapped[has_owner]
 
         if owner_source and user_team:
             mapped = actions_raw[owner_source].astype(str).str.strip().map(user_team)
-            actions["equipe"] = mapped.fillna(actions["equipe"]).replace("", "SEM EQUIPE")
+            has_team = mapped.fillna("").astype(str).str.len() > 0
+            actions.loc[has_team, "equipe"] = mapped[has_team]
 
         if "activity_type_id" in actions_raw.columns and activity_type_name:
             mapped = actions_raw["activity_type_id"].astype(str).str.strip().map(activity_type_name)
@@ -227,6 +29,11 @@ def enrich_with_references(
             mapped = actions_raw["user_name"].apply(normalize_text)
             has_user_name = mapped.astype(str).str.len() > 0
             actions.loc[has_user_name, "responsavel"] = mapped[has_user_name]
+
+        if owner_source:
+            missing_owner = actions["responsavel"].fillna("").astype(str).isin(["", "SEM RESPONSAVEL"])
+            fallback_owner = actions_raw[owner_source].astype(str).str.strip()
+            actions.loc[missing_owner, "responsavel"] = "ID " + fallback_owner[missing_owner]
 
         if corretor_equipe:
             mapped = actions["responsavel"].map(corretor_equipe)
