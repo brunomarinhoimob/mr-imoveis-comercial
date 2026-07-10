@@ -129,6 +129,7 @@ def build_reference_maps(
     pipelines_raw: pd.DataFrame | None = None,
     activity_types_raw: pd.DataFrame | None = None,
     corretor_equipe_map: Dict[str, str] | None = None,
+    corretor_nome_map: Dict[str, str] | None = None,
 ) -> Dict[str, Dict[str, str]]:
     users = users_raw if users_raw is not None else pd.DataFrame()
     stages = stages_raw if stages_raw is not None else pd.DataFrame()
@@ -165,10 +166,28 @@ def build_reference_maps(
         "user_name": user_name,
         "user_team": user_team,
         "corretor_equipe": corretor_equipe_map or {},
+        "corretor_nome": corretor_nome_map or {},
         "stage_name": stage_name,
         "pipeline_name": pipeline_name,
         "activity_type_name": activity_type_name,
     }
+
+
+def canonical_responsavel(value, corretor_nome: Dict[str, str]) -> str:
+    text = normalize_text(value)
+    if not text:
+        return "SEM RESPONSAVEL"
+
+    if text in corretor_nome:
+        return corretor_nome[text]
+
+    email_prefix = text.split("@", 1)[0]
+    compact = "".join(ch for ch in email_prefix if ch.isalpha())
+    for alias, nome in corretor_nome.items():
+        if len(alias) >= 4 and alias in compact:
+            return nome
+
+    return text
 
 
 def prepare_deals(df: pd.DataFrame) -> pd.DataFrame:
@@ -220,6 +239,7 @@ def enrich_with_references(
     user_name = refs.get("user_name", {})
     user_team = refs.get("user_team", {})
     corretor_equipe = refs.get("corretor_equipe", {})
+    corretor_nome = refs.get("corretor_nome", {})
     stage_name = refs.get("stage_name", {})
     pipeline_name = refs.get("pipeline_name", {})
     activity_type_name = refs.get("activity_type_name", {})
@@ -242,6 +262,8 @@ def enrich_with_references(
             deals["pipeline"] = mapped.fillna(deals["pipeline"])
 
         if corretor_equipe:
+            if corretor_nome:
+                deals["responsavel"] = deals["responsavel"].apply(lambda value: canonical_responsavel(value, corretor_nome))
             mapped = deals["responsavel"].map(corretor_equipe)
             has_team = mapped.fillna("").astype(str).str.len() > 0
             deals.loc[has_team, "equipe"] = mapped[has_team]
@@ -291,6 +313,8 @@ def enrich_with_references(
             actions.loc[missing_owner, "responsavel"] = "ID " + fallback_owner[missing_owner]
 
         if corretor_equipe:
+            if corretor_nome:
+                actions["responsavel"] = actions["responsavel"].apply(lambda value: canonical_responsavel(value, corretor_nome))
             mapped = actions["responsavel"].map(corretor_equipe)
             has_team = mapped.fillna("").astype(str).str.len() > 0
             actions.loc[has_team, "equipe"] = mapped[has_team]

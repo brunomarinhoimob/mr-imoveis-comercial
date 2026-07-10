@@ -69,20 +69,20 @@ def to_int(value) -> int:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def carregar_mapa_corretor_equipe() -> dict:
+def carregar_referencias_corretores() -> tuple[dict, dict]:
     try:
         df = carregar_dados_planilha()
     except Exception:
-        return {}
+        return {}, {}
 
     if df is None or df.empty:
-        return {}
+        return {}, {}
 
     df = df.copy()
     df.columns = df.columns.str.upper().str.strip()
 
     if "CORRETOR" not in df.columns or "EQUIPE" not in df.columns:
-        return {}
+        return {}, {}
 
     base = df[["CORRETOR", "EQUIPE"]].dropna().copy()
     base["CORRETOR_KEY"] = base["CORRETOR"].apply(normalize_text)
@@ -90,13 +90,23 @@ def carregar_mapa_corretor_equipe() -> dict:
     base = base[(base["CORRETOR_KEY"] != "") & (base["EQUIPE_VAL"] != "")]
 
     if base.empty:
-        return {}
+        return {}, {}
 
-    return (
+    equipe_map = (
         base.groupby("CORRETOR_KEY")["EQUIPE_VAL"]
         .agg(lambda s: s.value_counts().index[0])
         .to_dict()
     )
+    nome_map = {nome: nome for nome in base["CORRETOR_KEY"].unique()}
+
+    primeiro_nome = base["CORRETOR_KEY"].str.split().str[0]
+    nomes_unicos = primeiro_nome.value_counts()
+    for nome in base["CORRETOR_KEY"].unique():
+        primeiro = nome.split()[0]
+        if nomes_unicos.get(primeiro, 0) == 1:
+            nome_map[primeiro] = nome
+
+    return equipe_map, nome_map
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -247,7 +257,7 @@ users_result = carga["users_result"]
 stages_result = carga["stages_result"]
 pipelines_result = carga["pipelines_result"]
 activity_types_result = carga["activity_types_result"]
-corretor_equipe_map = carregar_mapa_corretor_equipe()
+corretor_equipe_map, corretor_nome_map = carregar_referencias_corretores()
 
 if not deals_result.ok:
     st.error("Nao consegui carregar leads/cards/oportunidades do PipeRun.")
@@ -262,6 +272,7 @@ reference_maps = build_reference_maps(
     pipelines_raw=pipelines_result.data if pipelines_result.ok else pd.DataFrame(),
     activity_types_raw=activity_types_result.data if activity_types_result.ok else pd.DataFrame(),
     corretor_equipe_map=corretor_equipe_map,
+    corretor_nome_map=corretor_nome_map,
 )
 
 metricas = build_performance(
@@ -441,6 +452,10 @@ else:
                     "ok": bool(corretor_equipe_map),
                     "linhas": len(corretor_equipe_map),
                 },
+                "mapa_nome_corretor_planilha": {
+                    "ok": bool(corretor_nome_map),
+                    "linhas": len(corretor_nome_map),
+                },
             }
         )
 
@@ -464,6 +479,19 @@ else:
 
     with st.expander("Amostra de leads/cards"):
         st.dataframe(deals_result.data.head(20), use_container_width=True)
+
+    with st.expander("Responsaveis encontrados"):
+        deals_norm = metricas.get("deals_normalizados", pd.DataFrame())
+        if deals_norm.empty:
+            st.info("Sem responsaveis normalizados para exibir.")
+        else:
+            responsaveis = (
+                deals_norm.groupby(["equipe", "responsavel"], as_index=False)["lead_id"]
+                .nunique()
+                .rename(columns={"lead_id": "cards"})
+                .sort_values("cards", ascending=False)
+            )
+            st.dataframe(responsaveis, use_container_width=True, hide_index=True)
 
     with st.expander("Amostra de acoes"):
         st.dataframe(actions_df.head(20), use_container_width=True)

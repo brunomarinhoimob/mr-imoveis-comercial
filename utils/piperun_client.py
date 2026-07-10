@@ -140,6 +140,8 @@ class PiperunClient:
         query.setdefault("page", page)
         query.setdefault("pagina", page)
         query.setdefault("per_page", per_page)
+        query.setdefault("limit", per_page)
+        query.setdefault("size", per_page)
 
         last_error = ""
         last_status = None
@@ -210,7 +212,14 @@ class PiperunClient:
                     break
 
                 frames.append(result.data)
-                if len(result.data) < per_page:
+
+                if page > 1:
+                    current = pd.concat(frames, ignore_index=True)
+                    if "id" in current.columns and current["id"].astype(str).duplicated().any():
+                        frames.pop()
+                        break
+
+                if result.data.empty:
                     break
 
             if endpoint_ok:
