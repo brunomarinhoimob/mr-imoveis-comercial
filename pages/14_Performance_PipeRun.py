@@ -321,7 +321,7 @@ cards_operacionais = [
 
 cols = st.columns(6)
 for idx, (label, key) in enumerate(cards_operacionais):
-    cols[idx].metric(label, to_int(geral_row.get(key, 0)))
+    cols[idx % len(cols)].metric(label, to_int(geral_row.get(key, 0)))
 
 st.markdown("---")
 
