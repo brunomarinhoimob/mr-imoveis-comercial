@@ -1,407 +1,163 @@
-from datetime import date, timedelta
-
-import pandas as pd
-import streamlit as st
-
-from utils.bootstrap import iniciar_app
-from utils.data_loader import carregar_dados_planilha
-from utils.piperun_client import PiperunClient, date_params, get_piperun_base_url, get_piperun_token
-from utils.piperun_metrics import build_performance, build_reference_maps, normalize_text
+def contains_stage(series: pd.Series, words: Iterable[str]) -> pd.Series:
+    text = series.fillna("").astype(str).map(normalize_text)
+    mask = pd.Series(False, index=series.index)
+    for word in words:
+        mask = mask | text.str.contains(normalize_text(word), na=False)
+    return mask
 
 
-st.set_page_config(
-    page_title="Performance PipeRun",
-    page_icon="PR",
-    layout="wide",
-)
+def build_performance(
+    deals_raw: pd.DataFrame,
+    actions_raw: pd.DataFrame,
+    data_ini,
+    data_fim,
+    remanejo_dias: int = 2,
+    reference_maps: Dict[str, Dict[str, str]] | None = None,
+) -> Dict[str, pd.DataFrame]:
+    deals = prepare_deals(deals_raw)
+    actions = prepare_actions(actions_raw)
+    deals, actions = enrich_with_references(deals, actions, deals_raw, actions_raw, reference_maps)
 
-iniciar_app()
+    if not deals.empty:
+        deals_periodo = deals[
+            deals["created_at"].isna()
+            | ((deals["created_at"].dt.date >= data_ini) & (deals["created_at"].dt.date <= data_fim))
+        ].copy()
+    else:
+        deals_periodo = deals
 
+    if not deals_periodo.empty and "pipeline" in deals_periodo.columns:
+        deals_periodo = deals_periodo[
+            ~deals_periodo["pipeline"].fillna("").astype(str).map(normalize_text).str.contains("FINANCEIRO", na=False)
+        ].copy()
 
-DEAL_ENDPOINTS = [
-    "deals",
-    "opportunities",
-    "cards",
-    "leads",
-]
+    if not actions.empty:
+        actions_periodo = actions[
+            actions["data_acao"].isna()
+            | ((actions["data_acao"].dt.date >= data_ini) & (actions["data_acao"].dt.date <= data_fim))
+        ].copy()
+    else:
+        actions_periodo = actions
 
-ACTION_ENDPOINTS = [
-    "activities",
-    "notes",
-    "tasks",
-    "visits",
-    "events",
-    "actions",
-]
+    dims = ["equipe", "responsavel"]
+    if deals_periodo.empty:
+        base = pd.DataFrame(columns=dims)
+    else:
+        base = deals_periodo[dims].drop_duplicates()
 
-USER_ENDPOINTS = [
-    "users",
-    "account/users",
-    "user",
-]
-
-STAGE_ENDPOINTS = [
-    "stages",
-    "pipeline-stages",
-    "pipeline_stages",
-    "pipelines/stages",
-]
-
-ACTIVITY_TYPE_ENDPOINTS = [
-    "activityTypes",
-    "activity-types",
-    "activity_types",
-    "activities/types",
-]
-
-
-def to_int(value) -> int:
-    try:
-        return int(value)
-    except Exception:
-        return 0
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def carregar_mapa_corretor_equipe() -> dict:
-    try:
-        df = carregar_dados_planilha()
-    except Exception:
-        return {}
-
-    if df is None or df.empty:
-        return {}
-
-    df = df.copy()
-    df.columns = df.columns.str.upper().str.strip()
-
-    if "CORRETOR" not in df.columns or "EQUIPE" not in df.columns:
-        return {}
-
-    base = df[["CORRETOR", "EQUIPE"]].dropna().copy()
-    base["CORRETOR_KEY"] = base["CORRETOR"].apply(normalize_text)
-    base["EQUIPE_VAL"] = base["EQUIPE"].apply(normalize_text)
-    base = base[(base["CORRETOR_KEY"] != "") & (base["EQUIPE_VAL"] != "")]
+    if not actions_periodo.empty:
+        base = pd.concat([base, actions_periodo[dims].drop_duplicates()], ignore_index=True).drop_duplicates()
 
     if base.empty:
-        return {}
+        base = pd.DataFrame([{"equipe": "SEM EQUIPE", "responsavel": "SEM RESPONSAVEL"}])
 
-    return (
-        base.groupby("CORRETOR_KEY")["EQUIPE_VAL"]
-        .agg(lambda s: s.value_counts().index[0])
-        .to_dict()
+    leads = (
+        deals_periodo.groupby(dims)["lead_id"].nunique().reset_index(name="leads_recebidos")
+        if not deals_periodo.empty
+        else pd.DataFrame(columns=dims + ["leads_recebidos"])
     )
 
-
-@st.cache_data(ttl=300, show_spinner=False)
-def carregar_piperun(
-    token: str,
-    base_url: str,
-    data_ini: date,
-    data_fim: date,
-    usar_filtro_api: bool,
-    max_pages: int,
-    per_page: int,
-):
-    client = PiperunClient(token=token, base_url=base_url)
-    params = date_params(data_ini, data_fim) if usar_filtro_api else {}
-
-    deals_result = client.fetch_first_available(
-        DEAL_ENDPOINTS,
-        params=params,
-        max_pages=max_pages,
-        per_page=per_page,
+    acoes = (
+        actions_periodo.groupby(dims)["acao_id"].nunique().reset_index(name="acoes_total")
+        if not actions_periodo.empty
+        else pd.DataFrame(columns=dims + ["acoes_total"])
     )
 
-    action_frames = []
-    action_status = []
-
-    for endpoint in ACTION_ENDPOINTS:
-        result = client.fetch_first_available(
-            [endpoint],
-            params=params,
-            max_pages=max_pages,
-            per_page=per_page,
+    tipos = pd.DataFrame(columns=dims)
+    if not actions_periodo.empty:
+        tipos = (
+            actions_periodo.assign(tipo_acao=actions_periodo["tipo_acao"].replace("", "ACAO"))
+            .pivot_table(index=dims, columns="tipo_acao", values="acao_id", aggfunc="nunique", fill_value=0)
+            .reset_index()
         )
-        action_status.append(
-            {
-                "endpoint": endpoint,
-                "ok": result.ok,
-                "linhas": len(result.data) if result.ok else 0,
-                "erro": result.error,
-            }
+        tipos.columns = [str(c).lower().replace(" ", "_") if c not in dims else c for c in tipos.columns]
+
+    funil = pd.DataFrame(columns=dims)
+    if not deals_periodo.empty:
+        tmp = deals_periodo.copy()
+        tmp["analises_enviadas"] = contains_stage(
+            tmp["etapa"],
+            ["ANALISE DE CREDITO", "ANALISE", "1 ANALISE", "1A ANALISE", "1ª ANALISE"],
         )
-        if result.ok and not result.data.empty:
-            tmp = result.data.copy()
-            tmp["_endpoint_origem"] = endpoint
-            action_frames.append(tmp)
+        tmp["aprovacoes"] = contains_stage(
+            tmp["etapa"],
+            ["APROVACAO", "APROVADO", "APROVADA"],
+        )
+        tmp["reprovados"] = contains_stage(
+            tmp["etapa"],
+            ["REPROVADO", "REPROVACAO", "RECUSA", "RECUSADO", "RECUSADA"],
+        )
+        tmp["pendencias"] = contains_stage(
+            tmp["etapa"],
+            ["PENDENCIA", "PENDENTE"],
+        )
+        tmp["em_cadencia"] = contains_stage(
+            tmp["etapa"],
+            ["CADENCIA", "CADÊNCIA"],
+        )
+        tmp["em_acompanhamento"] = contains_stage(
+            tmp["etapa"],
+            ["ACOMPANHAMENTO", "ACOMPANHAR"],
+        )
+        tmp["em_atendimento"] = contains_stage(
+            tmp["etapa"],
+            ["ATENDIMENTO", "ATENDENDO", "EM ATENDIMENTO"],
+        )
+        funil = tmp.groupby(dims).agg(
+            analises_enviadas=("analises_enviadas", "sum"),
+            aprovacoes=("aprovacoes", "sum"),
+            reprovados=("reprovados", "sum"),
+            pendencias=("pendencias", "sum"),
+            em_cadencia=("em_cadencia", "sum"),
+            em_acompanhamento=("em_acompanhamento", "sum"),
+            em_atendimento=("em_atendimento", "sum"),
+        ).reset_index()
 
-    actions_df = pd.concat(action_frames, ignore_index=True) if action_frames else pd.DataFrame()
+    cards_por_coluna = pd.DataFrame()
+    if not deals_periodo.empty:
+        cards_por_coluna = (
+            deals_periodo.assign(etapa=deals_periodo["etapa"].replace("", "SEM ETAPA"))
+            .groupby(["pipeline", "etapa"], as_index=False)["lead_id"]
+            .nunique()
+            .rename(columns={"lead_id": "qtde_cards"})
+            .sort_values(["pipeline", "qtde_cards"], ascending=[True, False])
+        )
 
-    users_result = client.fetch_first_available(
-        USER_ENDPOINTS,
-        params={},
-        max_pages=3,
-        per_page=per_page,
-    )
-    stages_result = client.fetch_first_available(
-        STAGE_ENDPOINTS,
-        params={},
-        max_pages=10,
-        per_page=per_page,
-    )
-    activity_types_result = client.fetch_first_available(
-        ACTIVITY_TYPE_ENDPOINTS,
-        params={},
-        max_pages=5,
-        per_page=per_page,
-    )
+    remanejados = pd.DataFrame(columns=dims + ["leads_remanejados"])
+    if not deals_periodo.empty:
+        tmp = deals_periodo.copy()
+        tmp["remanejado"] = tmp["responsavel_anterior"].fillna("").astype(str).str.len() > 0
+        if tmp["remanejado"].any():
+            remanejados = tmp[tmp["remanejado"]].groupby(dims)["lead_id"].nunique().reset_index(name="leads_remanejados")
+        elif "last_action_at" in tmp.columns:
+            sem_acao = tmp["last_action_at"].isna()
+            remanejados = tmp[sem_acao].groupby(dims)["lead_id"].nunique().reset_index(name="leads_remanejados")
+
+    result = base.merge(leads, on=dims, how="left")
+    result = result.merge(remanejados, on=dims, how="left")
+    result = result.merge(acoes, on=dims, how="left")
+    result = result.merge(funil, on=dims, how="left")
+    if not tipos.empty:
+        result = result.merge(tipos, on=dims, how="left")
+
+    metric_cols = [c for c in result.columns if c not in dims]
+    result[metric_cols] = result[metric_cols].fillna(0)
+
+    for col in metric_cols:
+        result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0).astype(int)
+
+    equipe = result.groupby("equipe", as_index=False)[metric_cols].sum()
+    geral = pd.DataFrame([{col: int(result[col].sum()) for col in metric_cols}])
+    geral.insert(0, "visao", "GERAL")
+
+    result = result.sort_values(["equipe", "responsavel"]).reset_index(drop=True)
+    equipe = equipe.sort_values("equipe").reset_index(drop=True)
 
     return {
-        "deals_result": deals_result,
-        "actions_df": actions_df,
-        "action_status": pd.DataFrame(action_status),
-        "users_result": users_result,
-        "stages_result": stages_result,
-        "activity_types_result": activity_types_result,
+        "geral": geral,
+        "equipe": equipe,
+        "corretor": result,
+        "deals_normalizados": deals_periodo,
+        "acoes_normalizadas": actions_periodo,
+        "cards_por_coluna": cards_por_coluna,
     }
-
-
-st.title("Performance PipeRun")
-st.caption("Leads, remanejamentos, acoes e etapas do funil por visao geral, equipe e corretor.")
-
-perfil = st.session_state.get("perfil", "")
-nome_usuario = st.session_state.get("nome_usuario", "").upper().strip()
-
-token_secrets = get_piperun_token()
-
-st.sidebar.title("Filtros")
-
-hoje = date.today()
-data_ini = st.sidebar.date_input("Data inicial", value=hoje - timedelta(days=30), format="DD/MM/YYYY")
-data_fim = st.sidebar.date_input("Data final", value=hoje, format="DD/MM/YYYY")
-
-if data_ini > data_fim:
-    st.error("A data inicial nao pode ser maior que a data final.")
-    st.stop()
-
-base_url = st.sidebar.text_input("Base da API", value=get_piperun_base_url())
-token_digitado = st.sidebar.text_input(
-    "Token PipeRun temporario",
-    value="",
-    type="password",
-    help="Opcional. Use apenas para teste. O ideal e configurar PIPERUN_TOKEN em secrets ou variavel de ambiente.",
-)
-
-token = (token_digitado or token_secrets or "").strip()
-
-with st.sidebar.expander("Configuracao segura do token"):
-    st.code(
-        '[secrets]\nPIPERUN_TOKEN = "cole_o_token_aqui"\nPIPERUN_API_BASE = "https://api.pipe.run/v1"',
-        language="toml",
-    )
-    st.caption("Nao salve o token direto nos arquivos .py do projeto.")
-
-usar_filtro_api = st.sidebar.checkbox(
-    "Enviar filtro de data para API",
-    value=False,
-    help="Deixe desligado se a API rejeitar parametros de data. A pagina filtra localmente quando encontra campos de data.",
-)
-
-max_pages = st.sidebar.number_input("Paginas maximas por endpoint", min_value=1, max_value=50, value=5, step=1)
-per_page = st.sidebar.number_input("Registros por pagina", min_value=20, max_value=500, value=100, step=20)
-remanejo_dias = st.sidebar.number_input("Regra de remanejo: dias sem acao", min_value=1, max_value=30, value=2, step=1)
-
-if not token:
-    st.warning("Configure o token do PipeRun em st.secrets, variavel PIPERUN_TOKEN ou informe temporariamente na barra lateral.")
-    st.stop()
-
-with st.spinner("Consultando PipeRun..."):
-    carga = carregar_piperun(
-        token=token,
-        base_url=base_url,
-        data_ini=data_ini,
-        data_fim=data_fim,
-        usar_filtro_api=usar_filtro_api,
-        max_pages=int(max_pages),
-        per_page=int(per_page),
-    )
-
-deals_result = carga["deals_result"]
-actions_df = carga["actions_df"]
-action_status = carga["action_status"]
-users_result = carga["users_result"]
-stages_result = carga["stages_result"]
-activity_types_result = carga["activity_types_result"]
-corretor_equipe_map = carregar_mapa_corretor_equipe()
-
-if not deals_result.ok:
-    st.error("Nao consegui carregar leads/cards/oportunidades do PipeRun.")
-    st.write(deals_result.error)
-    with st.expander("Diagnostico de endpoints de acoes"):
-        st.dataframe(action_status, use_container_width=True, hide_index=True)
-    st.stop()
-
-reference_maps = build_reference_maps(
-    users_raw=users_result.data if users_result.ok else pd.DataFrame(),
-    stages_raw=stages_result.data if stages_result.ok else pd.DataFrame(),
-    activity_types_raw=activity_types_result.data if activity_types_result.ok else pd.DataFrame(),
-    corretor_equipe_map=corretor_equipe_map,
-)
-
-metricas = build_performance(
-    deals_raw=deals_result.data,
-    actions_raw=actions_df,
-    data_ini=data_ini,
-    data_fim=data_fim,
-    remanejo_dias=int(remanejo_dias),
-    reference_maps=reference_maps,
-)
-
-df_geral = metricas["geral"]
-df_equipe = metricas["equipe"]
-df_corretor = metricas["corretor"]
-
-if perfil == "corretor" and nome_usuario and "responsavel" in df_corretor.columns:
-    df_corretor = df_corretor[df_corretor["responsavel"] == nome_usuario].copy()
-    equipes_visiveis = df_corretor["equipe"].unique().tolist()
-    df_equipe = df_equipe[df_equipe["equipe"].isin(equipes_visiveis)].copy()
-    numeric_cols = [c for c in df_corretor.columns if c not in ["equipe", "responsavel"]]
-    df_geral = pd.DataFrame([{**{"visao": "GERAL"}, **{c: int(df_corretor[c].sum()) for c in numeric_cols}}])
-
-st.caption(
-    f"Periodo: {data_ini.strftime('%d/%m/%Y')} ate {data_fim.strftime('%d/%m/%Y')} | "
-    f"Endpoint principal: {deals_result.endpoint} | "
-    f"Leads carregados: {len(deals_result.data)} | Acoes carregadas: {len(actions_df)}"
-)
-
-metric_cols = [c for c in df_geral.columns if c != "visao"]
-geral_row = df_geral.iloc[0].to_dict() if not df_geral.empty else {}
-
-cards_principais = [
-    ("Leads recebidos", "leads_recebidos"),
-    ("Leads remanejados", "leads_remanejados"),
-    ("Acoes totais", "acoes_total"),
-    ("Analises enviadas", "analises_enviadas"),
-    ("Aprovacoes", "aprovacoes"),
-    ("Reprovados", "reprovados"),
-]
-
-cols = st.columns(6)
-for idx, (label, key) in enumerate(cards_principais):
-    cols[idx].metric(label, to_int(geral_row.get(key, 0)))
-
-st.markdown("---")
-
-acao_cols = [
-    c
-    for c in metric_cols
-    if c
-    not in {
-        "leads_recebidos",
-        "leads_remanejados",
-        "acoes_total",
-        "analises_enviadas",
-        "aprovacoes",
-        "reprovados",
-    }
-]
-
-if acao_cols:
-    st.subheader("Acoes registradas pelo CRM")
-    cols = st.columns(min(6, max(1, len(acao_cols))))
-    for i, col in enumerate(acao_cols):
-        cols[i % len(cols)].metric(col.replace("_", " ").title(), to_int(geral_row.get(col, 0)))
-
-st.markdown("---")
-
-visao = st.radio("Visao", ["Geral", "Por equipe", "Por corretor", "Diagnostico"], horizontal=True)
-
-if visao == "Geral":
-    st.subheader("Resumo geral")
-    st.dataframe(df_geral, use_container_width=True, hide_index=True)
-
-elif visao == "Por equipe":
-    st.subheader("Performance por equipe")
-    if df_equipe.empty:
-        st.info("Sem equipes identificadas no retorno da API.")
-    else:
-        st.dataframe(df_equipe, use_container_width=True, hide_index=True)
-
-elif visao == "Por corretor":
-    st.subheader("Performance por corretor")
-    if df_corretor.empty:
-        st.info("Sem corretores identificados no retorno da API.")
-    else:
-        equipe_sel = st.selectbox("Filtrar equipe", ["Todas"] + sorted(df_corretor["equipe"].dropna().unique().tolist()))
-        df_view = df_corretor.copy()
-        if equipe_sel != "Todas":
-            df_view = df_view[df_view["equipe"] == equipe_sel]
-        st.dataframe(df_view, use_container_width=True, hide_index=True)
-
-else:
-    st.subheader("Diagnostico da integracao")
-    st.write("Use esta aba na primeira conexao para confirmar quais endpoints e campos o PipeRun esta entregando.")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Endpoint de leads/cards**")
-        st.write(
-            {
-                "endpoint": deals_result.endpoint,
-                "ok": deals_result.ok,
-                "linhas": len(deals_result.data),
-                "status_code": deals_result.status_code,
-            }
-        )
-        st.markdown("**Colunas de leads/cards**")
-        st.dataframe(pd.DataFrame({"coluna": list(deals_result.data.columns)}), use_container_width=True, hide_index=True)
-
-        st.markdown("**Tabelas auxiliares**")
-        st.write(
-            {
-                "usuarios": {
-                    "endpoint": users_result.endpoint,
-                    "ok": users_result.ok,
-                    "linhas": len(users_result.data),
-                    "erro": users_result.error,
-                },
-                "etapas": {
-                    "endpoint": stages_result.endpoint,
-                    "ok": stages_result.ok,
-                    "linhas": len(stages_result.data),
-                    "erro": stages_result.error,
-                },
-                "tipos_atividade": {
-                    "endpoint": activity_types_result.endpoint,
-                    "ok": activity_types_result.ok,
-                    "linhas": len(activity_types_result.data),
-                    "erro": activity_types_result.error,
-                },
-                "mapa_corretor_equipe_planilha": {
-                    "ok": bool(corretor_equipe_map),
-                    "linhas": len(corretor_equipe_map),
-                },
-            }
-        )
-
-    with c2:
-        st.markdown("**Endpoints de acoes**")
-        st.dataframe(action_status, use_container_width=True, hide_index=True)
-        st.markdown("**Colunas de acoes**")
-        st.dataframe(pd.DataFrame({"coluna": list(actions_df.columns)}), use_container_width=True, hide_index=True)
-
-    with st.expander("Amostra de usuarios"):
-        st.dataframe(users_result.data.head(20), use_container_width=True)
-
-    with st.expander("Amostra de etapas"):
-        st.dataframe(stages_result.data.head(30), use_container_width=True)
-
-    with st.expander("Amostra de tipos de atividade"):
-        st.dataframe(activity_types_result.data.head(30), use_container_width=True)
-
-    with st.expander("Amostra de leads/cards"):
-        st.dataframe(deals_result.data.head(20), use_container_width=True)
-
-    with st.expander("Amostra de acoes"):
-        st.dataframe(actions_df.head(20), use_container_width=True)
