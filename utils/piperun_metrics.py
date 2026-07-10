@@ -1,19 +1,3 @@
-            has_user_name = mapped.astype(str).str.len() > 0
-            actions.loc[has_user_name, "responsavel"] = mapped[has_user_name]
-
-        if owner_source:
-            missing_owner = actions["responsavel"].fillna("").astype(str).isin(["", "SEM RESPONSAVEL"])
-            fallback_owner = actions_raw[owner_source].apply(normalize_id)
-            actions.loc[missing_owner, "responsavel"] = "ID " + fallback_owner[missing_owner]
-
-        if corretor_equipe:
-            mapped = actions["responsavel"].map(corretor_equipe)
-            has_team = mapped.fillna("").astype(str).str.len() > 0
-            actions.loc[has_team, "equipe"] = mapped[has_team]
-
-    return deals, actions
-
-
 def contains_stage(series: pd.Series, words: Iterable[str]) -> pd.Series:
     text = series.fillna("").astype(str).map(normalize_text)
     mask = pd.Series(False, index=series.index)
@@ -41,6 +25,11 @@ def build_performance(
         ].copy()
     else:
         deals_periodo = deals
+
+    if not deals_periodo.empty and "pipeline" in deals_periodo.columns:
+        deals_periodo = deals_periodo[
+            ~deals_periodo["pipeline"].fillna("").astype(str).map(normalize_text).str.contains("FINANCEIRO", na=False)
+        ].copy()
 
     if not actions.empty:
         actions_periodo = actions[
@@ -98,11 +87,41 @@ def build_performance(
             tmp["etapa"],
             ["REPROVADO", "REPROVACAO", "RECUSA", "RECUSADO", "RECUSADA"],
         )
+        tmp["pendencias"] = contains_stage(
+            tmp["etapa"],
+            ["PENDENCIA", "PENDENTE"],
+        )
+        tmp["em_cadencia"] = contains_stage(
+            tmp["etapa"],
+            ["CADENCIA", "CADÊNCIA"],
+        )
+        tmp["em_acompanhamento"] = contains_stage(
+            tmp["etapa"],
+            ["ACOMPANHAMENTO", "ACOMPANHAR"],
+        )
+        tmp["em_atendimento"] = contains_stage(
+            tmp["etapa"],
+            ["ATENDIMENTO", "ATENDENDO", "EM ATENDIMENTO"],
+        )
         funil = tmp.groupby(dims).agg(
             analises_enviadas=("analises_enviadas", "sum"),
             aprovacoes=("aprovacoes", "sum"),
             reprovados=("reprovados", "sum"),
+            pendencias=("pendencias", "sum"),
+            em_cadencia=("em_cadencia", "sum"),
+            em_acompanhamento=("em_acompanhamento", "sum"),
+            em_atendimento=("em_atendimento", "sum"),
         ).reset_index()
+
+    cards_por_coluna = pd.DataFrame()
+    if not deals_periodo.empty:
+        cards_por_coluna = (
+            deals_periodo.assign(etapa=deals_periodo["etapa"].replace("", "SEM ETAPA"))
+            .groupby(["pipeline", "etapa"], as_index=False)["lead_id"]
+            .nunique()
+            .rename(columns={"lead_id": "qtde_cards"})
+            .sort_values(["pipeline", "qtde_cards"], ascending=[True, False])
+        )
 
     remanejados = pd.DataFrame(columns=dims + ["leads_remanejados"])
     if not deals_periodo.empty:
@@ -140,4 +159,5 @@ def build_performance(
         "corretor": result,
         "deals_normalizados": deals_periodo,
         "acoes_normalizadas": actions_periodo,
+        "cards_por_coluna": cards_por_coluna,
     }

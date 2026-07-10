@@ -1,163 +1,155 @@
-def contains_stage(series: pd.Series, words: Iterable[str]) -> pd.Series:
-    text = series.fillna("").astype(str).map(normalize_text)
-    mask = pd.Series(False, index=series.index)
-    for word in words:
-        mask = mask | text.str.contains(normalize_text(word), na=False)
-    return mask
+    ("Aprovacoes", "aprovacoes"),
+    ("Reprovados", "reprovados"),
+    ("Em atendimento", "em_atendimento"),
+]
 
+cols = st.columns(6)
+for idx, (label, key) in enumerate(cards_principais):
+    cols[idx].metric(label, to_int(geral_row.get(key, 0)))
 
-def build_performance(
-    deals_raw: pd.DataFrame,
-    actions_raw: pd.DataFrame,
-    data_ini,
-    data_fim,
-    remanejo_dias: int = 2,
-    reference_maps: Dict[str, Dict[str, str]] | None = None,
-) -> Dict[str, pd.DataFrame]:
-    deals = prepare_deals(deals_raw)
-    actions = prepare_actions(actions_raw)
-    deals, actions = enrich_with_references(deals, actions, deals_raw, actions_raw, reference_maps)
+st.markdown("---")
 
-    if not deals.empty:
-        deals_periodo = deals[
-            deals["created_at"].isna()
-            | ((deals["created_at"].dt.date >= data_ini) & (deals["created_at"].dt.date <= data_fim))
-        ].copy()
-    else:
-        deals_periodo = deals
+cards_operacionais = [
+    ("Em cadencia", "em_cadencia"),
+    ("Em acompanhamento", "em_acompanhamento"),
+    ("Leads remanejados", "leads_remanejados"),
+    ("Acoes totais", "acoes_total"),
+]
 
-    if not deals_periodo.empty and "pipeline" in deals_periodo.columns:
-        deals_periodo = deals_periodo[
-            ~deals_periodo["pipeline"].fillna("").astype(str).map(normalize_text).str.contains("FINANCEIRO", na=False)
-        ].copy()
+cols = st.columns(4)
+for idx, (label, key) in enumerate(cards_operacionais):
+    cols[idx].metric(label, to_int(geral_row.get(key, 0)))
 
-    if not actions.empty:
-        actions_periodo = actions[
-            actions["data_acao"].isna()
-            | ((actions["data_acao"].dt.date >= data_ini) & (actions["data_acao"].dt.date <= data_fim))
-        ].copy()
-    else:
-        actions_periodo = actions
+st.markdown("---")
 
-    dims = ["equipe", "responsavel"]
-    if deals_periodo.empty:
-        base = pd.DataFrame(columns=dims)
-    else:
-        base = deals_periodo[dims].drop_duplicates()
-
-    if not actions_periodo.empty:
-        base = pd.concat([base, actions_periodo[dims].drop_duplicates()], ignore_index=True).drop_duplicates()
-
-    if base.empty:
-        base = pd.DataFrame([{"equipe": "SEM EQUIPE", "responsavel": "SEM RESPONSAVEL"}])
-
-    leads = (
-        deals_periodo.groupby(dims)["lead_id"].nunique().reset_index(name="leads_recebidos")
-        if not deals_periodo.empty
-        else pd.DataFrame(columns=dims + ["leads_recebidos"])
-    )
-
-    acoes = (
-        actions_periodo.groupby(dims)["acao_id"].nunique().reset_index(name="acoes_total")
-        if not actions_periodo.empty
-        else pd.DataFrame(columns=dims + ["acoes_total"])
-    )
-
-    tipos = pd.DataFrame(columns=dims)
-    if not actions_periodo.empty:
-        tipos = (
-            actions_periodo.assign(tipo_acao=actions_periodo["tipo_acao"].replace("", "ACAO"))
-            .pivot_table(index=dims, columns="tipo_acao", values="acao_id", aggfunc="nunique", fill_value=0)
-            .reset_index()
-        )
-        tipos.columns = [str(c).lower().replace(" ", "_") if c not in dims else c for c in tipos.columns]
-
-    funil = pd.DataFrame(columns=dims)
-    if not deals_periodo.empty:
-        tmp = deals_periodo.copy()
-        tmp["analises_enviadas"] = contains_stage(
-            tmp["etapa"],
-            ["ANALISE DE CREDITO", "ANALISE", "1 ANALISE", "1A ANALISE", "1ª ANALISE"],
-        )
-        tmp["aprovacoes"] = contains_stage(
-            tmp["etapa"],
-            ["APROVACAO", "APROVADO", "APROVADA"],
-        )
-        tmp["reprovados"] = contains_stage(
-            tmp["etapa"],
-            ["REPROVADO", "REPROVACAO", "RECUSA", "RECUSADO", "RECUSADA"],
-        )
-        tmp["pendencias"] = contains_stage(
-            tmp["etapa"],
-            ["PENDENCIA", "PENDENTE"],
-        )
-        tmp["em_cadencia"] = contains_stage(
-            tmp["etapa"],
-            ["CADENCIA", "CADÊNCIA"],
-        )
-        tmp["em_acompanhamento"] = contains_stage(
-            tmp["etapa"],
-            ["ACOMPANHAMENTO", "ACOMPANHAR"],
-        )
-        tmp["em_atendimento"] = contains_stage(
-            tmp["etapa"],
-            ["ATENDIMENTO", "ATENDENDO", "EM ATENDIMENTO"],
-        )
-        funil = tmp.groupby(dims).agg(
-            analises_enviadas=("analises_enviadas", "sum"),
-            aprovacoes=("aprovacoes", "sum"),
-            reprovados=("reprovados", "sum"),
-            pendencias=("pendencias", "sum"),
-            em_cadencia=("em_cadencia", "sum"),
-            em_acompanhamento=("em_acompanhamento", "sum"),
-            em_atendimento=("em_atendimento", "sum"),
-        ).reset_index()
-
-    cards_por_coluna = pd.DataFrame()
-    if not deals_periodo.empty:
-        cards_por_coluna = (
-            deals_periodo.assign(etapa=deals_periodo["etapa"].replace("", "SEM ETAPA"))
-            .groupby(["pipeline", "etapa"], as_index=False)["lead_id"]
-            .nunique()
-            .rename(columns={"lead_id": "qtde_cards"})
-            .sort_values(["pipeline", "qtde_cards"], ascending=[True, False])
-        )
-
-    remanejados = pd.DataFrame(columns=dims + ["leads_remanejados"])
-    if not deals_periodo.empty:
-        tmp = deals_periodo.copy()
-        tmp["remanejado"] = tmp["responsavel_anterior"].fillna("").astype(str).str.len() > 0
-        if tmp["remanejado"].any():
-            remanejados = tmp[tmp["remanejado"]].groupby(dims)["lead_id"].nunique().reset_index(name="leads_remanejados")
-        elif "last_action_at" in tmp.columns:
-            sem_acao = tmp["last_action_at"].isna()
-            remanejados = tmp[sem_acao].groupby(dims)["lead_id"].nunique().reset_index(name="leads_remanejados")
-
-    result = base.merge(leads, on=dims, how="left")
-    result = result.merge(remanejados, on=dims, how="left")
-    result = result.merge(acoes, on=dims, how="left")
-    result = result.merge(funil, on=dims, how="left")
-    if not tipos.empty:
-        result = result.merge(tipos, on=dims, how="left")
-
-    metric_cols = [c for c in result.columns if c not in dims]
-    result[metric_cols] = result[metric_cols].fillna(0)
-
-    for col in metric_cols:
-        result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0).astype(int)
-
-    equipe = result.groupby("equipe", as_index=False)[metric_cols].sum()
-    geral = pd.DataFrame([{col: int(result[col].sum()) for col in metric_cols}])
-    geral.insert(0, "visao", "GERAL")
-
-    result = result.sort_values(["equipe", "responsavel"]).reset_index(drop=True)
-    equipe = equipe.sort_values("equipe").reset_index(drop=True)
-
-    return {
-        "geral": geral,
-        "equipe": equipe,
-        "corretor": result,
-        "deals_normalizados": deals_periodo,
-        "acoes_normalizadas": actions_periodo,
-        "cards_por_coluna": cards_por_coluna,
+acao_cols = [
+    c
+    for c in metric_cols
+    if c
+    not in {
+        "leads_recebidos",
+        "leads_remanejados",
+        "acoes_total",
+        "analises_enviadas",
+        "aprovacoes",
+        "reprovados",
+        "pendencias",
+        "em_cadencia",
+        "em_acompanhamento",
+        "em_atendimento",
     }
+]
+
+if acao_cols:
+    st.subheader("Acoes registradas pelo CRM")
+    cols = st.columns(min(6, max(1, len(acao_cols))))
+    for i, col in enumerate(acao_cols):
+        cols[i % len(cols)].metric(col.replace("_", " ").title(), to_int(geral_row.get(col, 0)))
+
+st.markdown("---")
+
+visao = st.radio("Visao", ["Geral", "Por equipe", "Por corretor", "Diagnostico"], horizontal=True)
+
+if visao == "Geral":
+    st.subheader("Resumo geral")
+    st.dataframe(df_geral, use_container_width=True, hide_index=True)
+
+    st.subheader("Cards por coluna do funil")
+    if df_cards_coluna.empty:
+        st.info("Sem cards por coluna para exibir.")
+    else:
+        st.dataframe(df_cards_coluna, use_container_width=True, hide_index=True)
+
+elif visao == "Por equipe":
+    st.subheader("Performance por equipe")
+    if df_equipe.empty:
+        st.info("Sem equipes identificadas no retorno da API.")
+    else:
+        st.dataframe(df_equipe, use_container_width=True, hide_index=True)
+
+elif visao == "Por corretor":
+    st.subheader("Performance por corretor")
+    if df_corretor.empty:
+        st.info("Sem corretores identificados no retorno da API.")
+    else:
+        equipe_sel = st.selectbox("Filtrar equipe", ["Todas"] + sorted(df_corretor["equipe"].dropna().unique().tolist()))
+        df_view = df_corretor.copy()
+        if equipe_sel != "Todas":
+            df_view = df_view[df_view["equipe"] == equipe_sel]
+        st.dataframe(df_view, use_container_width=True, hide_index=True)
+
+else:
+    st.subheader("Diagnostico da integracao")
+    st.write("Use esta aba na primeira conexao para confirmar quais endpoints e campos o PipeRun esta entregando.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Endpoint de leads/cards**")
+        st.write(
+            {
+                "endpoint": deals_result.endpoint,
+                "ok": deals_result.ok,
+                "linhas": len(deals_result.data),
+                "status_code": deals_result.status_code,
+            }
+        )
+        st.markdown("**Colunas de leads/cards**")
+        st.dataframe(pd.DataFrame({"coluna": list(deals_result.data.columns)}), use_container_width=True, hide_index=True)
+
+        st.markdown("**Tabelas auxiliares**")
+        st.write(
+            {
+                "usuarios": {
+                    "endpoint": users_result.endpoint,
+                    "ok": users_result.ok,
+                    "linhas": len(users_result.data),
+                    "erro": users_result.error,
+                },
+                "etapas": {
+                    "endpoint": stages_result.endpoint,
+                    "ok": stages_result.ok,
+                    "linhas": len(stages_result.data),
+                    "erro": stages_result.error,
+                },
+                "pipelines": {
+                    "endpoint": pipelines_result.endpoint,
+                    "ok": pipelines_result.ok,
+                    "linhas": len(pipelines_result.data),
+                    "erro": pipelines_result.error,
+                },
+                "tipos_atividade": {
+                    "endpoint": activity_types_result.endpoint,
+                    "ok": activity_types_result.ok,
+                    "linhas": len(activity_types_result.data),
+                    "erro": activity_types_result.error,
+                },
+                "mapa_corretor_equipe_planilha": {
+                    "ok": bool(corretor_equipe_map),
+                    "linhas": len(corretor_equipe_map),
+                },
+            }
+        )
+
+    with c2:
+        st.markdown("**Endpoints de acoes**")
+        st.dataframe(action_status, use_container_width=True, hide_index=True)
+        st.markdown("**Colunas de acoes**")
+        st.dataframe(pd.DataFrame({"coluna": list(actions_df.columns)}), use_container_width=True, hide_index=True)
+
+    with st.expander("Amostra de usuarios"):
+        st.dataframe(users_result.data.head(20), use_container_width=True)
+
+    with st.expander("Amostra de etapas"):
+        st.dataframe(stages_result.data.head(30), use_container_width=True)
+
+    with st.expander("Amostra de pipelines"):
+        st.dataframe(pipelines_result.data.head(30), use_container_width=True)
+
+    with st.expander("Amostra de tipos de atividade"):
+        st.dataframe(activity_types_result.data.head(30), use_container_width=True)
+
+    with st.expander("Amostra de leads/cards"):
+        st.dataframe(deals_result.data.head(20), use_container_width=True)
+
+    with st.expander("Amostra de acoes"):
+        st.dataframe(actions_df.head(20), use_container_width=True)
