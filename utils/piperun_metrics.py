@@ -306,6 +306,63 @@ def contains_stage(series: pd.Series, words: Iterable[str]) -> pd.Series:
     return mask
 
 
+def exclude_financeiro(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "pipeline" not in df.columns:
+        return df
+
+    mask = ~df["pipeline"].fillna("").astype(str).map(normalize_text).str.contains("FINANCEIRO", na=False)
+    return df[mask].copy()
+
+
+def build_stage_metrics(deals_df: pd.DataFrame, dims: List[str]) -> pd.DataFrame:
+    if deals_df.empty:
+        return pd.DataFrame(columns=dims)
+
+    tmp = deals_df.copy()
+    etapa = tmp["etapa"]
+    pipeline = tmp["pipeline"]
+
+    tmp["novo_lead"] = contains_stage(etapa, ["NOVO LEAD", "NOVA VENDA"])
+    tmp["aguardando_atendimento"] = contains_stage(etapa, ["AGUARDANDO ATENDIMENTO"])
+    tmp["em_atendimento"] = contains_stage(etapa, ["EM ATENDIMENTO", "ATENDIMENTO"])
+    tmp["cadencia"] = contains_stage(pipeline, ["CADENCIA"]) | contains_stage(etapa, ["DIA 1", "DIA 2", "DIA 3", "DIA 4", "DIA 5"])
+    tmp["recuperacao_lead"] = contains_stage(pipeline, ["RECUPERACAO DE LEAD"])
+    tmp["acompanhamento"] = contains_stage(etapa, ["ACOMPANHAMENTO"])
+    tmp["visita_agendada"] = contains_stage(etapa, ["VISITA AGENDADA"])
+    tmp["visita_realizada"] = contains_stage(etapa, ["VISITA REALIZADA"])
+    tmp["aguardando_documentos"] = contains_stage(etapa, ["AGUARDANDO DOCUMENTOS"])
+    tmp["recusa_pasteiro"] = contains_stage(etapa, ["RECUSA PASTEIRO"])
+    tmp["analises_enviadas"] = contains_stage(etapa, ["ANALISE DE CREDITO", "1 ANALISE", "1A ANALISE", "NOVA ANALISE"])
+    tmp["conferencia_pasteiro"] = contains_stage(etapa, ["CONFERENCIA DO PASTEIRO"])
+    tmp["pendencias"] = contains_stage(etapa, ["DOC PENDENTE", "PENDENCIA", "PENDENTE"])
+    tmp["condicionados"] = contains_stage(etapa, ["CONDICIONADO"])
+    tmp["restricoes"] = contains_stage(etapa, ["RESTRICAO"])
+    tmp["aprovacoes"] = contains_stage(etapa, ["APROVADO", "APROVACAO"])
+    tmp["reprovados"] = contains_stage(etapa, ["REPROVADO", "REPROVACAO", "RECUSADO", "RECUSADA"])
+
+    stage_cols = [
+        "novo_lead",
+        "aguardando_atendimento",
+        "em_atendimento",
+        "cadencia",
+        "recuperacao_lead",
+        "acompanhamento",
+        "visita_agendada",
+        "visita_realizada",
+        "aguardando_documentos",
+        "recusa_pasteiro",
+        "analises_enviadas",
+        "conferencia_pasteiro",
+        "pendencias",
+        "condicionados",
+        "restricoes",
+        "aprovacoes",
+        "reprovados",
+    ]
+
+    return tmp.groupby(dims).agg(**{col: (col, "sum") for col in stage_cols}).reset_index()
+
+
 def build_performance(
     deals_raw: pd.DataFrame,
     actions_raw: pd.DataFrame,
@@ -317,6 +374,7 @@ def build_performance(
     deals = prepare_deals(deals_raw)
     actions = prepare_actions(actions_raw)
     deals, actions = enrich_with_references(deals, actions, deals_raw, actions_raw, reference_maps)
+    deals_funil = exclude_financeiro(deals)
 
     if not deals.empty:
         deals_periodo = deals[
@@ -326,10 +384,7 @@ def build_performance(
     else:
         deals_periodo = deals
 
-    if not deals_periodo.empty and "pipeline" in deals_periodo.columns:
-        deals_periodo = deals_periodo[
-            ~deals_periodo["pipeline"].fillna("").astype(str).map(normalize_text).str.contains("FINANCEIRO", na=False)
-        ].copy()
+    deals_periodo = exclude_financeiro(deals_periodo)
 
     if not actions.empty:
         actions_periodo = actions[
@@ -340,10 +395,10 @@ def build_performance(
         actions_periodo = actions
 
     dims = ["equipe", "responsavel"]
-    if deals_periodo.empty:
+    if deals_funil.empty:
         base = pd.DataFrame(columns=dims)
     else:
-        base = deals_periodo[dims].drop_duplicates()
+        base = deals_funil[dims].drop_duplicates()
 
     if not actions_periodo.empty:
         base = pd.concat([base, actions_periodo[dims].drop_duplicates()], ignore_index=True).drop_duplicates()
@@ -355,6 +410,12 @@ def build_performance(
         deals_periodo.groupby(dims)["lead_id"].nunique().reset_index(name="leads_recebidos")
         if not deals_periodo.empty
         else pd.DataFrame(columns=dims + ["leads_recebidos"])
+    )
+
+    cards_total = (
+        deals_funil.groupby(dims)["lead_id"].nunique().reset_index(name="cards_total")
+        if not deals_funil.empty
+        else pd.DataFrame(columns=dims + ["cards_total"])
     )
 
     acoes = (
@@ -373,7 +434,7 @@ def build_performance(
         tipos.columns = [str(c).lower().replace(" ", "_") if c not in dims else c for c in tipos.columns]
 
     funil = pd.DataFrame(columns=dims)
-    if not deals_periodo.empty:
+    if not deals_periodo.empty and False:
         tmp = deals_periodo.copy()
         tmp["analises_enviadas"] = contains_stage(
             tmp["etapa"],
@@ -413,10 +474,12 @@ def build_performance(
             em_atendimento=("em_atendimento", "sum"),
         ).reset_index()
 
+    funil = build_stage_metrics(deals_funil, dims)
+
     cards_por_coluna = pd.DataFrame()
-    if not deals_periodo.empty:
+    if not deals_funil.empty:
         cards_por_coluna = (
-            deals_periodo.assign(etapa=deals_periodo["etapa"].replace("", "SEM ETAPA"))
+            deals_funil.assign(etapa=deals_funil["etapa"].replace("", "SEM ETAPA"))
             .groupby(["pipeline", "etapa"], as_index=False)["lead_id"]
             .nunique()
             .rename(columns={"lead_id": "qtde_cards"})
@@ -424,8 +487,8 @@ def build_performance(
         )
 
     remanejados = pd.DataFrame(columns=dims + ["leads_remanejados"])
-    if not deals_periodo.empty:
-        tmp = deals_periodo.copy()
+    if not deals_funil.empty:
+        tmp = deals_funil.copy()
         tmp["remanejado"] = tmp["responsavel_anterior"].fillna("").astype(str).str.len() > 0
         if tmp["remanejado"].any():
             remanejados = tmp[tmp["remanejado"]].groupby(dims)["lead_id"].nunique().reset_index(name="leads_remanejados")
@@ -434,6 +497,7 @@ def build_performance(
             remanejados = tmp[sem_acao].groupby(dims)["lead_id"].nunique().reset_index(name="leads_remanejados")
 
     result = base.merge(leads, on=dims, how="left")
+    result = result.merge(cards_total, on=dims, how="left")
     result = result.merge(remanejados, on=dims, how="left")
     result = result.merge(acoes, on=dims, how="left")
     result = result.merge(funil, on=dims, how="left")
@@ -457,7 +521,7 @@ def build_performance(
         "geral": geral,
         "equipe": equipe,
         "corretor": result,
-        "deals_normalizados": deals_periodo,
+        "deals_normalizados": deals_funil,
         "acoes_normalizadas": actions_periodo,
         "cards_por_coluna": cards_por_coluna,
     }

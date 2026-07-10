@@ -221,8 +221,8 @@ usar_filtro_api = st.sidebar.checkbox(
     help="Deixe desligado se a API rejeitar parametros de data. A pagina filtra localmente quando encontra campos de data.",
 )
 
-max_pages = st.sidebar.number_input("Paginas maximas por endpoint", min_value=1, max_value=50, value=5, step=1)
-per_page = st.sidebar.number_input("Registros por pagina", min_value=20, max_value=500, value=100, step=20)
+max_pages = st.sidebar.number_input("Paginas maximas por endpoint", min_value=1, max_value=50, value=20, step=1)
+per_page = st.sidebar.number_input("Registros por pagina", min_value=20, max_value=500, value=500, step=20)
 remanejo_dias = st.sidebar.number_input("Regra de remanejo: dias sem acao", min_value=1, max_value=30, value=2, step=1)
 
 if not token:
@@ -295,12 +295,12 @@ metric_cols = [c for c in df_geral.columns if c != "visao"]
 geral_row = df_geral.iloc[0].to_dict() if not df_geral.empty else {}
 
 cards_principais = [
+    ("Cards no funil", "cards_total"),
     ("Leads recebidos", "leads_recebidos"),
     ("Analises enviadas", "analises_enviadas"),
     ("Pendencias", "pendencias"),
     ("Aprovacoes", "aprovacoes"),
     ("Reprovados", "reprovados"),
-    ("Em atendimento", "em_atendimento"),
 ]
 
 cols = st.columns(6)
@@ -310,13 +310,16 @@ for idx, (label, key) in enumerate(cards_principais):
 st.markdown("---")
 
 cards_operacionais = [
-    ("Em cadencia", "em_cadencia"),
-    ("Em acompanhamento", "em_acompanhamento"),
+    ("Em atendimento", "em_atendimento"),
+    ("Cadencia", "cadencia"),
+    ("Acompanhamento", "acompanhamento"),
+    ("Visitas agendadas", "visita_agendada"),
+    ("Visitas realizadas", "visita_realizada"),
     ("Leads remanejados", "leads_remanejados"),
     ("Acoes totais", "acoes_total"),
 ]
 
-cols = st.columns(4)
+cols = st.columns(6)
 for idx, (label, key) in enumerate(cards_operacionais):
     cols[idx].metric(label, to_int(geral_row.get(key, 0)))
 
@@ -328,15 +331,26 @@ acao_cols = [
     if c
     not in {
         "leads_recebidos",
+        "cards_total",
         "leads_remanejados",
         "acoes_total",
         "analises_enviadas",
         "aprovacoes",
         "reprovados",
         "pendencias",
-        "em_cadencia",
-        "em_acompanhamento",
+        "novo_lead",
+        "aguardando_atendimento",
         "em_atendimento",
+        "cadencia",
+        "recuperacao_lead",
+        "acompanhamento",
+        "visita_agendada",
+        "visita_realizada",
+        "aguardando_documentos",
+        "recusa_pasteiro",
+        "conferencia_pasteiro",
+        "condicionados",
+        "restricoes",
     }
 ]
 
