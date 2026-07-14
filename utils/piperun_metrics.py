@@ -197,6 +197,10 @@ def classify_action_type(tipo, descricao) -> str:
     desc_text = normalize_text(descricao)
     combined = f"{tipo_text} {desc_text}".strip()
 
+    if "ANALISE" in combined and "CONFIRM" in combined and (
+        "1" in combined or "PRIMEIRA" in combined or "1A" in combined
+    ):
+        return "1 ANALISE CONFIRMADA"
     if "ANALISE" in combined and "CREDITO" in combined and "CONFIRM" in combined:
         return "ANALISE CREDITO CONFIRMADA"
     if "ANALISE" in combined and "CREDITO" in combined:
@@ -486,6 +490,19 @@ def build_performance(
         else pd.DataFrame(columns=dims + ["leads_com_atividade"])
     )
 
+    analise_confirmada = pd.DataFrame(columns=dims + ["analise_confirmada_atividade"])
+    if not actions_periodo.empty:
+        tipo_normalizado = actions_periodo["tipo_acao"].fillna("").astype(str).map(normalize_text)
+        mask_analise_confirmada = tipo_normalizado.isin(
+            ["1 ANALISE CONFIRMADA", "ANALISE CREDITO CONFIRMADA"]
+        )
+        analise_confirmada = (
+            actions_periodo[mask_analise_confirmada]
+            .groupby(dims)["lead_id"]
+            .nunique()
+            .reset_index(name="analise_confirmada_atividade")
+        )
+
     tipos = pd.DataFrame(columns=dims)
     if not actions_periodo.empty:
         tipos = (
@@ -563,12 +580,18 @@ def build_performance(
     result = result.merge(remanejados, on=dims, how="left")
     result = result.merge(acoes, on=dims, how="left")
     result = result.merge(leads_com_atividade, on=dims, how="left")
+    result = result.merge(analise_confirmada, on=dims, how="left")
     result = result.merge(funil, on=dims, how="left")
     if not tipos.empty:
         result = result.merge(tipos, on=dims, how="left")
 
     metric_cols = [c for c in result.columns if c not in dims]
     result[metric_cols] = result[metric_cols].fillna(0)
+
+    if "analise_confirmada_atividade" in result.columns:
+        if "analises_enviadas" not in result.columns:
+            result["analises_enviadas"] = 0
+        result["analises_enviadas"] = result[["analises_enviadas", "analise_confirmada_atividade"]].max(axis=1)
 
     for col in metric_cols:
         result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0).astype(int)

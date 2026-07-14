@@ -44,9 +44,10 @@ BASE_COLS = {
     "leads_recebidos",
     "cards_total",
     "leads_remanejados",
-    "acoes_total",
-    "leads_com_atividade",
-    *STAGE_COLS,
+        "acoes_total",
+        "leads_com_atividade",
+        "analise_confirmada_atividade",
+        *STAGE_COLS,
 }
 
 
@@ -63,6 +64,9 @@ def pretty_label(value: str) -> str:
         "leads_recebidos": "Leads recebidos",
         "acoes_total": "Ações realizadas",
         "leads_com_atividade": "Leads com atividade",
+        "analise_confirmada_atividade": "1 analise confirmada",
+        "1_analise_confirmada": "1 analise confirmada",
+        "analise_credito_confirmada": "Analise credito confirmada",
         "leads_remanejados": "Leads remanejados",
         "analises_enviadas": "Análises enviadas",
         "pendencias": "Pendências",
@@ -332,6 +336,7 @@ with tab_resumo:
         "leads_remanejados",
         "acoes_total",
         "leads_com_atividade",
+        "analise_confirmada_atividade",
         "analises_enviadas",
         "pendencias",
         "aprovacoes",
