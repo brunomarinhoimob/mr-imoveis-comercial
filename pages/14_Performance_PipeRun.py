@@ -45,6 +45,7 @@ BASE_COLS = {
     "cards_total",
     "leads_remanejados",
     "acoes_total",
+    "leads_com_atividade",
     *STAGE_COLS,
 }
 
@@ -61,6 +62,7 @@ def pretty_label(value: str) -> str:
         "cards_total": "Cards no funil",
         "leads_recebidos": "Leads recebidos",
         "acoes_total": "Ações realizadas",
+        "leads_com_atividade": "Leads com atividade",
         "leads_remanejados": "Leads remanejados",
         "analises_enviadas": "Análises enviadas",
         "pendencias": "Pendências",
@@ -299,7 +301,7 @@ show_metric_grid(
     [
         ("Cards no funil", "cards_total"),
         ("Leads recebidos", "leads_recebidos"),
-        ("Ações realizadas", "acoes_total"),
+        ("Leads com atividade", "leads_com_atividade"),
         ("Análises enviadas", "analises_enviadas"),
         ("Pendências", "pendencias"),
     ],
@@ -312,6 +314,7 @@ show_metric_grid(
         ("Em atendimento", "em_atendimento"),
         ("Cadência", "cadencia"),
         ("Acompanhamento", "acompanhamento"),
+        ("Registros de atividade", "acoes_total"),
     ],
 )
 
@@ -328,6 +331,7 @@ with tab_resumo:
         "leads_recebidos",
         "leads_remanejados",
         "acoes_total",
+        "leads_com_atividade",
         "analises_enviadas",
         "pendencias",
         "aprovacoes",
@@ -347,7 +351,7 @@ with tab_resumo:
     st.dataframe(df_equipe, use_container_width=True, hide_index=True)
 
 with tab_atividades:
-    st.subheader("Todas as atividades registradas")
+    st.subheader("Leads únicos por atividade")
     if activity_cols:
         atividade_tabela = pd.DataFrame(
             [{"atividade": pretty_label(col), "quantidade": to_int(resumo.get(col, 0))} for col in activity_cols]
@@ -356,8 +360,8 @@ with tab_atividades:
     else:
         st.info("Nenhuma atividade detalhada foi identificada no retorno da API.")
 
-    st.subheader("Atividades por corretor")
-    cols_show = ["equipe", "responsavel", "acoes_total"] + activity_cols
+    st.subheader("Leads por atividade e corretor")
+    cols_show = ["equipe", "responsavel", "acoes_total", "leads_com_atividade"] + activity_cols
     cols_show = [col for col in cols_show if col in df_corretor.columns]
     st.dataframe(df_corretor[cols_show], use_container_width=True, hide_index=True)
 

@@ -21,6 +21,7 @@ class PiperunColumnMap:
     action_type: str = ""
     action_owner: str = ""
     action_date: str = ""
+    action_deal_id: str = ""
     previous_owner: str = ""
 
 
@@ -100,6 +101,7 @@ def infer_action_columns(df: pd.DataFrame) -> PiperunColumnMap:
         team=first_existing(cols, ["team.name", "team", "equipe"]),
         action_type=first_existing(cols, ["activity_type_id", "activity_type.name", "activity_type", "nome_tipo", "tipo", "kind", "category", "type"]),
         action_date=first_existing(cols, ["done_at", "date", "data", "created_at", "scheduled_at", "data_realizacao"]),
+        action_deal_id=first_existing(cols, ["deal_id", "deal.id", "card_id", "lead_id", "opportunity_id"]),
     )
 
 
@@ -190,6 +192,27 @@ def canonical_responsavel(value, corretor_nome: Dict[str, str]) -> str:
     return text
 
 
+def classify_action_type(tipo, descricao) -> str:
+    tipo_text = normalize_text(tipo)
+    desc_text = normalize_text(descricao)
+    combined = f"{tipo_text} {desc_text}".strip()
+
+    if "ANALISE" in combined and "CREDITO" in combined and "CONFIRM" in combined:
+        return "ANALISE CREDITO CONFIRMADA"
+    if "ANALISE" in combined and "CREDITO" in combined:
+        return "ANALISE DE CREDITO"
+    if "APROVAD" in combined:
+        return "APROVADO"
+    if "VISITA" in combined:
+        return "VISITA"
+    if "WHATS" in combined:
+        return "MENSAGEM WHATSAPP"
+    if "LIGACAO" in combined or "LIGA" in combined:
+        return "LIGACAO"
+
+    return tipo_text or "ACAO"
+
+
 def prepare_deals(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
@@ -217,6 +240,7 @@ def prepare_actions(df: pd.DataFrame) -> pd.DataFrame:
     cmap = infer_action_columns(df)
     out = pd.DataFrame(index=df.index)
     out["acao_id"] = df[cmap.id].astype(str) if cmap.id else df.index.astype(str)
+    out["lead_id"] = df[cmap.action_deal_id].apply(normalize_id) if cmap.action_deal_id else out["acao_id"]
     out["descricao"] = df[cmap.title].astype(str) if cmap.title else ""
     out["responsavel"] = df[cmap.owner].apply(normalize_text) if cmap.owner else "SEM RESPONSAVEL"
     out["responsavel_id"] = df[cmap.owner_id].apply(normalize_id) if cmap.owner_id else ""
@@ -224,7 +248,10 @@ def prepare_actions(df: pd.DataFrame) -> pd.DataFrame:
     out["tipo_acao"] = df[cmap.action_type].apply(normalize_text) if cmap.action_type else "ACAO"
     out["data_acao"] = pd.to_datetime(df[cmap.action_date], errors="coerce") if cmap.action_date else pd.NaT
 
-    out.loc[out["tipo_acao"].eq(""), "tipo_acao"] = "ACAO"
+    out["tipo_acao"] = [
+        classify_action_type(tipo, descricao)
+        for tipo, descricao in zip(out["tipo_acao"], out["descricao"])
+    ]
     return out
 
 
@@ -277,6 +304,7 @@ def enrich_with_references(
 
         if "deal_id" in actions_raw.columns and deal_owner:
             deal_ids = actions_raw["deal_id"].apply(normalize_id)
+            actions["lead_id"] = deal_ids
             mapped_owner = deal_ids.map(deal_owner)
             has_owner_from_deal = mapped_owner.fillna("").astype(str).str.len() > 0
             actions.loc[has_owner_from_deal, "responsavel"] = mapped_owner[has_owner_from_deal]
@@ -301,6 +329,10 @@ def enrich_with_references(
         if "activity_type_id" in actions_raw.columns and activity_type_name:
             mapped = actions_raw["activity_type_id"].apply(normalize_id).map(activity_type_name)
             actions["tipo_acao"] = mapped.fillna(actions["tipo_acao"]).replace("", "ACAO")
+            actions["tipo_acao"] = [
+                classify_action_type(tipo, descricao)
+                for tipo, descricao in zip(actions["tipo_acao"], actions["descricao"])
+            ]
 
         if "user_name" in actions_raw.columns:
             mapped = actions_raw["user_name"].apply(normalize_text)
@@ -448,11 +480,17 @@ def build_performance(
         else pd.DataFrame(columns=dims + ["acoes_total"])
     )
 
+    leads_com_atividade = (
+        actions_periodo.groupby(dims)["lead_id"].nunique().reset_index(name="leads_com_atividade")
+        if not actions_periodo.empty
+        else pd.DataFrame(columns=dims + ["leads_com_atividade"])
+    )
+
     tipos = pd.DataFrame(columns=dims)
     if not actions_periodo.empty:
         tipos = (
             actions_periodo.assign(tipo_acao=actions_periodo["tipo_acao"].replace("", "ACAO"))
-            .pivot_table(index=dims, columns="tipo_acao", values="acao_id", aggfunc="nunique", fill_value=0)
+            .pivot_table(index=dims, columns="tipo_acao", values="lead_id", aggfunc="nunique", fill_value=0)
             .reset_index()
         )
         tipos.columns = [str(c).lower().replace(" ", "_") if c not in dims else c for c in tipos.columns]
@@ -524,6 +562,7 @@ def build_performance(
     result = result.merge(cards_total, on=dims, how="left")
     result = result.merge(remanejados, on=dims, how="left")
     result = result.merge(acoes, on=dims, how="left")
+    result = result.merge(leads_com_atividade, on=dims, how="left")
     result = result.merge(funil, on=dims, how="left")
     if not tipos.empty:
         result = result.merge(tipos, on=dims, how="left")
