@@ -412,11 +412,23 @@ elif menu == "Funil":
 
 elif menu == "Corretores":
     st.subheader("Ranking por corretor")
-    ranking_metric = st.selectbox(
-        "Escolha o indicador do ranking",
-        ["cards_total", "leads_recebidos", "analises_enviadas", "acoes_total", "leads_com_atividade"]
-        + stage_cols_available
-        + activity_cols,
-        format_func=pretty_label,
-    )
-    show_entity_cards(df_corretor, "responsavel", ranking_metric, limit=24)
+    col_rank_1, col_rank_2 = st.columns(2)
+    with col_rank_1:
+        ranking_metric = st.selectbox(
+            "Escolha o indicador do ranking",
+            ["cards_total", "leads_recebidos", "analises_enviadas", "acoes_total", "leads_com_atividade"]
+            + stage_cols_available
+            + activity_cols,
+            format_func=pretty_label,
+        )
+    with col_rank_2:
+        corretor_ranking = st.selectbox(
+            "Escolha o corretor",
+            ["Todos os corretores"] + corretores,
+        )
+
+    ranking_view = df_corretor.copy()
+    if corretor_ranking != "Todos os corretores":
+        ranking_view = ranking_view[ranking_view["responsavel"] == corretor_ranking].copy()
+
+    show_entity_cards(ranking_view, "responsavel", ranking_metric, limit=24)
