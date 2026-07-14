@@ -214,7 +214,10 @@ token_secrets = get_piperun_token()
 
 st.sidebar.title("Filtros")
 hoje = date.today()
-atalho = st.sidebar.selectbox("Periodo rapido", ["Ultimos 30 dias", "Hoje", "Ultimos 7 dias", "Este mes", "Personalizado"])
+atalho = st.sidebar.selectbox(
+    "Periodo rapido",
+    ["Ultimos 7 dias", "Hoje", "Ultimos 30 dias", "Este mes", "Personalizado"],
+)
 
 if atalho == "Hoje":
     default_ini = hoje
@@ -232,9 +235,8 @@ if data_ini > data_fim:
     st.error("A data inicial nao pode ser maior que a data final.")
     st.stop()
 
-base_url = st.sidebar.text_input("Base da API", value=get_piperun_base_url())
-token_digitado = st.sidebar.text_input("Token PipeRun temporario", value="", type="password")
-token = (token_digitado or token_secrets or "").strip()
+base_url = get_piperun_base_url()
+token = (token_secrets or "").strip()
 
 usar_filtro_api = st.sidebar.checkbox(
     "Enviar filtro de data para API",
