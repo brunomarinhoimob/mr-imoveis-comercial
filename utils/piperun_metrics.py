@@ -201,6 +201,10 @@ def classify_action_type(tipo, descricao) -> str:
         "1" in combined or "PRIMEIRA" in combined or "1A" in combined
     ):
         return "1 ANALISE CONFIRMADA"
+    if "ANALISE" in combined and ("ENVIADO" in combined or "ENVIADA" in combined):
+        return "1 ANALISE ENVIADA"
+    if "ANALISE" in combined and ("1" in combined or "PRIMEIRA" in combined or "1A" in combined):
+        return "1 ANALISE"
     if "ANALISE" in combined and "CREDITO" in combined and "CONFIRM" in combined:
         return "ANALISE CREDITO CONFIRMADA"
     if "ANALISE" in combined and "CREDITO" in combined:
@@ -490,17 +494,37 @@ def build_performance(
         else pd.DataFrame(columns=dims + ["leads_com_atividade"])
     )
 
-    analise_confirmada = pd.DataFrame(columns=dims + ["analise_confirmada_atividade"])
+    analise_enviada_atividade = pd.DataFrame(columns=dims + ["analise_enviada_atividade"])
     if not actions_periodo.empty:
         tipo_normalizado = actions_periodo["tipo_acao"].fillna("").astype(str).map(normalize_text)
-        mask_analise_confirmada = tipo_normalizado.isin(
-            ["1 ANALISE CONFIRMADA", "ANALISE CREDITO CONFIRMADA"]
+        texto_atividade = (
+            actions_periodo["tipo_acao"].fillna("").astype(str)
+            + " "
+            + actions_periodo["descricao"].fillna("").astype(str)
+        ).map(normalize_text)
+        mask_analise_enviada = tipo_normalizado.isin(
+            [
+                "1 ANALISE",
+                "1 ANALISE ENVIADA",
+                "1 ANALISE CONFIRMADA",
+                "ANALISE DE CREDITO",
+                "ANALISE CREDITO CONFIRMADA",
+            ]
+        ) | (
+            texto_atividade.str.contains("ANALISE", na=False)
+            & (
+                texto_atividade.str.contains("ENVIADO", na=False)
+                | texto_atividade.str.contains("ENVIADA", na=False)
+                | texto_atividade.str.contains("CREDITO", na=False)
+                | texto_atividade.str.contains("1", na=False)
+                | texto_atividade.str.contains("PRIMEIRA", na=False)
+            )
         )
-        analise_confirmada = (
-            actions_periodo[mask_analise_confirmada]
+        analise_enviada_atividade = (
+            actions_periodo[mask_analise_enviada]
             .groupby(dims)["lead_id"]
             .nunique()
-            .reset_index(name="analise_confirmada_atividade")
+            .reset_index(name="analise_enviada_atividade")
         )
 
     tipos = pd.DataFrame(columns=dims)
@@ -580,7 +604,7 @@ def build_performance(
     result = result.merge(remanejados, on=dims, how="left")
     result = result.merge(acoes, on=dims, how="left")
     result = result.merge(leads_com_atividade, on=dims, how="left")
-    result = result.merge(analise_confirmada, on=dims, how="left")
+    result = result.merge(analise_enviada_atividade, on=dims, how="left")
     result = result.merge(funil, on=dims, how="left")
     if not tipos.empty:
         result = result.merge(tipos, on=dims, how="left")
@@ -588,10 +612,10 @@ def build_performance(
     metric_cols = [c for c in result.columns if c not in dims]
     result[metric_cols] = result[metric_cols].fillna(0)
 
-    if "analise_confirmada_atividade" in result.columns:
+    if "analise_enviada_atividade" in result.columns:
         if "analises_enviadas" not in result.columns:
             result["analises_enviadas"] = 0
-        result["analises_enviadas"] = result[["analises_enviadas", "analise_confirmada_atividade"]].max(axis=1)
+        result["analises_enviadas"] = result[["analises_enviadas", "analise_enviada_atividade"]].max(axis=1)
 
     for col in metric_cols:
         result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0).astype(int)
