@@ -212,15 +212,28 @@ def build_client_table(
             ].copy()
 
         lookup = deals_df[["lead_id", "lead", "pipeline", "etapa"]].drop_duplicates("lead_id") if not deals_df.empty else pd.DataFrame()
+        if "lead" in actions.columns:
+            actions["lead_atividade"] = actions["lead"].fillna("").replace("", pd.NA)
+        else:
+            actions["lead_atividade"] = pd.NA
         if not lookup.empty:
             actions = actions.merge(lookup, on="lead_id", how="left")
-        if "lead" in actions.columns:
-            actions["cliente"] = actions["lead"].fillna("").replace("", "Cliente sem nome")
+        if "lead_y" in actions.columns:
+            actions["cliente"] = actions["lead_y"].fillna("").replace("", pd.NA)
+        elif "lead" in actions.columns:
+            actions["cliente"] = actions["lead"].fillna("").replace("", pd.NA)
         else:
-            actions["cliente"] = "Cliente sem nome"
-        table = actions.rename(columns={"tipo_acao": "atividade", "data_acao": "data"})[
-            ["cliente", "responsavel", "equipe", "atividade", "data"]
-        ].drop_duplicates()
+            actions["cliente"] = pd.NA
+        actions["cliente"] = actions["cliente"].fillna(actions["lead_atividade"])
+        actions["cliente"] = actions["cliente"].fillna(actions["descricao"].fillna("").replace("", pd.NA))
+        actions["cliente"] = actions["cliente"].fillna("Cliente sem nome")
+        actions["data_conclusao"] = pd.to_datetime(actions["data_acao"], errors="coerce")
+        actions = actions.sort_values("data_conclusao", ascending=False)
+        table = actions.rename(columns={"tipo_acao": "atividade"})[
+            ["lead_id", "cliente", "responsavel", "equipe", "atividade", "data_conclusao"]
+        ].drop_duplicates("lead_id")
+        table["data_conclusao"] = table["data_conclusao"].dt.strftime("%d/%m/%Y %H:%M").fillna("")
+        table = table.drop(columns=["lead_id"])
         return table.sort_values(["responsavel", "cliente"]).reset_index(drop=True)
 
     if deals.empty:
@@ -481,8 +494,22 @@ elif menu == "Atividades":
             activity_cols,
             format_func=pretty_label,
         )
+        corretor_tabela = "Todos os corretores" if corretor_sel == "Toda imobiliaria" else corretor_sel
+        clientes_atividade = build_client_table(
+            atividade_sel,
+            corretor_tabela,
+            deals_norm,
+            acoes_norm,
+            data_ini,
+            data_fim,
+            activity_cols,
+        )
+        atividade_qtde = len(clientes_atividade)
+        resumo_atividade = {**resumo, atividade_sel: atividade_qtde}
+        if atividade_sel in {"1_analise", "1_analise_enviada", "1_analise_confirmada", "analise_de_credito", "analise_credito_confirmada"}:
+            resumo_atividade["analise_enviada_atividade"] = atividade_qtde
         show_metric_grid(
-            resumo,
+            resumo_atividade,
             [
                 (pretty_label(atividade_sel), atividade_sel),
                 ("Leads com atividade", "leads_com_atividade"),
@@ -495,16 +522,6 @@ elif menu == "Atividades":
         show_entity_cards(df_view, "responsavel", atividade_sel, limit=16)
 
         st.subheader(f"Leads em {pretty_label(atividade_sel)}")
-        corretor_tabela = "Todos os corretores" if corretor_sel == "Toda imobiliaria" else corretor_sel
-        clientes_atividade = build_client_table(
-            atividade_sel,
-            corretor_tabela,
-            deals_norm,
-            acoes_norm,
-            data_ini,
-            data_fim,
-            activity_cols,
-        )
         if clientes_atividade.empty:
             st.info("Nenhum lead encontrado para essa atividade.")
         else:

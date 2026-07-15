@@ -100,7 +100,23 @@ def infer_action_columns(df: pd.DataFrame) -> PiperunColumnMap:
         owner_id=first_existing(cols, ["owner.id", "user.id", "responsible.id", "owner_id", "user_id", "id_usuario"]),
         team=first_existing(cols, ["team.name", "team", "equipe"]),
         action_type=first_existing(cols, ["activity_type_id", "activity_type.name", "activity_type", "nome_tipo", "tipo", "kind", "category", "type"]),
-        action_date=first_existing(cols, ["done_at", "date", "data", "created_at", "scheduled_at", "data_realizacao"]),
+        action_date=first_existing(
+            cols,
+            [
+                "done_at",
+                "completed_at",
+                "finished_at",
+                "completed_on",
+                "concluded_at",
+                "end_at",
+                "data_conclusao",
+                "data_realizacao",
+                "date",
+                "data",
+                "created_at",
+                "scheduled_at",
+            ],
+        ),
         action_deal_id=first_existing(cols, ["deal_id", "deal.id", "card_id", "lead_id", "opportunity_id"]),
     )
 
@@ -255,6 +271,24 @@ def prepare_actions(df: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(index=df.index)
     out["acao_id"] = df[cmap.id].astype(str) if cmap.id else df.index.astype(str)
     out["lead_id"] = df[cmap.action_deal_id].apply(normalize_id) if cmap.action_deal_id else out["acao_id"]
+    action_lead_col = first_existing(
+        df.columns,
+        [
+            "deal.title",
+            "deal.name",
+            "lead.title",
+            "lead.name",
+            "opportunity.title",
+            "opportunity.name",
+            "person.name",
+            "customer.name",
+            "client.name",
+            "company.name",
+            "nome_cliente",
+            "cliente",
+        ],
+    )
+    out["lead"] = df[action_lead_col].astype(str) if action_lead_col else ""
     text_cols = [
         col
         for col in df.columns
