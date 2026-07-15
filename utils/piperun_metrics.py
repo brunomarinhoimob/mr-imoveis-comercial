@@ -359,7 +359,9 @@ def enrich_with_references(
             mapped = deals["person_id"].map(person_name)
             has_person_name = mapped.fillna("").astype(str).str.len() > 0
             deals.loc[has_person_name, "cliente"] = mapped[has_person_name]
-            missing_lead = deals["lead"].fillna("").astype(str).str.strip().isin(["", "None", "nan", "Cliente sem nome"])
+            missing_lead = deals["lead"].fillna("").astype(str).map(normalize_text).isin(
+                ["", "NONE", "NAN", "CLIENTE SEM NOME", "NOME NAO INFORMADO", "NAO INFORMADO", "EMAIL NAO INFORMADO", "E-MAIL NAO INFORMADO"]
+            )
             deals.loc[has_person_name & missing_lead, "lead"] = mapped[has_person_name & missing_lead]
 
         if "owner_id" in deals_raw.columns and user_name:
@@ -390,7 +392,9 @@ def enrich_with_references(
             mapped = actions["person_id"].map(person_name)
             has_person_name = mapped.fillna("").astype(str).str.len() > 0
             current_lead = actions["lead"].fillna("").astype(str).map(normalize_text)
-            generic_lead = current_lead.isin(["", "NONE", "NAN", "CLIENTE SEM NOME", "ACAO"])
+            generic_lead = current_lead.isin(
+                ["", "NONE", "NAN", "CLIENTE SEM NOME", "NOME NAO INFORMADO", "NAO INFORMADO", "EMAIL NAO INFORMADO", "E-MAIL NAO INFORMADO", "ACAO"]
+            )
             looks_like_note = current_lead.str.contains("ENVIADO PARA ANALISE|ANALISE DE CREDITO|FOI ENVIADO", na=False)
             actions.loc[has_person_name & (generic_lead | looks_like_note), "lead"] = mapped[has_person_name & (generic_lead | looks_like_note)]
 

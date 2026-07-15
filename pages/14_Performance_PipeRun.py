@@ -94,6 +94,27 @@ def pretty_label(value: str) -> str:
     return labels.get(value, value.replace("_", " ").title())
 
 
+def is_generic_client_name(value) -> bool:
+    text = normalize_text(value)
+    return text in {
+        "",
+        "NONE",
+        "NAN",
+        "NULL",
+        "CLIENTE SEM NOME",
+        "NOME NAO INFORMADO",
+        "NAO INFORMADO",
+        "E-MAIL NAO INFORMADO",
+        "EMAIL NAO INFORMADO",
+        "ACAO",
+    }
+
+
+def clean_client_series(series: pd.Series) -> pd.Series:
+    cleaned = series.fillna("").astype(str).str.strip()
+    return cleaned.mask(cleaned.map(is_generic_client_name), pd.NA)
+
+
 def sum_row(df: pd.DataFrame, metric_cols: list[str]) -> dict:
     if df.empty:
         return {col: 0 for col in metric_cols}
@@ -203,7 +224,7 @@ def build_client_table(
         deals = filter_stage_clients(deals, metric_col)
     elif metric_col in {"acoes_total", "leads_com_atividade", "analise_enviada_atividade"} or metric_col in activity_cols:
         if actions.empty:
-            return pd.DataFrame(columns=["cliente", "responsavel", "equipe", "atividade", "data"])
+            return pd.DataFrame(columns=["id_lead", "cliente", "responsavel", "equipe", "atividade", "data"])
 
         action_keys = actions["tipo_acao"].fillna("").astype(str).map(metric_key)
         if metric_col in activity_cols:
@@ -227,19 +248,19 @@ def build_client_table(
         lookup_cols = [col for col in ["lead_id", "person_id", "lead", "cliente", "pipeline", "etapa"] if col in deals_df.columns]
         lookup = deals_df[lookup_cols].drop_duplicates("lead_id") if lookup_cols and "lead_id" in lookup_cols else pd.DataFrame()
         if "lead" in actions.columns:
-            actions["lead_atividade"] = actions["lead"].fillna("").replace("", pd.NA)
+            actions["lead_atividade"] = clean_client_series(actions["lead"])
         else:
             actions["lead_atividade"] = pd.NA
         if not lookup.empty:
             actions = actions.merge(lookup, on="lead_id", how="left")
         if "cliente_y" in actions.columns:
-            actions["cliente"] = actions["cliente_y"].fillna("").replace("", pd.NA)
+            actions["cliente"] = clean_client_series(actions["cliente_y"])
         elif "cliente" in actions.columns:
-            actions["cliente"] = actions["cliente"].fillna("").replace("", pd.NA)
+            actions["cliente"] = clean_client_series(actions["cliente"])
         elif "lead_y" in actions.columns:
-            actions["cliente"] = actions["lead_y"].fillna("").replace("", pd.NA)
+            actions["cliente"] = clean_client_series(actions["lead_y"])
         elif "lead" in actions.columns:
-            actions["cliente"] = actions["lead"].fillna("").replace("", pd.NA)
+            actions["cliente"] = clean_client_series(actions["lead"])
         else:
             actions["cliente"] = pd.NA
 
@@ -251,20 +272,21 @@ def build_client_table(
                 .set_index("person_id")["cliente"]
                 .to_dict()
             )
-            mapped_person = actions["person_id"].map(person_lookup).fillna("").replace("", pd.NA)
+            mapped_person = clean_client_series(actions["person_id"].map(person_lookup))
             actions["cliente"] = actions["cliente"].fillna(mapped_person)
 
         nome_extraido = actions["descricao"].fillna("").astype(str).apply(extract_nome_cliente).replace("", pd.NA)
         actions["cliente"] = actions["cliente"].fillna(actions["lead_atividade"])
         actions["cliente"] = actions["cliente"].fillna(nome_extraido)
-        actions["cliente"] = actions["cliente"].fillna("Cliente sem nome")
+        actions["cliente"] = actions["cliente"].fillna("ID " + actions["lead_id"].astype(str))
         actions["data_conclusao"] = pd.to_datetime(actions["data_acao"], errors="coerce")
         actions = actions.sort_values("data_conclusao", ascending=False)
-        actions["dedupe_key"] = actions["cliente"].map(normalize_text)
-        missing_dedupe = actions["dedupe_key"].isin(["", "CLIENTE SEM NOME"])
-        actions.loc[missing_dedupe, "dedupe_key"] = actions.loc[missing_dedupe, "lead_id"].astype(str)
+        actions["dedupe_key"] = actions["lead_id"].fillna("").astype(str)
+        missing_dedupe = actions["dedupe_key"].isin(["", "nan", "None"])
+        actions.loc[missing_dedupe, "dedupe_key"] = actions.loc[missing_dedupe, "cliente"].map(normalize_text)
+        actions["id_lead"] = actions["lead_id"].astype(str)
         table = actions.rename(columns={"tipo_acao": "atividade"})[
-            ["dedupe_key", "cliente", "responsavel", "equipe", "atividade", "data_conclusao"]
+            ["dedupe_key", "id_lead", "cliente", "responsavel", "equipe", "atividade", "data_conclusao"]
         ].drop_duplicates("dedupe_key")
         table["data_conclusao"] = table["data_conclusao"].dt.strftime("%d/%m/%Y %H:%M").fillna("")
         table = table.drop(columns=["dedupe_key"])
@@ -330,6 +352,51 @@ def collect_person_ids(*frames: pd.DataFrame, limit: int = 120) -> list[str]:
     return unique_ids[:limit]
 
 
+def collect_deal_ids(*frames: pd.DataFrame, limit: int = 120) -> list[str]:
+    ids = []
+    id_cols = ["deal_id", "deal.id", "card_id", "lead_id", "opportunity_id", "opportunity.id"]
+    for frame in frames:
+        if frame is None or frame.empty:
+            continue
+        for col in id_cols:
+            if col in frame.columns:
+                ids.extend(frame[col].dropna().apply(normalize_id).tolist())
+    unique_ids = [deal_id for deal_id in dict.fromkeys(ids) if deal_id]
+    return unique_ids[:limit]
+
+
+def fetch_deal_details(client: PiperunClient, deal_ids: list[str]) -> pd.DataFrame:
+    frames = []
+    for deal_id in deal_ids:
+        endpoints = [
+            f"deals/{deal_id}",
+            f"opportunities/{deal_id}",
+            f"cards/{deal_id}",
+            f"leads/{deal_id}",
+        ]
+        result = client.fetch_first_available(endpoints, params={}, max_pages=1, per_page=1)
+        if result.ok and not result.data.empty:
+            frames.append(result.data)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def merge_detail_rows(base: pd.DataFrame, details: pd.DataFrame) -> pd.DataFrame:
+    if base is None or base.empty:
+        return details if details is not None else pd.DataFrame()
+    if details is None or details.empty:
+        return base
+
+    combined = pd.concat([base, details], ignore_index=True, sort=False)
+    id_col = next((col for col in ["id", "deal_id", "opportunity_id", "card_id"] if col in combined.columns), "")
+    if not id_col:
+        return combined
+
+    combined["_merge_id"] = combined[id_col].apply(normalize_id)
+    combined["_filled_cols"] = combined.notna().sum(axis=1)
+    combined = combined.sort_values("_filled_cols").drop_duplicates("_merge_id", keep="last")
+    return combined.drop(columns=["_merge_id", "_filled_cols"]).reset_index(drop=True)
+
+
 def fetch_person_details(client: PiperunClient, person_ids: list[str]) -> pd.DataFrame:
     frames = []
     for person_id in person_ids:
@@ -379,6 +446,11 @@ def carregar_piperun(
             action_frames.append(tmp)
 
     actions_df = pd.concat(action_frames, ignore_index=True) if action_frames else pd.DataFrame()
+    deal_detail_ids = collect_deal_ids(actions_df)
+    deal_details = fetch_deal_details(client, deal_detail_ids)
+    if not deal_details.empty:
+        deals_result.data = merge_detail_rows(deals_result.data, deal_details)
+
     persons_result = client.fetch_first_available(PERSON_ENDPOINTS, params={}, max_pages=max_pages, per_page=per_page)
     person_detail_ids = collect_person_ids(actions_df, deals_result.data)
     person_details = fetch_person_details(client, person_detail_ids)
