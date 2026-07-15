@@ -22,6 +22,7 @@ class PiperunColumnMap:
     action_owner: str = ""
     action_date: str = ""
     action_deal_id: str = ""
+    person_id: str = ""
     previous_owner: str = ""
 
 
@@ -86,6 +87,7 @@ def infer_deal_columns(df: pd.DataFrame) -> PiperunColumnMap:
         pipeline=first_existing(cols, ["pipeline.name", "pipeline", "funil", "pipeline_id"]),
         stage=first_existing(cols, ["stage.name", "stage", "step.name", "status.name", "column.name", "etapa", "coluna", "pipeline_stage.name"]),
         last_action_at=first_existing(cols, ["last_activity_at", "last_action_at", "updated_at", "data_ultima_interacao", "last_note_at"]),
+        person_id=first_existing(cols, ["person_id", "person.id", "contact_id", "contact.id", "customer_id", "client_id"]),
         previous_owner=first_existing(cols, ["previous_owner.name", "old_owner.name", "from_user.name", "usuario_anterior", "responsavel_anterior"]),
     )
 
@@ -118,6 +120,7 @@ def infer_action_columns(df: pd.DataFrame) -> PiperunColumnMap:
             ],
         ),
         action_deal_id=first_existing(cols, ["deal_id", "deal.id", "card_id", "lead_id", "opportunity_id"]),
+        person_id=first_existing(cols, ["person_id", "person.id", "contact_id", "contact.id", "customer_id", "client_id"]),
     )
 
 
@@ -251,6 +254,20 @@ def prepare_deals(df: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(index=df.index)
     out["lead_id"] = df[cmap.id].astype(str) if cmap.id else df.index.astype(str)
     out["lead"] = df[cmap.title].astype(str) if cmap.title else ""
+    client_col = first_existing(
+        df.columns,
+        [
+            "person.name",
+            "contact.name",
+            "customer.name",
+            "client.name",
+            "person.nome",
+            "contact.nome",
+            "company.name",
+        ],
+    )
+    out["cliente"] = df[client_col].astype(str) if client_col else out["lead"]
+    out["person_id"] = df[cmap.person_id].apply(normalize_id) if cmap.person_id else ""
     out["created_at"] = pd.to_datetime(df[cmap.created_at], errors="coerce") if cmap.created_at else pd.NaT
     out["responsavel"] = df[cmap.owner].apply(normalize_text) if cmap.owner else "SEM RESPONSAVEL"
     out["responsavel_id"] = df[cmap.owner_id].apply(normalize_id) if cmap.owner_id else ""
@@ -271,6 +288,7 @@ def prepare_actions(df: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(index=df.index)
     out["acao_id"] = df[cmap.id].astype(str) if cmap.id else df.index.astype(str)
     out["lead_id"] = df[cmap.action_deal_id].apply(normalize_id) if cmap.action_deal_id else out["acao_id"]
+    out["person_id"] = df[cmap.person_id].apply(normalize_id) if cmap.person_id else ""
     action_lead_col = first_existing(
         df.columns,
         [

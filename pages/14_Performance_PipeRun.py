@@ -1,3 +1,4 @@
+import re
 from datetime import date, timedelta
 
 import pandas as pd
@@ -138,6 +139,17 @@ def contains_text(series: pd.Series, words: list[str]) -> pd.Series:
     return mask
 
 
+def extract_nome_cliente(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+
+    match = re.search(r"nome\s+do\s+cliente\s*:\s*([^\n\r]+)", text, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+
+    return ""
+
+
 def filter_stage_clients(deals_df: pd.DataFrame, metric_col: str) -> pd.DataFrame:
     if deals_df.empty:
         return deals_df
@@ -211,29 +223,50 @@ def build_client_table(
                 )
             ].copy()
 
-        lookup = deals_df[["lead_id", "lead", "pipeline", "etapa"]].drop_duplicates("lead_id") if not deals_df.empty else pd.DataFrame()
+        lookup_cols = [col for col in ["lead_id", "person_id", "lead", "cliente", "pipeline", "etapa"] if col in deals_df.columns]
+        lookup = deals_df[lookup_cols].drop_duplicates("lead_id") if lookup_cols and "lead_id" in lookup_cols else pd.DataFrame()
         if "lead" in actions.columns:
             actions["lead_atividade"] = actions["lead"].fillna("").replace("", pd.NA)
         else:
             actions["lead_atividade"] = pd.NA
         if not lookup.empty:
             actions = actions.merge(lookup, on="lead_id", how="left")
-        if "lead_y" in actions.columns:
+        if "cliente_y" in actions.columns:
+            actions["cliente"] = actions["cliente_y"].fillna("").replace("", pd.NA)
+        elif "cliente" in actions.columns:
+            actions["cliente"] = actions["cliente"].fillna("").replace("", pd.NA)
+        elif "lead_y" in actions.columns:
             actions["cliente"] = actions["lead_y"].fillna("").replace("", pd.NA)
         elif "lead" in actions.columns:
             actions["cliente"] = actions["lead"].fillna("").replace("", pd.NA)
         else:
             actions["cliente"] = pd.NA
+
+        if "person_id" in actions.columns and "person_id" in deals_df.columns and "cliente" in deals_df.columns:
+            person_lookup = (
+                deals_df[["person_id", "cliente"]]
+                .dropna()
+                .drop_duplicates("person_id")
+                .set_index("person_id")["cliente"]
+                .to_dict()
+            )
+            mapped_person = actions["person_id"].map(person_lookup).fillna("").replace("", pd.NA)
+            actions["cliente"] = actions["cliente"].fillna(mapped_person)
+
+        nome_extraido = actions["descricao"].fillna("").astype(str).apply(extract_nome_cliente).replace("", pd.NA)
         actions["cliente"] = actions["cliente"].fillna(actions["lead_atividade"])
-        actions["cliente"] = actions["cliente"].fillna(actions["descricao"].fillna("").replace("", pd.NA))
+        actions["cliente"] = actions["cliente"].fillna(nome_extraido)
         actions["cliente"] = actions["cliente"].fillna("Cliente sem nome")
         actions["data_conclusao"] = pd.to_datetime(actions["data_acao"], errors="coerce")
         actions = actions.sort_values("data_conclusao", ascending=False)
+        actions["dedupe_key"] = actions["cliente"].map(normalize_text)
+        missing_dedupe = actions["dedupe_key"].isin(["", "CLIENTE SEM NOME"])
+        actions.loc[missing_dedupe, "dedupe_key"] = actions.loc[missing_dedupe, "lead_id"].astype(str)
         table = actions.rename(columns={"tipo_acao": "atividade"})[
-            ["lead_id", "cliente", "responsavel", "equipe", "atividade", "data_conclusao"]
-        ].drop_duplicates("lead_id")
+            ["dedupe_key", "cliente", "responsavel", "equipe", "atividade", "data_conclusao"]
+        ].drop_duplicates("dedupe_key")
         table["data_conclusao"] = table["data_conclusao"].dt.strftime("%d/%m/%Y %H:%M").fillna("")
-        table = table.drop(columns=["lead_id"])
+        table = table.drop(columns=["dedupe_key"])
         return table.sort_values(["responsavel", "cliente"]).reset_index(drop=True)
 
     if deals.empty:
