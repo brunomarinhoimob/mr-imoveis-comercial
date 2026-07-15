@@ -7,7 +7,7 @@ import streamlit as st
 from utils.bootstrap import iniciar_app
 from utils.data_loader import carregar_dados_planilha
 from utils.piperun_client import PiperunClient, date_params, get_piperun_base_url, get_piperun_token
-from utils.piperun_metrics import build_performance, build_reference_maps, normalize_text
+from utils.piperun_metrics import build_performance, build_reference_maps, normalize_id, normalize_text
 
 
 st.set_page_config(page_title="Performance PipeRun", page_icon="PR", layout="wide")
@@ -20,6 +20,7 @@ USER_ENDPOINTS = ["users", "account/users", "user"]
 STAGE_ENDPOINTS = ["stages", "pipeline-stages", "pipeline_stages", "pipelines/stages"]
 PIPELINE_ENDPOINTS = ["pipelines", "pipeline", "funnels"]
 ACTIVITY_TYPE_ENDPOINTS = ["activityTypes", "activity-types", "activity_types", "activities/types"]
+PERSON_ENDPOINTS = ["persons", "people", "contacts", "customers", "clients"]
 
 STAGE_COLS = [
     "novo_lead",
@@ -316,6 +317,35 @@ def carregar_referencias_corretores() -> tuple[dict, dict]:
     return equipe_map, nome_map
 
 
+def collect_person_ids(*frames: pd.DataFrame, limit: int = 120) -> list[str]:
+    ids = []
+    id_cols = ["person_id", "person.id", "contact_id", "contact.id", "customer_id", "client_id"]
+    for frame in frames:
+        if frame is None or frame.empty:
+            continue
+        for col in id_cols:
+            if col in frame.columns:
+                ids.extend(frame[col].dropna().apply(normalize_id).tolist())
+    unique_ids = [person_id for person_id in dict.fromkeys(ids) if person_id]
+    return unique_ids[:limit]
+
+
+def fetch_person_details(client: PiperunClient, person_ids: list[str]) -> pd.DataFrame:
+    frames = []
+    for person_id in person_ids:
+        endpoints = [
+            f"persons/{person_id}",
+            f"people/{person_id}",
+            f"contacts/{person_id}",
+            f"customers/{person_id}",
+            f"clients/{person_id}",
+        ]
+        result = client.fetch_first_available(endpoints, params={}, max_pages=1, per_page=1)
+        if result.ok and not result.data.empty:
+            frames.append(result.data)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def carregar_piperun(
     token: str,
@@ -348,14 +378,26 @@ def carregar_piperun(
             tmp["_endpoint_origem"] = endpoint
             action_frames.append(tmp)
 
+    actions_df = pd.concat(action_frames, ignore_index=True) if action_frames else pd.DataFrame()
+    persons_result = client.fetch_first_available(PERSON_ENDPOINTS, params={}, max_pages=max_pages, per_page=per_page)
+    person_detail_ids = collect_person_ids(actions_df, deals_result.data)
+    person_details = fetch_person_details(client, person_detail_ids)
+    person_frames = []
+    if persons_result.ok and not persons_result.data.empty:
+        person_frames.append(persons_result.data)
+    if not person_details.empty:
+        person_frames.append(person_details)
+    persons_df = pd.concat(person_frames, ignore_index=True) if person_frames else pd.DataFrame()
+
     return {
         "deals_result": deals_result,
-        "actions_df": pd.concat(action_frames, ignore_index=True) if action_frames else pd.DataFrame(),
+        "actions_df": actions_df,
         "action_status": pd.DataFrame(action_status),
         "users_result": client.fetch_first_available(USER_ENDPOINTS, params={}, max_pages=5, per_page=per_page),
         "stages_result": client.fetch_first_available(STAGE_ENDPOINTS, params={}, max_pages=10, per_page=per_page),
         "pipelines_result": client.fetch_first_available(PIPELINE_ENDPOINTS, params={}, max_pages=5, per_page=per_page),
         "activity_types_result": client.fetch_first_available(ACTIVITY_TYPE_ENDPOINTS, params={}, max_pages=5, per_page=per_page),
+        "persons_df": persons_df,
     }
 
 
@@ -422,6 +464,7 @@ users_result = carga["users_result"]
 stages_result = carga["stages_result"]
 pipelines_result = carga["pipelines_result"]
 activity_types_result = carga["activity_types_result"]
+persons_df = carga["persons_df"]
 corretor_equipe_map, corretor_nome_map = carregar_referencias_corretores()
 
 if not deals_result.ok:
@@ -434,6 +477,7 @@ reference_maps = build_reference_maps(
     stages_raw=stages_result.data if stages_result.ok else pd.DataFrame(),
     pipelines_raw=pipelines_result.data if pipelines_result.ok else pd.DataFrame(),
     activity_types_raw=activity_types_result.data if activity_types_result.ok else pd.DataFrame(),
+    persons_raw=persons_df,
     corretor_equipe_map=corretor_equipe_map,
     corretor_nome_map=corretor_nome_map,
 )

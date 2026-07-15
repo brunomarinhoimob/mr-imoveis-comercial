@@ -149,6 +149,7 @@ def build_reference_maps(
     stages_raw: pd.DataFrame | None = None,
     pipelines_raw: pd.DataFrame | None = None,
     activity_types_raw: pd.DataFrame | None = None,
+    persons_raw: pd.DataFrame | None = None,
     corretor_equipe_map: Dict[str, str] | None = None,
     corretor_nome_map: Dict[str, str] | None = None,
 ) -> Dict[str, Dict[str, str]]:
@@ -156,6 +157,7 @@ def build_reference_maps(
     stages = stages_raw if stages_raw is not None else pd.DataFrame()
     pipelines = pipelines_raw if pipelines_raw is not None else pd.DataFrame()
     activity_types = activity_types_raw if activity_types_raw is not None else pd.DataFrame()
+    persons = persons_raw if persons_raw is not None else pd.DataFrame()
 
     user_name = make_lookup(
         users,
@@ -182,6 +184,11 @@ def build_reference_maps(
         ["id", "activity_type_id", "type_id"],
         ["name", "nome", "title", "type", "description"],
     )
+    person_name = make_lookup(
+        persons,
+        ["id", "person_id", "contact_id", "customer_id", "client_id"],
+        ["name", "nome", "person.name", "contact.name", "customer.name", "client.name", "email"],
+    )
 
     return {
         "user_name": user_name,
@@ -191,6 +198,7 @@ def build_reference_maps(
         "stage_name": stage_name,
         "pipeline_name": pipeline_name,
         "activity_type_name": activity_type_name,
+        "person_name": person_name,
     }
 
 
@@ -344,8 +352,16 @@ def enrich_with_references(
     stage_name = refs.get("stage_name", {})
     pipeline_name = refs.get("pipeline_name", {})
     activity_type_name = refs.get("activity_type_name", {})
+    person_name = refs.get("person_name", {})
 
     if not deals.empty:
+        if person_name and "person_id" in deals.columns:
+            mapped = deals["person_id"].map(person_name)
+            has_person_name = mapped.fillna("").astype(str).str.len() > 0
+            deals.loc[has_person_name, "cliente"] = mapped[has_person_name]
+            missing_lead = deals["lead"].fillna("").astype(str).str.strip().isin(["", "None", "nan", "Cliente sem nome"])
+            deals.loc[has_person_name & missing_lead, "lead"] = mapped[has_person_name & missing_lead]
+
         if "owner_id" in deals_raw.columns and user_name:
             mapped = deals_raw["owner_id"].apply(normalize_id).map(user_name)
             deals["responsavel"] = mapped.fillna(deals["responsavel"]).replace("", "SEM RESPONSAVEL")
@@ -370,6 +386,14 @@ def enrich_with_references(
             deals.loc[has_team, "equipe"] = mapped[has_team]
 
     if not actions.empty:
+        if person_name and "person_id" in actions.columns:
+            mapped = actions["person_id"].map(person_name)
+            has_person_name = mapped.fillna("").astype(str).str.len() > 0
+            current_lead = actions["lead"].fillna("").astype(str).map(normalize_text)
+            generic_lead = current_lead.isin(["", "NONE", "NAN", "CLIENTE SEM NOME", "ACAO"])
+            looks_like_note = current_lead.str.contains("ENVIADO PARA ANALISE|ANALISE DE CREDITO|FOI ENVIADO", na=False)
+            actions.loc[has_person_name & (generic_lead | looks_like_note), "lead"] = mapped[has_person_name & (generic_lead | looks_like_note)]
+
         deal_owner = {}
         deal_team = {}
         if not deals.empty:
