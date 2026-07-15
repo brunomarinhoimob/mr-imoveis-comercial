@@ -472,15 +472,20 @@ if not deals_result.ok:
     st.write(deals_result.error)
     st.stop()
 
-reference_maps = build_reference_maps(
-    users_raw=users_result.data if users_result.ok else pd.DataFrame(),
-    stages_raw=stages_result.data if stages_result.ok else pd.DataFrame(),
-    pipelines_raw=pipelines_result.data if pipelines_result.ok else pd.DataFrame(),
-    activity_types_raw=activity_types_result.data if activity_types_result.ok else pd.DataFrame(),
-    persons_raw=persons_df,
-    corretor_equipe_map=corretor_equipe_map,
-    corretor_nome_map=corretor_nome_map,
-)
+reference_kwargs = {
+    "users_raw": users_result.data if users_result.ok else pd.DataFrame(),
+    "stages_raw": stages_result.data if stages_result.ok else pd.DataFrame(),
+    "pipelines_raw": pipelines_result.data if pipelines_result.ok else pd.DataFrame(),
+    "activity_types_raw": activity_types_result.data if activity_types_result.ok else pd.DataFrame(),
+    "persons_raw": persons_df,
+    "corretor_equipe_map": corretor_equipe_map,
+    "corretor_nome_map": corretor_nome_map,
+}
+try:
+    reference_maps = build_reference_maps(**reference_kwargs)
+except TypeError:
+    reference_kwargs.pop("persons_raw", None)
+    reference_maps = build_reference_maps(**reference_kwargs)
 
 metricas = build_performance(
     deals_raw=deals_result.data,
