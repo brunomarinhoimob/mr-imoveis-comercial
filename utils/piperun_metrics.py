@@ -197,6 +197,12 @@ def classify_action_type(tipo, descricao) -> str:
     desc_text = normalize_text(descricao)
     combined = f"{tipo_text} {desc_text}".strip()
 
+    if (
+        ("OPORTUNIDADE" in combined and "COPIA" in combined)
+        or "DUPLICAD" in combined
+        or ("ORIGINAL" in combined and "RECUPERACAO DE LEAD" in combined)
+    ):
+        return "LEAD REMANEJADO"
     if "ANALISE" in combined and "CONFIRM" in combined and (
         "1" in combined or "PRIMEIRA" in combined or "1A" in combined
     ):
@@ -249,7 +255,15 @@ def prepare_actions(df: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(index=df.index)
     out["acao_id"] = df[cmap.id].astype(str) if cmap.id else df.index.astype(str)
     out["lead_id"] = df[cmap.action_deal_id].apply(normalize_id) if cmap.action_deal_id else out["acao_id"]
-    out["descricao"] = df[cmap.title].astype(str) if cmap.title else ""
+    text_cols = [
+        col
+        for col in df.columns
+        if any(key in str(col).lower() for key in ["title", "description", "comment", "text", "note", "content", "message"])
+    ]
+    if text_cols:
+        out["descricao"] = df[text_cols].fillna("").astype(str).agg(" ".join, axis=1).str.strip()
+    else:
+        out["descricao"] = df[cmap.title].astype(str) if cmap.title else ""
     out["responsavel"] = df[cmap.owner].apply(normalize_text) if cmap.owner else "SEM RESPONSAVEL"
     out["responsavel_id"] = df[cmap.owner_id].apply(normalize_id) if cmap.owner_id else ""
     out["equipe"] = df[cmap.team].apply(normalize_text) if cmap.team else "SEM EQUIPE"
@@ -589,15 +603,31 @@ def build_performance(
             .sort_values(["pipeline", "qtde_cards"], ascending=[True, False])
         )
 
-    remanejados = pd.DataFrame(columns=dims + ["leads_remanejados"])
+    remanejados_deal = pd.DataFrame(columns=dims + ["lead_id"])
     if not deals_funil.empty:
         tmp = deals_funil.copy()
         tmp["remanejado"] = tmp["responsavel_anterior"].fillna("").astype(str).str.len() > 0
         if tmp["remanejado"].any():
-            remanejados = tmp[tmp["remanejado"]].groupby(dims)["lead_id"].nunique().reset_index(name="leads_remanejados")
-        elif "last_action_at" in tmp.columns:
-            sem_acao = tmp["last_action_at"].isna()
-            remanejados = tmp[sem_acao].groupby(dims)["lead_id"].nunique().reset_index(name="leads_remanejados")
+            remanejados_deal = tmp.loc[tmp["remanejado"], dims + ["lead_id"]].drop_duplicates()
+
+    remanejados_atividade = pd.DataFrame(columns=dims + ["lead_id"])
+    if not actions_periodo.empty:
+        texto_atividade = (
+            actions_periodo["tipo_acao"].fillna("").astype(str)
+            + " "
+            + actions_periodo["descricao"].fillna("").astype(str)
+        ).map(normalize_text)
+        mask_remanejo = (actions_periodo["tipo_acao"].fillna("").astype(str).map(normalize_text) == "LEAD REMANEJADO") | (
+            (texto_atividade.str.contains("OPORTUNIDADE", na=False) & texto_atividade.str.contains("COPIA", na=False))
+            | texto_atividade.str.contains("DUPLICAD", na=False)
+            | (texto_atividade.str.contains("ORIGINAL", na=False) & texto_atividade.str.contains("RECUPERACAO DE LEAD", na=False))
+        )
+        remanejados_atividade = actions_periodo.loc[mask_remanejo, dims + ["lead_id"]].drop_duplicates()
+
+    remanejados = pd.concat([remanejados_deal, remanejados_atividade], ignore_index=True)
+    if not remanejados.empty:
+        remanejados = remanejados.drop_duplicates(dims + ["lead_id"])
+        remanejados = remanejados.groupby(dims)["lead_id"].nunique().reset_index(name="leads_remanejados")
 
     result = base.merge(leads, on=dims, how="left")
     result = result.merge(cards_total, on=dims, how="left")

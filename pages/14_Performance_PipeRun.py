@@ -14,7 +14,7 @@ iniciar_app()
 
 
 DEAL_ENDPOINTS = ["deals", "opportunities", "cards", "leads"]
-ACTION_ENDPOINTS = ["activities", "notes", "tasks", "visits", "events", "actions"]
+ACTION_ENDPOINTS = ["activities", "notes", "histories", "history", "timeline", "timelines", "tasks", "visits", "events", "actions"]
 USER_ENDPOINTS = ["users", "account/users", "user"]
 STAGE_ENDPOINTS = ["stages", "pipeline-stages", "pipeline_stages", "pipelines/stages"]
 PIPELINE_ENDPOINTS = ["pipelines", "pipeline", "funnels"]
@@ -70,6 +70,7 @@ def pretty_label(value: str) -> str:
         "1_analise_confirmada": "1 analise confirmada",
         "analise_credito_confirmada": "Analise credito confirmada",
         "leads_remanejados": "Leads remanejados",
+        "lead_remanejado": "Lead remanejado",
         "analises_enviadas": "Analises enviadas",
         "pendencias": "Pendencias",
         "aprovacoes": "Aprovacoes",
@@ -123,6 +124,113 @@ def show_entity_cards(df: pd.DataFrame, title_col: str, metric_col: str, limit: 
                 st.metric(label, to_int(row.get(metric_col, 0)))
                 if subtitle:
                     st.caption(subtitle)
+
+
+def metric_key(value) -> str:
+    return normalize_text(value).lower().replace(" ", "_")
+
+
+def contains_text(series: pd.Series, words: list[str]) -> pd.Series:
+    text = series.fillna("").astype(str).map(normalize_text)
+    mask = pd.Series(False, index=series.index)
+    for word in words:
+        mask = mask | text.str.contains(normalize_text(word), na=False)
+    return mask
+
+
+def filter_stage_clients(deals_df: pd.DataFrame, metric_col: str) -> pd.DataFrame:
+    if deals_df.empty:
+        return deals_df
+
+    etapa = deals_df["etapa"].fillna("")
+    pipeline = deals_df["pipeline"].fillna("")
+    filters = {
+        "novo_lead": contains_text(etapa, ["NOVO LEAD", "NOVA VENDA"]),
+        "aguardando_atendimento": contains_text(etapa, ["AGUARDANDO ATENDIMENTO"]),
+        "em_atendimento": contains_text(etapa, ["EM ATENDIMENTO", "ATENDIMENTO"]),
+        "cadencia": contains_text(pipeline, ["CADENCIA"]) | contains_text(etapa, ["DIA 1", "DIA 2", "DIA 3", "DIA 4", "DIA 5"]),
+        "recuperacao_lead": contains_text(pipeline, ["RECUPERACAO DE LEAD"]),
+        "acompanhamento": contains_text(etapa, ["ACOMPANHAMENTO"]),
+        "visita_agendada": contains_text(etapa, ["VISITA AGENDADA"]),
+        "visita_realizada": contains_text(etapa, ["VISITA REALIZADA"]),
+        "aguardando_documentos": contains_text(etapa, ["AGUARDANDO DOCUMENTOS"]),
+        "recusa_pasteiro": contains_text(etapa, ["RECUSA PASTEIRO"]),
+        "analises_enviadas": contains_text(etapa, ["ANALISE DE CREDITO", "1 ANALISE", "1A ANALISE", "NOVA ANALISE"]),
+        "conferencia_pasteiro": contains_text(etapa, ["CONFERENCIA DO PASTEIRO"]),
+        "pendencias": contains_text(etapa, ["DOC PENDENTE", "PENDENCIA", "PENDENTE"]),
+        "condicionados": contains_text(etapa, ["CONDICIONADO"]),
+        "restricoes": contains_text(etapa, ["RESTRICAO"]),
+        "aprovacoes": contains_text(etapa, ["APROVADO", "APROVACAO"]),
+        "reprovados": contains_text(etapa, ["REPROVADO", "REPROVACAO", "RECUSADO", "RECUSADA"]),
+    }
+    mask = filters.get(metric_col)
+    return deals_df[mask].copy() if mask is not None else deals_df
+
+
+def build_client_table(
+    metric_col: str,
+    corretor_nome: str,
+    deals_df: pd.DataFrame,
+    actions_df: pd.DataFrame,
+    data_ini: date,
+    data_fim: date,
+    activity_cols: list[str],
+) -> pd.DataFrame:
+    deals = deals_df.copy()
+    actions = actions_df.copy()
+
+    if corretor_nome != "Todos os corretores":
+        deals = deals[deals["responsavel"] == corretor_nome].copy()
+        actions = actions[actions["responsavel"] == corretor_nome].copy()
+
+    if metric_col == "leads_recebidos" and "created_at" in deals.columns:
+        created = pd.to_datetime(deals["created_at"], errors="coerce")
+        deals = deals[created.isna() | ((created.dt.date >= data_ini) & (created.dt.date <= data_fim))].copy()
+    elif metric_col in STAGE_COLS:
+        deals = filter_stage_clients(deals, metric_col)
+    elif metric_col in {"acoes_total", "leads_com_atividade", "analise_enviada_atividade"} or metric_col in activity_cols:
+        if actions.empty:
+            return pd.DataFrame(columns=["cliente", "responsavel", "equipe", "atividade", "data"])
+
+        action_keys = actions["tipo_acao"].fillna("").astype(str).map(metric_key)
+        if metric_col in activity_cols:
+            actions = actions[action_keys == metric_col].copy()
+        elif metric_col == "analise_enviada_atividade":
+            text = (actions["tipo_acao"].fillna("").astype(str) + " " + actions["descricao"].fillna("").astype(str)).map(normalize_text)
+            actions = actions[
+                action_keys.isin(["1_analise", "1_analise_enviada", "1_analise_confirmada", "analise_de_credito", "analise_credito_confirmada"])
+                | (
+                    text.str.contains("ANALISE", na=False)
+                    & (
+                        text.str.contains("ENVIADO", na=False)
+                        | text.str.contains("ENVIADA", na=False)
+                        | text.str.contains("CREDITO", na=False)
+                        | text.str.contains("1", na=False)
+                        | text.str.contains("PRIMEIRA", na=False)
+                    )
+                )
+            ].copy()
+
+        lookup = deals_df[["lead_id", "lead", "pipeline", "etapa"]].drop_duplicates("lead_id") if not deals_df.empty else pd.DataFrame()
+        if not lookup.empty:
+            actions = actions.merge(lookup, on="lead_id", how="left")
+        if "lead" in actions.columns:
+            actions["cliente"] = actions["lead"].fillna("").replace("", "Cliente sem nome")
+        else:
+            actions["cliente"] = "Cliente sem nome"
+        table = actions.rename(columns={"tipo_acao": "atividade", "data_acao": "data"})[
+            ["cliente", "responsavel", "equipe", "atividade", "data"]
+        ].drop_duplicates()
+        return table.sort_values(["responsavel", "cliente"]).reset_index(drop=True)
+
+    if deals.empty:
+        return pd.DataFrame(columns=["cliente", "responsavel", "equipe", "funil", "etapa"])
+
+    table = deals.rename(columns={"lead": "cliente", "pipeline": "funil"})[
+        ["cliente", "responsavel", "equipe", "funil", "etapa"]
+    ].drop_duplicates()
+    table["cliente"] = table["cliente"].fillna("").replace("", "Cliente sem nome")
+    return table.sort_values(["responsavel", "cliente"]).reset_index(drop=True)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -295,6 +403,8 @@ metricas = build_performance(
 
 df_corretor = metricas["corretor"]
 df_equipe = metricas["equipe"]
+deals_norm = metricas.get("deals_normalizados", pd.DataFrame())
+acoes_norm = metricas.get("acoes_normalizadas", pd.DataFrame())
 
 if perfil == "corretor" and nome_usuario and "responsavel" in df_corretor.columns:
     df_corretor = df_corretor[df_corretor["responsavel"] == nome_usuario].copy()
@@ -434,3 +544,18 @@ elif menu == "Corretores":
         ranking_view = ranking_view[ranking_view["responsavel"] == corretor_ranking].copy()
 
     show_entity_cards(ranking_view, "responsavel", ranking_metric, limit=24)
+
+    st.subheader(f"Clientes em {pretty_label(ranking_metric)}")
+    clientes = build_client_table(
+        ranking_metric,
+        corretor_ranking,
+        deals_norm,
+        acoes_norm,
+        data_ini,
+        data_fim,
+        activity_cols,
+    )
+    if clientes.empty:
+        st.info("Nenhum cliente encontrado para esse filtro.")
+    else:
+        st.dataframe(clientes, use_container_width=True, hide_index=True)
