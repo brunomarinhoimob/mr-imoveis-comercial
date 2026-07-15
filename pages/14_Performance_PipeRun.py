@@ -493,6 +493,22 @@ elif menu == "Atividades":
 
         st.subheader(f"Corretores em {pretty_label(atividade_sel)}")
         show_entity_cards(df_view, "responsavel", atividade_sel, limit=16)
+
+        st.subheader(f"Leads em {pretty_label(atividade_sel)}")
+        corretor_tabela = "Todos os corretores" if corretor_sel == "Toda imobiliaria" else corretor_sel
+        clientes_atividade = build_client_table(
+            atividade_sel,
+            corretor_tabela,
+            deals_norm,
+            acoes_norm,
+            data_ini,
+            data_fim,
+            activity_cols,
+        )
+        if clientes_atividade.empty:
+            st.info("Nenhum lead encontrado para essa atividade.")
+        else:
+            st.dataframe(clientes_atividade, use_container_width=True, hide_index=True)
     else:
         st.info("Nenhuma atividade detalhada foi identificada no retorno da API.")
 
