@@ -295,10 +295,19 @@ def build_client_table(
     if deals.empty:
         return pd.DataFrame(columns=["cliente", "responsavel", "equipe", "funil", "etapa"])
 
-    table = deals.rename(columns={"lead": "cliente", "pipeline": "funil"})[
-        ["cliente", "responsavel", "equipe", "funil", "etapa"]
-    ].drop_duplicates()
-    table["cliente"] = table["cliente"].fillna("").replace("", "Cliente sem nome")
+    table = pd.DataFrame(index=deals.index)
+    if "cliente" in deals.columns:
+        table["cliente"] = clean_client_series(deals["cliente"])
+    else:
+        table["cliente"] = pd.NA
+    if "lead" in deals.columns:
+        table["cliente"] = table["cliente"].fillna(clean_client_series(deals["lead"]))
+    table["cliente"] = table["cliente"].fillna("ID " + deals["lead_id"].astype(str))
+    table["responsavel"] = deals["responsavel"] if "responsavel" in deals.columns else "SEM RESPONSAVEL"
+    table["equipe"] = deals["equipe"] if "equipe" in deals.columns else "SEM EQUIPE"
+    table["funil"] = deals["pipeline"] if "pipeline" in deals.columns else ""
+    table["etapa"] = deals["etapa"] if "etapa" in deals.columns else ""
+    table = table.drop_duplicates()
     return table.sort_values(["responsavel", "cliente"]).reset_index(drop=True)
 
 
