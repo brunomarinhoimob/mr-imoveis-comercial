@@ -422,6 +422,7 @@ def carregar_piperun(
     usar_filtro_api: bool,
     max_pages: int,
     per_page: int,
+    detail_limit: int,
 ):
     client = PiperunClient(token=token, base_url=base_url)
     params = date_params(data_ini, data_fim) if usar_filtro_api else {}
@@ -446,14 +447,17 @@ def carregar_piperun(
             action_frames.append(tmp)
 
     actions_df = pd.concat(action_frames, ignore_index=True) if action_frames else pd.DataFrame()
-    deal_detail_ids = collect_deal_ids(actions_df)
-    deal_details = fetch_deal_details(client, deal_detail_ids)
-    if not deal_details.empty:
-        deals_result.data = merge_detail_rows(deals_result.data, deal_details)
+    if detail_limit > 0:
+        deal_detail_ids = collect_deal_ids(actions_df, limit=detail_limit)
+        deal_details = fetch_deal_details(client, deal_detail_ids)
+        if not deal_details.empty:
+            deals_result.data = merge_detail_rows(deals_result.data, deal_details)
 
-    persons_result = client.fetch_first_available(PERSON_ENDPOINTS, params={}, max_pages=max_pages, per_page=per_page)
-    person_detail_ids = collect_person_ids(actions_df, deals_result.data)
-    person_details = fetch_person_details(client, person_detail_ids)
+    persons_result = client.fetch_first_available(PERSON_ENDPOINTS, params={}, max_pages=1, per_page=per_page)
+    person_details = pd.DataFrame()
+    if detail_limit > 0:
+        person_detail_ids = collect_person_ids(actions_df, deals_result.data, limit=detail_limit)
+        person_details = fetch_person_details(client, person_detail_ids)
     person_frames = []
     if persons_result.ok and not persons_result.data.empty:
         person_frames.append(persons_result.data)
@@ -511,8 +515,24 @@ usar_filtro_api = st.sidebar.checkbox(
     value=False,
     help="Deixe desligado se a API rejeitar parametros de data. A pagina filtra localmente quando encontra campos de data.",
 )
-max_pages = st.sidebar.number_input("Paginas maximas por endpoint", min_value=1, max_value=100, value=30, step=1)
-per_page = st.sidebar.number_input("Registros por pagina", min_value=20, max_value=500, value=500, step=20)
+limite_registros = st.sidebar.slider(
+    "Quantidade de registros para carregar",
+    min_value=100,
+    max_value=5000,
+    value=100,
+    step=100,
+    help="Comece com 100 para abrir rapido. Aumente quando quiser analisar um periodo maior.",
+)
+per_page = 100
+max_pages = max(1, int((limite_registros + per_page - 1) / per_page))
+detail_limit = st.sidebar.slider(
+    "Buscar nomes por ID",
+    min_value=0,
+    max_value=300,
+    value=30,
+    step=10,
+    help="Quanto maior, mais nomes podem ser identificados, mas a pagina demora mais para carregar.",
+)
 remanejo_dias = st.sidebar.number_input("Regra de remanejo: dias sem acao", min_value=1, max_value=30, value=2, step=1)
 
 if not token:
@@ -528,6 +548,7 @@ with st.spinner("Consultando PipeRun..."):
         usar_filtro_api=usar_filtro_api,
         max_pages=int(max_pages),
         per_page=int(per_page),
+        detail_limit=int(detail_limit),
     )
 
 deals_result = carga["deals_result"]
