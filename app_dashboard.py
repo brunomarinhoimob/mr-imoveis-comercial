@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 
 import streamlit as st
 
@@ -48,8 +48,14 @@ if perfil == "corretor":
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def carregar_dados(max_pages: int, per_page: int, _refresh_key=None):
-    return carregar_base_comercial(fonte="piperun", max_pages=max_pages, per_page=per_page)
+def carregar_dados(max_pages: int, per_page: int, data_ini: date, data_fim: date, _refresh_key=None):
+    return carregar_base_comercial(
+        fonte="piperun",
+        max_pages=max_pages,
+        per_page=per_page,
+        data_ini=data_ini,
+        data_fim=data_fim,
+    )
 
 
 st.sidebar.title("PipeRun")
@@ -63,10 +69,20 @@ limite_registros = st.sidebar.slider(
 per_page = 100
 max_pages = max(1, int((limite_registros + per_page - 1) / per_page))
 
+st.sidebar.title("Filtros")
+hoje = date.today()
+data_ini = st.sidebar.date_input("Data inicial", value=hoje - timedelta(days=30), format="DD/MM/YYYY")
+data_fim = st.sidebar.date_input("Data final", value=hoje, format="DD/MM/YYYY")
+if data_ini > data_fim:
+    st.error("A data inicial nao pode ser maior que a data final.")
+    st.stop()
+
 with st.spinner("Carregando base comercial..."):
     df = carregar_dados(
         max_pages=max_pages,
         per_page=per_page,
+        data_ini=data_ini,
+        data_fim=data_fim,
         _refresh_key=st.session_state.get("refresh_planilha"),
     )
 
@@ -75,55 +91,11 @@ if df.empty:
     st.error("Erro ao carregar base comercial.")
     st.stop()
 
-st.sidebar.title("Filtros")
-modo_periodo = st.sidebar.radio(
-    "Modo de filtro do periodo",
-    ["Por DIA (data do registro)", "Por DATA BASE (mes comercial)"],
-    index=0,
-)
-
 dias_validos = df["DIA"].dropna()
 bases_validas = df["DATA_BASE"].dropna()
 if dias_validos.empty and bases_validas.empty:
     st.error("Sem datas validas para filtrar.")
     st.stop()
-
-tipo_periodo = "DIA"
-data_ini = None
-data_fim = None
-bases_selecionadas = []
-
-if modo_periodo.startswith("Por DIA"):
-    data_min = dias_validos.min()
-    data_max = dias_validos.max()
-    data_ini_default = max(data_min, data_max - timedelta(days=30))
-    periodo = st.sidebar.date_input(
-        "Periodo por DIA",
-        value=(data_ini_default, data_max),
-        min_value=data_min,
-        max_value=data_max,
-    )
-    data_ini, data_fim = periodo
-else:
-    tipo_periodo = "DATA_BASE"
-    bases_df = (
-        df[["DATA_BASE", "DATA_BASE_LABEL"]]
-        .dropna(subset=["DATA_BASE"])
-        .drop_duplicates()
-        .sort_values("DATA_BASE")
-    )
-    opcoes = bases_df["DATA_BASE_LABEL"].tolist()
-    if not opcoes:
-        st.error("Sem datas base validas para filtrar.")
-        st.stop()
-    default_labels = opcoes[-2:] if len(opcoes) >= 2 else opcoes
-    bases_selecionadas = st.sidebar.multiselect(
-        "Periodo por DATA BASE",
-        options=opcoes,
-        default=default_labels,
-    )
-    if not bases_selecionadas:
-        bases_selecionadas = opcoes
 
 lista_equipes = sorted(df["EQUIPE"].dropna().unique())
 equipe_sel = st.sidebar.selectbox("Equipe", ["Todas"] + lista_equipes)
@@ -132,13 +104,13 @@ base_cor = df if equipe_sel == "Todas" else df[df["EQUIPE"] == equipe_sel]
 lista_corretor = sorted(base_cor["CORRETOR"].dropna().unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
-if tipo_periodo == "DIA":
-    df_filtrado = df[(df["DIA"] >= data_ini) & (df["DIA"] <= data_fim)].copy()
+mask_dia = (df["DIA"] >= data_ini) & (df["DIA"] <= data_fim)
+if "DATA_1_ANALISE" in df.columns:
+    data_analise = df["DATA_1_ANALISE"]
+    mask_analise = data_analise.notna() & (data_analise >= data_ini) & (data_analise <= data_fim)
 else:
-    df_filtrado = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
-    dias_sel = df_filtrado["DIA"].dropna()
-    data_ini = dias_sel.min() if not dias_sel.empty else dias_validos.min()
-    data_fim = dias_sel.max() if not dias_sel.empty else dias_validos.max()
+    mask_analise = False
+df_filtrado = df[mask_dia | mask_analise].copy()
 
 if equipe_sel != "Todas":
     df_filtrado = df_filtrado[df_filtrado["EQUIPE"] == equipe_sel]
@@ -147,10 +119,7 @@ if corretor_sel != "Todos":
 
 registros_filtrados = len(df_filtrado)
 
-if tipo_periodo == "DIA":
-    periodo_str = f"{data_ini.strftime('%d/%m/%Y')} ate {data_fim.strftime('%d/%m/%Y')}"
-else:
-    periodo_str = bases_selecionadas[0] if len(bases_selecionadas) == 1 else f"{bases_selecionadas[0]} ate {bases_selecionadas[-1]}"
+periodo_str = f"{data_ini.strftime('%d/%m/%Y')} ate {data_fim.strftime('%d/%m/%Y')}"
 
 hero(
     "Painel Comercial",

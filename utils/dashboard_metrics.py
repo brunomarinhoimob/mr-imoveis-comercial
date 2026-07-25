@@ -55,7 +55,7 @@ def calcular_resumo_comercial(df_filtrado: pd.DataFrame, df_completo: pd.DataFra
     status = df_filtrado["STATUS_BASE"].fillna("") if "STATUS_BASE" in df_filtrado.columns else pd.Series(dtype="object")
 
     if "TEM_1_ANALISE" in df_filtrado.columns:
-        analises_df = df_filtrado[df_filtrado["TEM_1_ANALISE"] == True]
+        analises_df = df_filtrado[df_filtrado["TEM_1_ANALISE"] == True].copy()
         analises_total = int(analises_df["CHAVE_CLIENTE"].nunique()) if "CHAVE_CLIENTE" in analises_df.columns else len(analises_df)
         em_analise = analises_total
     else:

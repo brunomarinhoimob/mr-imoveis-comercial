@@ -6,7 +6,7 @@ from typing import Iterable
 
 import pandas as pd
 
-from utils.piperun_client import PiperunClient
+from utils.piperun_client import PiperunClient, date_params
 
 
 DEAL_ENDPOINTS = ["deals", "opportunities", "cards", "leads"]
@@ -115,14 +115,34 @@ def is_primeira_analise_text(value) -> bool:
     return any(marker in text for marker in ["1", "1A", "1O", "PRIMEIRA", "PRIMEIRO"])
 
 
-def actions_primeira_analise(actions_raw: pd.DataFrame) -> set[str]:
+def action_date_column(actions_raw: pd.DataFrame) -> str:
+    return first_existing(
+        actions_raw.columns,
+        [
+            "done_at",
+            "completed_at",
+            "finished_at",
+            "completed_on",
+            "concluded_at",
+            "end_at",
+            "data_conclusao",
+            "data_realizacao",
+            "date",
+            "data",
+            "created_at",
+            "scheduled_at",
+        ],
+    )
+
+
+def actions_primeira_analise(actions_raw: pd.DataFrame) -> dict[str, date]:
     if actions_raw is None or actions_raw.empty:
-        return set()
+        return {}
 
     cols = actions_raw.columns
     deal_id_col = first_existing(cols, ["deal_id", "deal.id", "card_id", "lead_id", "opportunity_id"])
     if not deal_id_col:
-        return set()
+        return {}
 
     text_cols = [
         col
@@ -130,17 +150,29 @@ def actions_primeira_analise(actions_raw: pd.DataFrame) -> set[str]:
         if any(key in str(col).lower() for key in ["title", "description", "comment", "text", "note", "content", "message", "type", "activity"])
     ]
     if not text_cols:
-        return set()
+        return {}
 
     text = actions_raw[text_cols].fillna("").astype(str).agg(" ".join, axis=1)
     mask = text.apply(is_primeira_analise_text)
-    return set(actions_raw.loc[mask, deal_id_col].apply(normalize_id).dropna().tolist())
+    analises = actions_raw.loc[mask].copy()
+    if analises.empty:
+        return {}
+
+    data_col = action_date_column(analises)
+    analises["_lead_id"] = analises[deal_id_col].apply(normalize_id)
+    analises["_data_analise"] = pd.to_datetime(analises[data_col], errors="coerce") if data_col else pd.NaT
+    analises = analises[analises["_lead_id"] != ""]
+    if analises.empty:
+        return {}
+
+    datas = analises.sort_values("_data_analise").groupby("_lead_id")["_data_analise"].first()
+    return {lead_id: data.date() if pd.notnull(data) else pd.NaT for lead_id, data in datas.items()}
 
 
-def carregar_atividades_piperun(client: PiperunClient, max_pages: int, per_page: int) -> pd.DataFrame:
+def carregar_atividades_piperun(client: PiperunClient, max_pages: int, per_page: int, params: dict | None = None) -> pd.DataFrame:
     frames = []
     for endpoint in ACTION_ENDPOINTS:
-        result = client.fetch_first_available([endpoint], params={}, max_pages=max_pages, per_page=per_page)
+        result = client.fetch_first_available([endpoint], params=params or {}, max_pages=max_pages, per_page=per_page)
         if result.ok and not result.data.empty:
             frames.append(result.data)
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
@@ -170,7 +202,7 @@ def fetch_piperun_reference_maps(client: PiperunClient, per_page: int) -> dict[s
 def piperun_deals_to_commercial_df(
     deals_raw: pd.DataFrame,
     refs: dict[str, dict[str, str]],
-    primeira_analise_ids: set[str] | None = None,
+    primeira_analise_datas: dict[str, date] | None = None,
 ) -> pd.DataFrame:
     if deals_raw is None or deals_raw.empty:
         return pd.DataFrame()
@@ -237,8 +269,9 @@ def piperun_deals_to_commercial_df(
     out["ETAPA"] = stage
     out["GANHO"] = [is_won_status(etapa, funil, stat) for etapa, funil, stat in zip(stage, pipeline, status)]
     out["STATUS_BASE"] = [status_from_piperun(etapa, funil, stat) for etapa, funil, stat in zip(stage, pipeline, status)]
-    primeira_analise_ids = primeira_analise_ids or set()
-    out["TEM_1_ANALISE"] = out["ID_LEAD"].isin(primeira_analise_ids)
+    primeira_analise_datas = primeira_analise_datas or {}
+    out["DATA_1_ANALISE"] = out["ID_LEAD"].map(primeira_analise_datas)
+    out["TEM_1_ANALISE"] = out["DATA_1_ANALISE"].notna()
     out.loc[out["TEM_1_ANALISE"] & (out["STATUS_BASE"] == ""), "STATUS_BASE"] = "EM ANALISE"
 
     if client_col:
@@ -260,21 +293,28 @@ def piperun_deals_to_commercial_df(
     return out
 
 
-def carregar_piperun(max_pages: int = 5, per_page: int = 100) -> pd.DataFrame:
+def carregar_piperun(max_pages: int = 5, per_page: int = 100, data_ini: date | None = None, data_fim: date | None = None) -> pd.DataFrame:
     client = PiperunClient()
-    result = client.fetch_first_available(DEAL_ENDPOINTS, params={}, max_pages=max_pages, per_page=per_page)
+    params = date_params(data_ini, data_fim) if data_ini and data_fim else {}
+    result = client.fetch_first_available(DEAL_ENDPOINTS, params=params, max_pages=max_pages, per_page=per_page)
     if not result.ok:
         raise RuntimeError(result.error or "Nao foi possivel carregar leads do PipeRun.")
 
     refs = fetch_piperun_reference_maps(client, per_page=per_page)
-    actions = carregar_atividades_piperun(client, max_pages=max_pages, per_page=per_page)
-    primeira_analise_ids = actions_primeira_analise(actions)
-    return piperun_deals_to_commercial_df(result.data, refs, primeira_analise_ids=primeira_analise_ids)
+    actions = carregar_atividades_piperun(client, max_pages=max_pages, per_page=per_page, params=params)
+    primeira_analise_datas = actions_primeira_analise(actions)
+    return piperun_deals_to_commercial_df(result.data, refs, primeira_analise_datas=primeira_analise_datas)
 
 
-def carregar_base_comercial(fonte: str = "piperun", max_pages: int = 5, per_page: int = 100) -> pd.DataFrame:
+def carregar_base_comercial(
+    fonte: str = "piperun",
+    max_pages: int = 5,
+    per_page: int = 100,
+    data_ini: date | None = None,
+    data_fim: date | None = None,
+) -> pd.DataFrame:
     if fonte == "piperun":
-        return carregar_piperun(max_pages=max_pages, per_page=per_page)
+        return carregar_piperun(max_pages=max_pages, per_page=per_page, data_ini=data_ini, data_fim=data_fim)
     raise ValueError(f"Fonte de dados nao suportada: {fonte}")
 
 
