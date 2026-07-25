@@ -14,6 +14,197 @@ st.set_page_config(page_title="Performance PipeRun", page_icon="PR", layout="wid
 iniciar_app()
 
 
+def inject_crm_style():
+    st.markdown(
+        """
+        <style>
+        :root {
+            --crm-bg: #0b1020;
+            --crm-panel: #111827;
+            --crm-panel-2: #151d2f;
+            --crm-border: rgba(148, 163, 184, .20);
+            --crm-muted: #94a3b8;
+            --crm-text: #f8fafc;
+            --crm-accent: #22c55e;
+            --crm-accent-2: #38bdf8;
+            --crm-warn: #f59e0b;
+        }
+        .stApp {
+            background:
+                radial-gradient(circle at 15% 0%, rgba(56, 189, 248, .12), transparent 28rem),
+                radial-gradient(circle at 85% 8%, rgba(34, 197, 94, .10), transparent 26rem),
+                var(--crm-bg);
+            color: var(--crm-text);
+        }
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+            border-right: 1px solid var(--crm-border);
+        }
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] label {
+            color: var(--crm-text) !important;
+        }
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 3rem;
+            max-width: 1500px;
+        }
+        h1, h2, h3 {
+            letter-spacing: 0;
+        }
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="input"] > div,
+        div[data-baseweb="base-input"] {
+            background: rgba(15, 23, 42, .92) !important;
+            border: 1px solid var(--crm-border) !important;
+            border-radius: 10px !important;
+        }
+        .stDateInput input,
+        .stNumberInput input {
+            color: var(--crm-text) !important;
+        }
+        .crm-hero {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1.25rem 1.35rem;
+            margin-bottom: 1rem;
+            border: 1px solid var(--crm-border);
+            border-radius: 18px;
+            background:
+                linear-gradient(135deg, rgba(34, 197, 94, .16), rgba(56, 189, 248, .07)),
+                rgba(15, 23, 42, .86);
+            box-shadow: 0 20px 55px rgba(0, 0, 0, .28);
+        }
+        .crm-kicker {
+            color: var(--crm-accent);
+            font-size: .78rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            margin-bottom: .35rem;
+        }
+        .crm-title {
+            color: var(--crm-text);
+            font-size: 2.15rem;
+            font-weight: 850;
+            line-height: 1.1;
+            margin: 0;
+        }
+        .crm-subtitle {
+            color: var(--crm-muted);
+            margin-top: .45rem;
+            font-size: .98rem;
+        }
+        .crm-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: .45rem;
+            padding: .6rem .85rem;
+            border-radius: 999px;
+            border: 1px solid rgba(34, 197, 94, .30);
+            background: rgba(34, 197, 94, .10);
+            color: #bbf7d0;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+        .crm-section {
+            margin: 1.2rem 0 .8rem;
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        .crm-section h2 {
+            margin: 0;
+            font-size: 1.35rem;
+            font-weight: 820;
+        }
+        .crm-section p {
+            margin: .25rem 0 0;
+            color: var(--crm-muted);
+            font-size: .9rem;
+        }
+        .crm-card {
+            min-height: 112px;
+            padding: 1rem 1.05rem;
+            border-radius: 16px;
+            border: 1px solid var(--crm-border);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015)),
+                rgba(17, 24, 39, .88);
+            box-shadow: 0 14px 34px rgba(0, 0, 0, .22);
+        }
+        .crm-card-label {
+            color: #cbd5e1;
+            font-size: .82rem;
+            font-weight: 760;
+            text-transform: uppercase;
+            letter-spacing: .03em;
+            min-height: 2.1rem;
+        }
+        .crm-card-value {
+            color: var(--crm-text);
+            font-size: 2.2rem;
+            line-height: 1;
+            font-weight: 850;
+            margin-top: .35rem;
+        }
+        .crm-card-subtitle {
+            color: var(--crm-muted);
+            font-size: .82rem;
+            margin-top: .65rem;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+        .crm-card-accent {
+            width: 38px;
+            height: 4px;
+            border-radius: 999px;
+            margin-top: .85rem;
+            background: linear-gradient(90deg, var(--crm-accent), var(--crm-accent-2));
+        }
+        .crm-filter-panel {
+            padding: .85rem 1rem;
+            border: 1px solid var(--crm-border);
+            border-radius: 16px;
+            background: rgba(17, 24, 39, .74);
+            margin-bottom: 1rem;
+        }
+        div[data-testid="stDataFrame"] {
+            border: 1px solid var(--crm-border);
+            border-radius: 14px;
+            overflow: hidden;
+            background: rgba(15, 23, 42, .70);
+        }
+        .stAlert {
+            border-radius: 14px;
+        }
+        hr {
+            border-color: var(--crm-border);
+            margin: 1.2rem 0;
+        }
+        @media (max-width: 900px) {
+            .crm-hero {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+            .crm-title {
+                font-size: 1.65rem;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+inject_crm_style()
+
+
 DEAL_ENDPOINTS = ["deals", "opportunities", "cards", "leads"]
 ACTION_ENDPOINTS = ["activities", "notes", "histories", "history", "timeline", "timelines", "tasks", "visits", "events", "actions"]
 USER_ENDPOINTS = ["users", "account/users", "user"]
@@ -121,12 +312,45 @@ def sum_row(df: pd.DataFrame, metric_cols: list[str]) -> dict:
     return {col: int(pd.to_numeric(df[col], errors="coerce").fillna(0).sum()) for col in metric_cols}
 
 
+def fmt_number(value) -> str:
+    return f"{to_int(value):,}".replace(",", ".")
+
+
+def crm_section(title: str, subtitle: str = ""):
+    st.markdown(
+        f"""
+        <div class="crm-section">
+            <div>
+                <h2>{title}</h2>
+                <p>{subtitle}</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def crm_metric(label: str, value, subtitle: str = ""):
+    st.markdown(
+        f"""
+        <div class="crm-card">
+            <div class="crm-card-label">{label}</div>
+            <div class="crm-card-value">{fmt_number(value)}</div>
+            <div class="crm-card-subtitle">{subtitle}</div>
+            <div class="crm-card-accent"></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def show_metric_grid(metrics: dict, items: list[tuple[str, str]], per_row: int = 4):
     if not items:
         return
     cols = st.columns(per_row)
     for idx, (label, key) in enumerate(items):
-        cols[idx % per_row].metric(label, to_int(metrics.get(key, 0)))
+        with cols[idx % per_row]:
+            crm_metric(label, metrics.get(key, 0))
 
 
 def show_entity_cards(df: pd.DataFrame, title_col: str, metric_col: str, limit: int = 12):
@@ -144,9 +368,7 @@ def show_entity_cards(df: pd.DataFrame, title_col: str, metric_col: str, limit: 
             label = str(row.get(title_col, "Sem nome"))
             subtitle = str(row.get("equipe", "")) if title_col != "equipe" else ""
             with cols[idx]:
-                st.metric(label, to_int(row.get(metric_col, 0)))
-                if subtitle:
-                    st.caption(subtitle)
+                crm_metric(label, row.get(metric_col, 0), subtitle)
 
 
 def metric_key(value) -> str:
@@ -486,9 +708,6 @@ def carregar_piperun(
     }
 
 
-st.title("Performance PipeRun")
-st.caption("Painel por periodo, corretor, atividades e etapas do funil.")
-
 perfil = st.session_state.get("perfil", "")
 nome_usuario = st.session_state.get("nome_usuario", "").upper().strip()
 token_secrets = get_piperun_token()
@@ -611,24 +830,47 @@ metric_cols = [c for c in df_corretor.columns if c not in ["equipe", "responsave
 activity_cols = sorted([c for c in metric_cols if c not in BASE_COLS])
 stage_cols_available = [c for c in STAGE_COLS if c in df_corretor.columns]
 
+st.markdown(
+    f"""
+    <div class="crm-hero">
+        <div>
+            <div class="crm-kicker">Performance Comercial</div>
+            <h1 class="crm-title">Pipeline PipeRun</h1>
+            <div class="crm-subtitle">Visao executiva por periodo, corretor, atividades e etapas do funil.</div>
+        </div>
+        <div class="crm-pill">{data_ini.strftime('%d/%m/%Y')} ate {data_fim.strftime('%d/%m/%Y')}</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 corretores = sorted(df_corretor["responsavel"].dropna().unique().tolist()) if not df_corretor.empty else []
+st.markdown('<div class="crm-filter-panel">', unsafe_allow_html=True)
 col1, col2, col3 = st.columns([1.2, 1.2, 2])
 with col1:
     corretor_sel = st.selectbox("Ver corretor", ["Toda imobiliaria"] + corretores)
 with col2:
     menu = st.selectbox("Menu", ["Resumo", "Atividades", "Funil", "Corretores"])
 with col3:
-    st.caption(
-        f"Periodo: {data_ini.strftime('%d/%m/%Y')} ate {data_fim.strftime('%d/%m/%Y')} | "
-        f"Leads: {len(deals_result.data)} | Atividades: {len(actions_df)}"
+    st.markdown(
+        f"""
+        <div class="crm-card" style="min-height: 76px; padding: .85rem 1rem;">
+            <div class="crm-card-label">Base carregada</div>
+            <div style="color:#e2e8f0;font-weight:800;margin-top:.25rem;">
+                {len(deals_result.data)} leads · {len(actions_df)} atividades
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
+st.markdown("</div>", unsafe_allow_html=True)
 
 df_view = df_corretor.copy()
 if corretor_sel != "Toda imobiliaria":
     df_view = df_view[df_view["responsavel"] == corretor_sel].copy()
 
 resumo = sum_row(df_view, metric_cols)
-st.subheader("Toda imobiliaria" if corretor_sel == "Toda imobiliaria" else corretor_sel)
+crm_section("Toda imobiliaria" if corretor_sel == "Toda imobiliaria" else corretor_sel, "Resumo rapido dos indicadores selecionados")
 
 show_metric_grid(
     resumo,
@@ -652,7 +894,7 @@ show_metric_grid(
 st.markdown("---")
 
 if menu == "Resumo":
-    st.subheader("Indicadores principais")
+    crm_section("Indicadores principais", "Acompanhamento geral do periodo")
     show_metric_grid(
         resumo,
         [
@@ -667,11 +909,11 @@ if menu == "Resumo":
         ],
     )
 
-    st.subheader("Equipes")
+    crm_section("Equipes", "Distribuicao de cards por equipe")
     show_entity_cards(df_equipe, "equipe", "cards_total", limit=12)
 
 elif menu == "Atividades":
-    st.subheader("Leads unicos por atividade")
+    crm_section("Leads unicos por atividade", "Escolha uma atividade para ver quantidade, corretores e clientes")
     if activity_cols:
         atividade_sel = st.selectbox(
             "Escolha a atividade",
@@ -702,10 +944,10 @@ elif menu == "Atividades":
             ],
         )
 
-        st.subheader(f"Corretores em {pretty_label(atividade_sel)}")
+        crm_section(f"Corretores em {pretty_label(atividade_sel)}")
         show_entity_cards(df_view, "responsavel", atividade_sel, limit=16)
 
-        st.subheader(f"Leads em {pretty_label(atividade_sel)}")
+        crm_section(f"Leads em {pretty_label(atividade_sel)}")
         if clientes_atividade.empty:
             st.info("Nenhum lead encontrado para essa atividade.")
         else:
@@ -714,7 +956,7 @@ elif menu == "Atividades":
         st.info("Nenhuma atividade detalhada foi identificada no retorno da API.")
 
 elif menu == "Funil":
-    st.subheader("Itens do funil")
+    crm_section("Itens do funil", "Visao por etapa e status comercial")
     if stage_cols_available:
         item_funil = st.selectbox(
             "Escolha o item do funil",
@@ -731,16 +973,16 @@ elif menu == "Funil":
             ],
         )
 
-        st.subheader(f"Corretores em {pretty_label(item_funil)}")
+        crm_section(f"Corretores em {pretty_label(item_funil)}")
         show_entity_cards(df_view, "responsavel", item_funil, limit=16)
 
-        st.subheader(f"Equipes em {pretty_label(item_funil)}")
+        crm_section(f"Equipes em {pretty_label(item_funil)}")
         show_entity_cards(df_equipe, "equipe", item_funil, limit=12)
     else:
         st.info("Sem etapas do funil para exibir.")
 
 elif menu == "Corretores":
-    st.subheader("Ranking por corretor")
+    crm_section("Ranking por corretor", "Compare os indicadores por responsavel")
     col_rank_1, col_rank_2 = st.columns(2)
     with col_rank_1:
         ranking_metric = st.selectbox(
@@ -762,7 +1004,7 @@ elif menu == "Corretores":
 
     show_entity_cards(ranking_view, "responsavel", ranking_metric, limit=24)
 
-    st.subheader(f"Clientes em {pretty_label(ranking_metric)}")
+    crm_section(f"Clientes em {pretty_label(ranking_metric)}")
     clientes = build_client_table(
         ranking_metric,
         corretor_ranking,
