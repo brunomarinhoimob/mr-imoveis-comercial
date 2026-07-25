@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+import pandas as pd
 import streamlit as st
 
 from login import tela_login
@@ -71,7 +72,7 @@ max_pages = max(1, int((limite_registros + per_page - 1) / per_page))
 
 st.sidebar.title("Filtros")
 hoje = date.today()
-data_ini = st.sidebar.date_input("Data inicial", value=hoje - timedelta(days=30), format="DD/MM/YYYY")
+data_ini = st.sidebar.date_input("Data inicial", value=hoje - timedelta(days=7), format="DD/MM/YYYY")
 data_fim = st.sidebar.date_input("Data final", value=hoje, format="DD/MM/YYYY")
 if data_ini > data_fim:
     st.error("A data inicial nao pode ser maior que a data final.")
@@ -104,12 +105,13 @@ base_cor = df if equipe_sel == "Todas" else df[df["EQUIPE"] == equipe_sel]
 lista_corretor = sorted(base_cor["CORRETOR"].dropna().unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
-mask_dia = (df["DIA"] >= data_ini) & (df["DIA"] <= data_fim)
+dia_ref = pd.to_datetime(df["DIA"], errors="coerce").dt.date
+mask_dia = dia_ref.notna() & (dia_ref >= data_ini) & (dia_ref <= data_fim)
 if "DATA_1_ANALISE" in df.columns:
-    data_analise = df["DATA_1_ANALISE"]
+    data_analise = pd.to_datetime(df["DATA_1_ANALISE"], errors="coerce").dt.date
     mask_analise = data_analise.notna() & (data_analise >= data_ini) & (data_analise <= data_fim)
 else:
-    mask_analise = False
+    mask_analise = pd.Series(False, index=df.index)
 df_filtrado = df[mask_dia | mask_analise].copy()
 
 if equipe_sel != "Todas":
