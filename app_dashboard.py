@@ -48,12 +48,27 @@ if perfil == "corretor":
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def carregar_dados(_refresh_key=None):
-    return carregar_base_comercial()
+def carregar_dados(max_pages: int, per_page: int, _refresh_key=None):
+    return carregar_base_comercial(fonte="piperun", max_pages=max_pages, per_page=per_page)
 
+
+st.sidebar.title("PipeRun")
+limite_registros = st.sidebar.slider(
+    "Quantidade de leads para carregar",
+    min_value=100,
+    max_value=5000,
+    value=500,
+    step=100,
+)
+per_page = 100
+max_pages = max(1, int((limite_registros + per_page - 1) / per_page))
 
 with st.spinner("Carregando base comercial..."):
-    df = carregar_dados(_refresh_key=st.session_state.get("refresh_planilha"))
+    df = carregar_dados(
+        max_pages=max_pages,
+        per_page=per_page,
+        _refresh_key=st.session_state.get("refresh_planilha"),
+    )
 
 df = aplicar_perfil_corretor(df, perfil, nome_usuario)
 if df.empty:
@@ -192,6 +207,6 @@ metric_grid(
 )
 
 st.markdown(
-    f"<p style='text-align:center; color:#64748b; margin-top:2rem;'>Painel Comercial · base atual: Google Sheets · VGV total {format_currency(resumo['vgv_total'])}</p>",
+    f"<p style='text-align:center; color:#64748b; margin-top:2rem;'>Painel Comercial - base atual: PipeRun - VGV total {format_currency(resumo['vgv_total'])}</p>",
     unsafe_allow_html=True,
 )

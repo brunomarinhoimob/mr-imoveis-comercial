@@ -1,172 +1,223 @@
-from datetime import datetime
+from __future__ import annotations
+
+import unicodedata
+from datetime import date
+from typing import Iterable
 
 import pandas as pd
 
-
-SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
-GID_ANALISES = "1574157905"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
+from utils.piperun_client import PiperunClient
 
 
-def limpar_para_data(serie: pd.Series) -> pd.Series:
-    dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
-    return dt.dt.date
+DEAL_ENDPOINTS = ["deals", "opportunities", "cards", "leads"]
+USER_ENDPOINTS = ["users", "account/users", "user"]
+STAGE_ENDPOINTS = ["stages", "pipeline-stages", "pipeline_stages", "pipelines/stages"]
+PIPELINE_ENDPOINTS = ["pipelines", "pipeline", "funnels"]
 
 
-def mes_ano_ptbr_para_date(valor: str):
-    if pd.isna(valor):
-        return pd.NaT
+def normalize_text(value) -> str:
+    if pd.isna(value):
+        return ""
+    text = str(value).strip().upper()
+    text = unicodedata.normalize("NFKD", text).encode("ascii", errors="ignore").decode("ascii")
+    return " ".join(text.split())
 
-    texto = str(valor).strip().lower()
-    if not texto:
-        return pd.NaT
 
-    meses = {
-        "janeiro": 1,
-        "fevereiro": 2,
-        "marco": 3,
-        "março": 3,
-        "abril": 4,
-        "maio": 5,
-        "junho": 6,
-        "julho": 7,
-        "agosto": 8,
-        "setembro": 9,
-        "outubro": 10,
-        "novembro": 11,
-        "dezembro": 12,
+def normalize_id(value) -> str:
+    if pd.isna(value):
+        return ""
+    text = str(value).strip()
+    if not text or text.lower() in {"none", "nan", "null"}:
+        return ""
+    try:
+        number = float(text)
+        if number.is_integer():
+            return str(int(number))
+    except Exception:
+        pass
+    return text[:-2] if text.endswith(".0") and text[:-2].isdigit() else text
+
+
+def first_existing(columns: Iterable[str], candidates: Iterable[str]) -> str:
+    available = {str(col).lower(): col for col in columns}
+    normalized = {normalize_text(col).replace(" ", "_").lower(): col for col in columns}
+
+    for candidate in candidates:
+        key = candidate.lower()
+        if key in available:
+            return available[key]
+        if key in normalized:
+            return normalized[key]
+
+    for candidate in candidates:
+        key = candidate.lower()
+        for col_lower, real_col in available.items():
+            if key in col_lower:
+                return real_col
+    return ""
+
+
+def make_lookup(df: pd.DataFrame, id_candidates: list[str], value_candidates: list[str]) -> dict[str, str]:
+    if df is None or df.empty:
+        return {}
+    id_col = first_existing(df.columns, id_candidates)
+    value_col = first_existing(df.columns, value_candidates)
+    if not id_col or not value_col:
+        return {}
+
+    lookup = {}
+    for _, row in df[[id_col, value_col]].dropna(subset=[id_col]).iterrows():
+        key = normalize_id(row[id_col])
+        value = normalize_text(row[value_col])
+        if key and value:
+            lookup[key] = value
+    return lookup
+
+
+def status_from_piperun(stage: str, pipeline: str, status: str) -> str:
+    stage_text = normalize_text(stage)
+    pipeline_text = normalize_text(pipeline)
+    status_text = normalize_text(status)
+    combined = f"{pipeline_text} {stage_text} {status_text}"
+
+    if any(word in combined for word in ["DESIST", "PERDIDO", "LOST"]):
+        return "DESISTIU"
+    if "REPROV" in combined or "RECUSAD" in combined:
+        return "REPROVADO"
+    if "APROVADO BACEN" in combined:
+        return "APROVADO BACEN"
+    if "RESTRICAO" in combined or "CONDICIONADO" in combined:
+        return "APROVADO COM RESTRICAO"
+    if "APROV" in combined or "GANHO" in combined or "WON" in combined:
+        return "APROVADO"
+    if "VENDA" in combined or "FINANCEIRO" in combined or "PAGAMENTO" in combined:
+        return "VENDA GERADA"
+    if "REANALISE" in combined:
+        return "REANALISE"
+    if "ANALISE" in combined or "CREDITO" in combined or "NOVA ANALISE" in combined:
+        return "EM ANALISE"
+    return ""
+
+
+def month_label(series: pd.Series) -> pd.Series:
+    return pd.to_datetime(series, errors="coerce").dt.strftime("%m/%Y").fillna("")
+
+
+def fetch_piperun_reference_maps(client: PiperunClient, per_page: int) -> dict[str, dict[str, str]]:
+    users = client.fetch_first_available(USER_ENDPOINTS, params={}, max_pages=5, per_page=per_page)
+    stages = client.fetch_first_available(STAGE_ENDPOINTS, params={}, max_pages=10, per_page=per_page)
+    pipelines = client.fetch_first_available(PIPELINE_ENDPOINTS, params={}, max_pages=5, per_page=per_page)
+
+    users_df = users.data if users.ok else pd.DataFrame()
+    stages_df = stages.data if stages.ok else pd.DataFrame()
+    pipelines_df = pipelines.data if pipelines.ok else pd.DataFrame()
+
+    return {
+        "user_name": make_lookup(users_df, ["id", "user_id", "owner_id"], ["name", "nome", "user.name", "owner.name", "email"]),
+        "user_team": make_lookup(users_df, ["id", "user_id", "owner_id"], ["team.name", "team", "equipe", "group.name", "department.name"]),
+        "stage_name": make_lookup(stages_df, ["id", "stage_id", "pipeline_stage_id"], ["name", "nome", "title", "stage.name", "description"]),
+        "pipeline_name": make_lookup(pipelines_df, ["id", "pipeline_id", "funil_id"], ["name", "nome", "title", "pipeline.name", "description"]),
     }
 
-    partes = texto.split()
-    try:
-        mes = meses.get(partes[0])
-        ano = int(partes[-1])
-        if mes is None:
-            return pd.NaT
-        return datetime(ano, mes, 1).date()
-    except Exception:
-        return pd.NaT
 
+def piperun_deals_to_commercial_df(deals_raw: pd.DataFrame, refs: dict[str, dict[str, str]]) -> pd.DataFrame:
+    if deals_raw is None or deals_raw.empty:
+        return pd.DataFrame()
 
-def normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = [str(col).strip().upper() for col in df.columns]
-    return df
+    df = deals_raw.copy()
+    cols = df.columns
 
+    id_col = first_existing(cols, ["id", "deal_id", "opportunity_id", "card_id"])
+    title_col = first_existing(cols, ["title", "name", "nome", "deal_title", "person.name", "customer.name"])
+    client_col = first_existing(cols, ["person.name", "contact.name", "customer.name", "client.name", "company.name", "title", "name"])
+    cpf_col = first_existing(cols, ["person.cpf", "contact.cpf", "customer.cpf", "cpf", "document", "document_number"])
+    created_col = first_existing(cols, ["created_at", "created", "data_criacao", "data_captura", "createdAt"])
+    updated_col = first_existing(cols, ["updated_at", "last_stage_updated_at", "stage_changed_at", "last_contact_at"])
+    owner_col = first_existing(cols, ["owner.name", "user.name", "responsible.name", "responsavel", "owner", "user_name"])
+    owner_id_col = first_existing(cols, ["owner.id", "user.id", "responsible.id", "owner_id", "user_id"])
+    team_col = first_existing(cols, ["team.name", "team", "equipe", "company_team.name"])
+    stage_col = first_existing(cols, ["stage.name", "stage", "step.name", "status.name", "column.name", "etapa", "pipeline_stage.name"])
+    stage_id_col = first_existing(cols, ["stage_id", "pipeline_stage_id", "stage.id"])
+    pipeline_col = first_existing(cols, ["pipeline.name", "pipeline", "funil"])
+    pipeline_id_col = first_existing(cols, ["pipeline_id", "pipeline.id", "funil_id"])
+    status_col = first_existing(cols, ["status", "deal_status", "state"])
+    value_col = first_existing(cols, ["value", "valor", "amount", "price", "value_mrr"])
 
-def preparar_datas(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    if "DATA" in df.columns:
-        df["DIA"] = limpar_para_data(df["DATA"])
-    elif "DIA" in df.columns:
-        df["DIA"] = limpar_para_data(df["DIA"])
+    out = pd.DataFrame(index=df.index)
+    out["ID_LEAD"] = df[id_col].apply(normalize_id) if id_col else df.index.astype(str)
+
+    raw_date = df[created_col] if created_col else df[updated_col] if updated_col else pd.NaT
+    out["DIA"] = pd.to_datetime(raw_date, errors="coerce").dt.date
+    out["DATA_BASE"] = pd.to_datetime(out["DIA"], errors="coerce").dt.to_period("M").dt.to_timestamp().dt.date
+    out["DATA_BASE_LABEL"] = month_label(out["DIA"])
+
+    if owner_col:
+        out["CORRETOR"] = df[owner_col].apply(normalize_text)
+    elif owner_id_col:
+        out["CORRETOR"] = df[owner_id_col].apply(normalize_id).map(refs.get("user_name", {})).fillna("")
     else:
-        df["DIA"] = pd.NaT
+        out["CORRETOR"] = ""
+    if owner_id_col:
+        mapped_owner = df[owner_id_col].apply(normalize_id).map(refs.get("user_name", {}))
+        out["CORRETOR"] = mapped_owner.fillna(out["CORRETOR"])
+    out["CORRETOR"] = out["CORRETOR"].replace("", "SEM RESPONSAVEL")
 
-    possiveis_cols_base = [
-        "DATA BASE",
-        "DATA_BASE",
-        "DT BASE",
-        "DATA REF",
-        "DATA REFERENCIA",
-        "DATA REFERÊNCIA",
-    ]
-    col_data_base = next((col for col in possiveis_cols_base if col in df.columns), None)
-
-    if col_data_base:
-        base_raw = df[col_data_base].astype(str).str.strip()
-        df["DATA_BASE_LABEL"] = base_raw.str.lower().str.title()
-        df["DATA_BASE"] = base_raw.apply(mes_ano_ptbr_para_date)
-
-        if df["DATA_BASE"].dropna().empty:
-            df["DATA_BASE"] = df["DIA"]
-            df["DATA_BASE_LABEL"] = df["DIA"].apply(lambda d: d.strftime("%m/%Y") if pd.notnull(d) else "")
+    if team_col:
+        out["EQUIPE"] = df[team_col].apply(normalize_text)
     else:
-        df["DATA_BASE"] = df["DIA"]
-        df["DATA_BASE_LABEL"] = df["DIA"].apply(lambda d: d.strftime("%m/%Y") if pd.notnull(d) else "")
+        out["EQUIPE"] = ""
+    if owner_id_col:
+        mapped_team = df[owner_id_col].apply(normalize_id).map(refs.get("user_team", {}))
+        out["EQUIPE"] = mapped_team.fillna(out["EQUIPE"])
+    out["EQUIPE"] = out["EQUIPE"].replace("", "SEM EQUIPE")
 
-    return df
+    stage = df[stage_col].apply(normalize_text) if stage_col else pd.Series("", index=df.index)
+    if stage_id_col:
+        mapped_stage = df[stage_id_col].apply(normalize_id).map(refs.get("stage_name", {}))
+        stage = mapped_stage.fillna(stage)
 
+    pipeline = df[pipeline_col].apply(normalize_text) if pipeline_col else pd.Series("", index=df.index)
+    if pipeline_id_col:
+        mapped_pipeline = df[pipeline_id_col].apply(normalize_id).map(refs.get("pipeline_name", {}))
+        pipeline = mapped_pipeline.fillna(pipeline)
 
-def preparar_equipe_corretor(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    for col in ["EQUIPE", "CORRETOR"]:
-        if col in df.columns:
-            df[col] = df[col].fillna("NAO INFORMADO").astype(str).str.upper().str.strip()
-        else:
-            df[col] = "NAO INFORMADO"
-    return df
+    status = df[status_col].apply(normalize_text) if status_col else pd.Series("", index=df.index)
+    out["FUNIL"] = pipeline
+    out["ETAPA"] = stage
+    out["STATUS_BASE"] = [status_from_piperun(etapa, funil, stat) for etapa, funil, stat in zip(stage, pipeline, status)]
 
+    if client_col:
+        out["NOME_CLIENTE_BASE"] = df[client_col].fillna("").astype(str).str.upper().str.strip()
+    elif title_col:
+        out["NOME_CLIENTE_BASE"] = df[title_col].fillna("").astype(str).str.upper().str.strip()
+    else:
+        out["NOME_CLIENTE_BASE"] = "NAO INFORMADO"
+    out["NOME_CLIENTE_BASE"] = out["NOME_CLIENTE_BASE"].replace("", "NAO INFORMADO")
 
-def preparar_status(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    possiveis_cols_situacao = [
-        "SITUAÇÃO",
-        "SITUAÇÃO ATUAL",
-        "STATUS",
-        "SITUACAO",
-        "SITUACAO ATUAL",
-    ]
-    col_situacao = next((col for col in possiveis_cols_situacao if col in df.columns), None)
-    df["STATUS_BASE"] = ""
-
-    if not col_situacao:
-        return df
-
-    status = df[col_situacao].fillna("").astype(str).str.upper()
-    df.loc[status.str.contains("EM ANÁLISE|EM ANALISE", na=False), "STATUS_BASE"] = "EM ANALISE"
-    df.loc[status.str.contains("REANÁLISE|REANALISE", na=False), "STATUS_BASE"] = "REANALISE"
-    df.loc[status.str.strip() == "APROVAÇÃO", "STATUS_BASE"] = "APROVADO"
-    df.loc[status.str.strip() == "APROVACAO", "STATUS_BASE"] = "APROVADO"
-    df.loc[status.str.contains("APROVADO BACEN", na=False), "STATUS_BASE"] = "APROVADO BACEN"
-    df.loc[status.str.contains("APROVADO COM RESTRIÇÃO|APROVADO COM RESTRICAO", na=False), "STATUS_BASE"] = "APROVADO COM RESTRICAO"
-    df.loc[status.str.contains("REPROV", na=False), "STATUS_BASE"] = "REPROVADO"
-    df.loc[status.str.contains("VENDA GERADA", na=False), "STATUS_BASE"] = "VENDA GERADA"
-    df.loc[status.str.contains("VENDA INFORMADA", na=False), "STATUS_BASE"] = "VENDA INFORMADA"
-    df.loc[status.str.contains("DESIST", na=False), "STATUS_BASE"] = "DESISTIU"
-    return df
-
-
-def preparar_cliente_vgv(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0) if "OBSERVAÇÕES" in df.columns else 0
-
-    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
-    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
-    col_nome = next((col for col in possiveis_nome if col in df.columns), None)
-    col_cpf = next((col for col in possiveis_cpf if col in df.columns), None)
-
-    df["NOME_CLIENTE_BASE"] = (
-        df[col_nome].fillna("NAO INFORMADO").astype(str).str.upper().str.strip()
-        if col_nome
-        else "NAO INFORMADO"
-    )
-    df["CPF_CLIENTE_BASE"] = (
-        df[col_cpf].fillna("").astype(str).str.replace(r"\D", "", regex=True)
-        if col_cpf
+    out["CPF_CLIENTE_BASE"] = (
+        df[cpf_col].fillna("").astype(str).str.replace(r"\D", "", regex=True)
+        if cpf_col
         else ""
     )
-    df["CHAVE_CLIENTE"] = df["NOME_CLIENTE_BASE"].fillna("NAO INFORMADO") + " | " + df["CPF_CLIENTE_BASE"].fillna("")
-    return df
+    out["VGV"] = pd.to_numeric(df[value_col], errors="coerce").fillna(0) if value_col else 0
+    out["CHAVE_CLIENTE"] = out["NOME_CLIENTE_BASE"].fillna("NAO INFORMADO") + " | " + out["CPF_CLIENTE_BASE"].fillna("") + " | " + out["ID_LEAD"].fillna("")
+
+    return out
 
 
-def preparar_base_comercial(df: pd.DataFrame) -> pd.DataFrame:
-    df = normalizar_colunas(df)
-    df = preparar_datas(df)
-    df = preparar_equipe_corretor(df)
-    df = preparar_status(df)
-    df = preparar_cliente_vgv(df)
-    return df
+def carregar_piperun(max_pages: int = 5, per_page: int = 100) -> pd.DataFrame:
+    client = PiperunClient()
+    result = client.fetch_first_available(DEAL_ENDPOINTS, params={}, max_pages=max_pages, per_page=per_page)
+    if not result.ok:
+        raise RuntimeError(result.error or "Nao foi possivel carregar leads do PipeRun.")
+
+    refs = fetch_piperun_reference_maps(client, per_page=per_page)
+    return piperun_deals_to_commercial_df(result.data, refs)
 
 
-def carregar_google_sheets() -> pd.DataFrame:
-    df = pd.read_csv(CSV_URL)
-    return preparar_base_comercial(df)
-
-
-def carregar_base_comercial(fonte: str = "google_sheets") -> pd.DataFrame:
-    if fonte == "google_sheets":
-        return carregar_google_sheets()
+def carregar_base_comercial(fonte: str = "piperun", max_pages: int = 5, per_page: int = 100) -> pd.DataFrame:
+    if fonte == "piperun":
+        return carregar_piperun(max_pages=max_pages, per_page=per_page)
     raise ValueError(f"Fonte de dados nao suportada: {fonte}")
 
 
