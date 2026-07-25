@@ -12,8 +12,10 @@ def status_final_por_cliente(df: pd.DataFrame) -> pd.Series:
 
 
 def calcular_vendas(df_filtrado: pd.DataFrame, df_completo: pd.DataFrame, filtro_vendas: str) -> dict:
-    status_final = status_final_por_cliente(df_completo)
-    vendas_ref = df_filtrado[df_filtrado["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
+    if "GANHO" not in df_filtrado.columns:
+        vendas_ref = pd.DataFrame()
+    else:
+        vendas_ref = df_filtrado[df_filtrado["GANHO"] == True].copy()
 
     vazio = {
         "venda_gerada": 0,
@@ -26,23 +28,15 @@ def calcular_vendas(df_filtrado: pd.DataFrame, df_completo: pd.DataFrame, filtro
     if vendas_ref.empty:
         return vazio
 
-    vendas_ref = vendas_ref.merge(status_final, on="CHAVE_CLIENTE", how="left")
-    vendas_ref = vendas_ref[vendas_ref["STATUS_FINAL_CLIENTE"] != "DESISTIU"]
-    if vendas_ref.empty:
-        return vazio
-
     vendas_ref = vendas_ref.sort_values("DIA")
     vendas_ult = vendas_ref.groupby("CHAVE_CLIENTE").tail(1)
-
-    if filtro_vendas == "Somente GERADAS":
-        vendas_ult = vendas_ult[vendas_ult["STATUS_BASE"] == "VENDA GERADA"].copy()
 
     if vendas_ult.empty:
         return vazio
 
-    venda_gerada = int((vendas_ult["STATUS_BASE"] == "VENDA GERADA").sum())
-    venda_informada = int((vendas_ult["STATUS_BASE"] == "VENDA INFORMADA").sum())
-    vendas_total = venda_gerada + venda_informada
+    venda_gerada = int(vendas_ult["CHAVE_CLIENTE"].nunique())
+    venda_informada = 0
+    vendas_total = venda_gerada
     vgv_total = float(vendas_ult["VGV"].sum())
     maior_vgv = float(vendas_ult["VGV"].max()) if vendas_total else 0.0
     ticket_medio = float(vgv_total / vendas_total) if vendas_total else 0.0
@@ -60,14 +54,18 @@ def calcular_vendas(df_filtrado: pd.DataFrame, df_completo: pd.DataFrame, filtro
 def calcular_resumo_comercial(df_filtrado: pd.DataFrame, df_completo: pd.DataFrame, filtro_vendas: str) -> dict:
     status = df_filtrado["STATUS_BASE"].fillna("") if "STATUS_BASE" in df_filtrado.columns else pd.Series(dtype="object")
 
-    em_analise = int((status == "EM ANALISE").sum())
+    if "TEM_1_ANALISE" in df_filtrado.columns:
+        analises_df = df_filtrado[df_filtrado["TEM_1_ANALISE"] == True]
+        analises_total = int(analises_df["CHAVE_CLIENTE"].nunique()) if "CHAVE_CLIENTE" in analises_df.columns else len(analises_df)
+        em_analise = analises_total
+    else:
+        em_analise = int((status == "EM ANALISE").sum())
+        analises_total = em_analise + int((status == "REANALISE").sum())
     reanalise = int((status == "REANALISE").sum())
     aprovacoes = int((status == "APROVADO").sum())
     aprovado_bacen = int((status == "APROVADO BACEN").sum())
     aprovado_restricao = int((status == "APROVADO COM RESTRICAO").sum())
     reprovacoes = int((status == "REPROVADO").sum())
-    analises_total = em_analise + reanalise
-
     vendas = calcular_vendas(df_filtrado, df_completo, filtro_vendas)
     vendas_total = vendas["vendas_total"]
 

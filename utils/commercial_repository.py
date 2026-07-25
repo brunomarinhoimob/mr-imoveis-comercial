@@ -10,6 +10,7 @@ from utils.piperun_client import PiperunClient
 
 
 DEAL_ENDPOINTS = ["deals", "opportunities", "cards", "leads"]
+ACTION_ENDPOINTS = ["activities", "notes", "histories", "history", "timeline", "timelines", "actions"]
 USER_ENDPOINTS = ["users", "account/users", "user"]
 STAGE_ENDPOINTS = ["stages", "pipeline-stages", "pipeline_stages", "pipelines/stages"]
 PIPELINE_ENDPOINTS = ["pipelines", "pipeline", "funnels"]
@@ -74,6 +75,14 @@ def make_lookup(df: pd.DataFrame, id_candidates: list[str], value_candidates: li
     return lookup
 
 
+def is_won_status(stage: str, pipeline: str, status: str) -> bool:
+    stage_text = normalize_text(stage)
+    pipeline_text = normalize_text(pipeline)
+    status_text = normalize_text(status)
+    combined = f"{pipeline_text} {stage_text} {status_text}"
+    return any(word in combined for word in ["GANHO", "WON", "VENDA GANHA"])
+
+
 def status_from_piperun(stage: str, pipeline: str, status: str) -> str:
     stage_text = normalize_text(stage)
     pipeline_text = normalize_text(pipeline)
@@ -88,15 +97,53 @@ def status_from_piperun(stage: str, pipeline: str, status: str) -> str:
         return "APROVADO BACEN"
     if "RESTRICAO" in combined or "CONDICIONADO" in combined:
         return "APROVADO COM RESTRICAO"
-    if "APROV" in combined or "GANHO" in combined or "WON" in combined:
-        return "APROVADO"
-    if "VENDA" in combined or "FINANCEIRO" in combined or "PAGAMENTO" in combined:
+    if is_won_status(stage, pipeline, status):
         return "VENDA GERADA"
+    if "APROV" in combined:
+        return "APROVADO"
     if "REANALISE" in combined:
         return "REANALISE"
     if "ANALISE" in combined or "CREDITO" in combined or "NOVA ANALISE" in combined:
         return "EM ANALISE"
     return ""
+
+
+def is_primeira_analise_text(value) -> bool:
+    text = normalize_text(value)
+    if "ANALISE" not in text:
+        return False
+    return any(marker in text for marker in ["1", "1A", "1O", "PRIMEIRA", "PRIMEIRO"])
+
+
+def actions_primeira_analise(actions_raw: pd.DataFrame) -> set[str]:
+    if actions_raw is None or actions_raw.empty:
+        return set()
+
+    cols = actions_raw.columns
+    deal_id_col = first_existing(cols, ["deal_id", "deal.id", "card_id", "lead_id", "opportunity_id"])
+    if not deal_id_col:
+        return set()
+
+    text_cols = [
+        col
+        for col in cols
+        if any(key in str(col).lower() for key in ["title", "description", "comment", "text", "note", "content", "message", "type", "activity"])
+    ]
+    if not text_cols:
+        return set()
+
+    text = actions_raw[text_cols].fillna("").astype(str).agg(" ".join, axis=1)
+    mask = text.apply(is_primeira_analise_text)
+    return set(actions_raw.loc[mask, deal_id_col].apply(normalize_id).dropna().tolist())
+
+
+def carregar_atividades_piperun(client: PiperunClient, max_pages: int, per_page: int) -> pd.DataFrame:
+    frames = []
+    for endpoint in ACTION_ENDPOINTS:
+        result = client.fetch_first_available([endpoint], params={}, max_pages=max_pages, per_page=per_page)
+        if result.ok and not result.data.empty:
+            frames.append(result.data)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 def month_label(series: pd.Series) -> pd.Series:
@@ -120,7 +167,11 @@ def fetch_piperun_reference_maps(client: PiperunClient, per_page: int) -> dict[s
     }
 
 
-def piperun_deals_to_commercial_df(deals_raw: pd.DataFrame, refs: dict[str, dict[str, str]]) -> pd.DataFrame:
+def piperun_deals_to_commercial_df(
+    deals_raw: pd.DataFrame,
+    refs: dict[str, dict[str, str]],
+    primeira_analise_ids: set[str] | None = None,
+) -> pd.DataFrame:
     if deals_raw is None or deals_raw.empty:
         return pd.DataFrame()
 
@@ -184,7 +235,11 @@ def piperun_deals_to_commercial_df(deals_raw: pd.DataFrame, refs: dict[str, dict
     status = df[status_col].apply(normalize_text) if status_col else pd.Series("", index=df.index)
     out["FUNIL"] = pipeline
     out["ETAPA"] = stage
+    out["GANHO"] = [is_won_status(etapa, funil, stat) for etapa, funil, stat in zip(stage, pipeline, status)]
     out["STATUS_BASE"] = [status_from_piperun(etapa, funil, stat) for etapa, funil, stat in zip(stage, pipeline, status)]
+    primeira_analise_ids = primeira_analise_ids or set()
+    out["TEM_1_ANALISE"] = out["ID_LEAD"].isin(primeira_analise_ids)
+    out.loc[out["TEM_1_ANALISE"] & (out["STATUS_BASE"] == ""), "STATUS_BASE"] = "EM ANALISE"
 
     if client_col:
         out["NOME_CLIENTE_BASE"] = df[client_col].fillna("").astype(str).str.upper().str.strip()
@@ -212,7 +267,9 @@ def carregar_piperun(max_pages: int = 5, per_page: int = 100) -> pd.DataFrame:
         raise RuntimeError(result.error or "Nao foi possivel carregar leads do PipeRun.")
 
     refs = fetch_piperun_reference_maps(client, per_page=per_page)
-    return piperun_deals_to_commercial_df(result.data, refs)
+    actions = carregar_atividades_piperun(client, max_pages=max_pages, per_page=per_page)
+    primeira_analise_ids = actions_primeira_analise(actions)
+    return piperun_deals_to_commercial_df(result.data, refs, primeira_analise_ids=primeira_analise_ids)
 
 
 def carregar_base_comercial(fonte: str = "piperun", max_pages: int = 5, per_page: int = 100) -> pd.DataFrame:
