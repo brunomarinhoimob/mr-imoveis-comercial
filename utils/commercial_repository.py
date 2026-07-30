@@ -197,9 +197,10 @@ def actions_primeira_analise(actions_raw: pd.DataFrame) -> dict[str, date]:
     return {lead_id: data.date() if pd.notnull(data) else pd.NaT for lead_id, data in datas.items()}
 
 
-def actions_credito_por_lead(actions_raw: pd.DataFrame) -> pd.DataFrame:
+def actions_credito_por_lead(actions_raw: pd.DataFrame, refs: dict[str, dict[str, str]] | None = None) -> pd.DataFrame:
     if actions_raw is None or actions_raw.empty:
         return pd.DataFrame(columns=["ID_LEAD", "DATA_EVENTO", "ETAPA_EVENTO"])
+    refs = refs or {}
 
     cols = actions_raw.columns
     deal_id_col = first_existing(cols, ["deal_id", "deal.id", "card_id", "lead_id", "opportunity_id"])
@@ -209,19 +210,80 @@ def actions_credito_por_lead(actions_raw: pd.DataFrame) -> pd.DataFrame:
     text_cols = [
         col
         for col in cols
-        if any(key in str(col).lower() for key in ["title", "description", "comment", "text", "note", "content", "message", "type", "activity"])
+        if any(key in str(col).lower() for key in ["title", "description", "comment", "text", "note", "content", "message", "type", "activity", "assunto", "tipo"])
     ]
     if not text_cols:
         return pd.DataFrame(columns=["ID_LEAD", "DATA_EVENTO", "ETAPA_EVENTO"])
 
     data_col = action_date_column(actions_raw)
-    eventos = pd.DataFrame(index=actions_raw.index)
-    eventos["ID_LEAD"] = actions_raw[deal_id_col].apply(normalize_id)
-    eventos["TEXTO_EVENTO"] = actions_raw[text_cols].fillna("").astype(str).agg(" ".join, axis=1)
-    eventos["ETAPA_EVENTO"] = eventos["TEXTO_EVENTO"].apply(credit_stage_from_text)
-    eventos["DATA_EVENTO"] = pd.to_datetime(actions_raw[data_col], errors="coerce").dt.date if data_col else pd.NaT
-    eventos = eventos[(eventos["ID_LEAD"] != "") & (eventos["ETAPA_EVENTO"] != "")]
-    return eventos[["ID_LEAD", "DATA_EVENTO", "ETAPA_EVENTO"]].drop_duplicates()
+    stage_col = first_existing(
+        cols,
+        [
+            "stage.name",
+            "deal.stage.name",
+            "opportunity.stage.name",
+            "pipeline_stage.name",
+            "stage",
+            "etapa",
+            "deal_stage",
+            "column.name",
+        ],
+    )
+    owner_col = first_existing(cols, ["responsible.name", "responsavel", "owner.name", "user.name", "requester.name", "user_name", "owner"])
+    owner_id_col = first_existing(cols, ["owner_id", "user_id", "requester_id", "responsible.id", "owner.id", "user.id"])
+    team_col = first_existing(cols, ["team.name", "team", "equipe", "group.name", "department.name"])
+    client_col = first_existing(
+        cols,
+        [
+            "opportunity",
+            "opportunity.title",
+            "deal.title",
+            "deal.name",
+            "person.name",
+            "contact.name",
+            "customer.name",
+            "pessoa",
+            "person",
+            "title",
+        ],
+    )
+    pipeline_col = first_existing(cols, ["pipeline.name", "deal.pipeline.name", "funil", "pipeline"])
+
+    base = pd.DataFrame(index=actions_raw.index)
+    base["ID_LEAD"] = actions_raw[deal_id_col].apply(normalize_id)
+    base["TEXTO_EVENTO"] = actions_raw[text_cols].fillna("").astype(str).agg(" ".join, axis=1)
+    base["DATA_EVENTO"] = pd.to_datetime(actions_raw[data_col], errors="coerce").dt.date if data_col else pd.NaT
+    base["ETAPA_ORIGINAL"] = actions_raw[stage_col].apply(normalize_text) if stage_col else ""
+    base["ETAPA_RESULTADO"] = base["ETAPA_ORIGINAL"].apply(credit_stage_from_text)
+    base["CORRETOR"] = actions_raw[owner_col].apply(normalize_text) if owner_col else ""
+    if owner_id_col:
+        mapped_owner = actions_raw[owner_id_col].apply(normalize_id).map(refs.get("user_name", {}))
+        base["CORRETOR"] = mapped_owner.fillna(base["CORRETOR"])
+    base["CORRETOR"] = base["CORRETOR"].replace("", "SEM RESPONSAVEL")
+    base["EQUIPE"] = actions_raw[team_col].apply(normalize_text) if team_col else ""
+    if owner_id_col:
+        mapped_team = actions_raw[owner_id_col].apply(normalize_id).map(refs.get("user_team", {}))
+        base["EQUIPE"] = mapped_team.fillna(base["EQUIPE"])
+    base["EQUIPE"] = base["EQUIPE"].replace("", "SEM EQUIPE")
+    base["NOME_CLIENTE_BASE"] = actions_raw[client_col].fillna("").astype(str).str.upper().str.strip() if client_col else ""
+    base["NOME_CLIENTE_BASE"] = base["NOME_CLIENTE_BASE"].replace("", "NAO INFORMADO")
+    base["FUNIL"] = actions_raw[pipeline_col].apply(normalize_text) if pipeline_col else "CREDITO"
+
+    analises = base[base["TEXTO_EVENTO"].apply(is_primeira_analise_text) & (base["ID_LEAD"] != "")].copy()
+    if analises.empty:
+        return pd.DataFrame(columns=["ID_LEAD", "DATA_EVENTO", "ETAPA_EVENTO"])
+
+    evento_cols = ["ID_LEAD", "DATA_EVENTO", "CORRETOR", "EQUIPE", "NOME_CLIENTE_BASE", "FUNIL"]
+    eventos_analise = analises[evento_cols].copy()
+    eventos_analise["ETAPA_EVENTO"] = "NOVA ANALISE"
+
+    eventos_resultado = analises[evento_cols + ["ETAPA_RESULTADO"]].copy()
+    eventos_resultado = eventos_resultado[eventos_resultado["ETAPA_RESULTADO"] != ""]
+    eventos_resultado = eventos_resultado.rename(columns={"ETAPA_RESULTADO": "ETAPA_EVENTO"})
+    eventos_resultado = eventos_resultado[eventos_resultado["ETAPA_EVENTO"] != "NOVA ANALISE"]
+
+    eventos = pd.concat([eventos_analise, eventos_resultado], ignore_index=True)
+    return eventos[evento_cols + ["ETAPA_EVENTO"]].drop_duplicates()
 
 
 def carregar_atividades_piperun(client: PiperunClient, max_pages: int, per_page: int, params: dict | None = None) -> pd.DataFrame:
@@ -352,32 +414,87 @@ def piperun_deals_to_commercial_df(
 def carregar_piperun(max_pages: int = 5, per_page: int = 100, data_ini: date | None = None, data_fim: date | None = None) -> pd.DataFrame:
     client = PiperunClient()
     params = date_params(data_ini, data_fim) if data_ini and data_fim else {}
-    result = client.fetch_first_available(DEAL_ENDPOINTS, params=params, max_pages=max_pages, per_page=per_page)
-    if not result.ok:
-        raise RuntimeError(result.error or "Nao foi possivel carregar leads do PipeRun.")
-
     refs = fetch_piperun_reference_maps(client, per_page=per_page)
     actions = carregar_atividades_piperun(client, max_pages=max_pages, per_page=per_page, params=params)
     primeira_analise_datas = actions_primeira_analise(actions)
-    base = piperun_deals_to_commercial_df(result.data, refs, primeira_analise_datas=primeira_analise_datas)
+    eventos_credito = actions_credito_por_lead(actions, refs=refs)
 
-    eventos_credito = actions_credito_por_lead(actions)
-    if eventos_credito.empty or base.empty:
+    result = client.fetch_first_available(DEAL_ENDPOINTS, params=params, max_pages=max_pages, per_page=per_page)
+    base = piperun_deals_to_commercial_df(result.data if result.ok else pd.DataFrame(), refs, primeira_analise_datas=primeira_analise_datas)
+    if eventos_credito.empty:
+        if not result.ok and base.empty:
+            raise RuntimeError(result.error or "Nao foi possivel carregar dados do PipeRun.")
         return base
 
-    base_keys = base[["ID_LEAD", "CORRETOR", "EQUIPE", "NOME_CLIENTE_BASE", "STATUS_BASE", "GANHO", "VGV"]].drop_duplicates("ID_LEAD")
-    eventos_credito = eventos_credito.merge(base_keys, on="ID_LEAD", how="left")
+    if not base.empty:
+        base_keys = base[["ID_LEAD", "CORRETOR", "EQUIPE", "NOME_CLIENTE_BASE", "STATUS_BASE", "GANHO", "VGV"]].drop_duplicates("ID_LEAD")
+        eventos_credito = eventos_credito.merge(base_keys, on="ID_LEAD", how="left", suffixes=("", "_LEAD"))
+        for col in ["CORRETOR", "EQUIPE", "NOME_CLIENTE_BASE"]:
+            lead_col = f"{col}_LEAD"
+            if lead_col in eventos_credito.columns:
+                eventos_credito[col] = eventos_credito[col].where(eventos_credito[col].notna() & (eventos_credito[col] != ""), eventos_credito[lead_col])
+        for col, default in [("STATUS_BASE", ""), ("GANHO", False), ("VGV", 0.0)]:
+            if col not in eventos_credito.columns:
+                eventos_credito[col] = default
+    else:
+        eventos_credito["STATUS_BASE"] = ""
+        eventos_credito["GANHO"] = False
+        eventos_credito["VGV"] = 0.0
+
+    for col, default in [
+        ("CORRETOR", "SEM RESPONSAVEL"),
+        ("EQUIPE", "SEM EQUIPE"),
+        ("NOME_CLIENTE_BASE", "NAO INFORMADO"),
+        ("STATUS_BASE", ""),
+        ("GANHO", False),
+        ("VGV", 0.0),
+    ]:
+        if col not in eventos_credito.columns:
+            eventos_credito[col] = default
+        eventos_credito[col] = eventos_credito[col].fillna(default)
+
     eventos_credito["DIA"] = eventos_credito["DATA_EVENTO"]
     eventos_credito["DATA_BASE"] = pd.to_datetime(eventos_credito["DIA"], errors="coerce").dt.to_period("M").dt.to_timestamp().dt.date
     eventos_credito["DATA_BASE_LABEL"] = month_label(eventos_credito["DIA"])
-    eventos_credito["FUNIL"] = "CREDITO"
     eventos_credito["ETAPA"] = eventos_credito["ETAPA_EVENTO"]
     eventos_credito["TEM_1_ANALISE"] = eventos_credito["ETAPA_EVENTO"].eq("NOVA ANALISE")
     eventos_credito["DATA_1_ANALISE"] = eventos_credito["DATA_EVENTO"].where(eventos_credito["TEM_1_ANALISE"])
     eventos_credito["CPF_CLIENTE_BASE"] = ""
     eventos_credito["CHAVE_CLIENTE"] = eventos_credito["ID_LEAD"]
     eventos_credito["ORIGEM_REGISTRO"] = "ATIVIDADE"
+
+    if base.empty:
+        return eventos_credito[
+            [
+                "ID_LEAD",
+                "DIA",
+                "DATA_BASE",
+                "DATA_BASE_LABEL",
+                "CORRETOR",
+                "EQUIPE",
+                "FUNIL",
+                "ETAPA",
+                "GANHO",
+                "STATUS_BASE",
+                "DATA_1_ANALISE",
+                "TEM_1_ANALISE",
+                "NOME_CLIENTE_BASE",
+                "CPF_CLIENTE_BASE",
+                "VGV",
+                "CHAVE_CLIENTE",
+                "DATA_EVENTO",
+                "ETAPA_EVENTO",
+                "ORIGEM_REGISTRO",
+            ]
+        ].copy()
+
     base["ORIGEM_REGISTRO"] = "LEAD"
+    for col in eventos_credito.columns:
+        if col not in base.columns:
+            base[col] = pd.NA
+    for col in base.columns:
+        if col not in eventos_credito.columns:
+            eventos_credito[col] = pd.NA
     return pd.concat([base, eventos_credito[base.columns]], ignore_index=True)
 
 
