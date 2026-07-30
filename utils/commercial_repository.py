@@ -46,6 +46,14 @@ def normalize_id(value) -> str:
     return text[:-2] if text.endswith(".0") and text[:-2].isdigit() else text
 
 
+def client_count_key(nome, lead_id) -> str:
+    nome_norm = normalize_text(nome)
+    lead_norm = normalize_id(lead_id)
+    if nome_norm and nome_norm not in {"NAO INFORMADO", "CLIENTE SEM NOME", "NONE", "NAN"}:
+        return nome_norm
+    return lead_norm
+
+
 def first_existing(columns: Iterable[str], candidates: Iterable[str]) -> str:
     available = {str(col).lower(): col for col in columns}
     normalized = {normalize_text(col).replace(" ", "_").lower(): col for col in columns}
@@ -607,7 +615,10 @@ def carregar_piperun(max_pages: int = 5, per_page: int = 100, data_ini: date | N
     eventos_credito["TEM_1_ANALISE"] = eventos_credito["ETAPA_EVENTO"].eq("NOVA ANALISE")
     eventos_credito["DATA_1_ANALISE"] = eventos_credito["DATA_EVENTO"].where(eventos_credito["TEM_1_ANALISE"])
     eventos_credito["CPF_CLIENTE_BASE"] = ""
-    eventos_credito["CHAVE_CLIENTE"] = eventos_credito["ID_LEAD"]
+    eventos_credito["CHAVE_CLIENTE"] = [
+        client_count_key(nome, lead_id)
+        for nome, lead_id in zip(eventos_credito["NOME_CLIENTE_BASE"], eventos_credito["ID_LEAD"])
+    ]
     eventos_credito["ORIGEM_REGISTRO"] = "ATIVIDADE"
 
     if base.empty:

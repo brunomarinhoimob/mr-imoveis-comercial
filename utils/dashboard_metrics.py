@@ -70,10 +70,10 @@ def calcular_resumo_comercial(df_filtrado: pd.DataFrame, df_completo: pd.DataFra
         linhas = ref_credito[etapa_evento == nome]
         if linhas.empty:
             return 0
-        if "ID_LEAD" in linhas.columns:
-            return int(linhas["ID_LEAD"].nunique())
         if "CHAVE_CLIENTE" in linhas.columns:
             return int(linhas["CHAVE_CLIENTE"].nunique())
+        if "ID_LEAD" in linhas.columns:
+            return int(linhas["ID_LEAD"].nunique())
         return int(len(linhas))
 
     nova_analise = contar_etapa("NOVA ANALISE")

@@ -173,6 +173,23 @@ with st.expander("Conferencia das atividades consideradas nos cards"):
         if "data" in tabela_conf.columns:
             tabela_conf["data"] = pd.to_datetime(tabela_conf["data"], errors="coerce").dt.strftime("%d/%m/%Y")
         st.dataframe(tabela_conf.sort_values(["data", "corretor", "cliente"]), use_container_width=True, hide_index=True)
+        if {"CHAVE_CLIENTE", "ETAPA_EVENTO"}.issubset(eventos_conf.columns):
+            repetidos = (
+                eventos_conf.groupby(["ETAPA_EVENTO", "CHAVE_CLIENTE", "NOME_CLIENTE_BASE"], dropna=False)
+                .size()
+                .reset_index(name="registros")
+            )
+            repetidos = repetidos[repetidos["registros"] > 1]
+            if not repetidos.empty:
+                st.markdown("#### Possiveis repetidos no mesmo card")
+                repetidos = repetidos.rename(
+                    columns={
+                        "ETAPA_EVENTO": "card",
+                        "CHAVE_CLIENTE": "chave_cliente",
+                        "NOME_CLIENTE_BASE": "cliente",
+                    }
+                )
+                st.dataframe(repetidos.sort_values(["card", "registros"], ascending=[True, False]), use_container_width=True, hide_index=True)
 
 section("Vendas", "Somente leads marcados como ganho no PipeRun")
 metric_grid(
