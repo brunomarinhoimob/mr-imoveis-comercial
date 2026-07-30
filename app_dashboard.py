@@ -153,6 +153,27 @@ metric_grid(
     columns=5,
 )
 
+with st.expander("Conferencia das atividades consideradas nos cards"):
+    eventos_conf = df_filtrado[df_filtrado.get("ORIGEM_REGISTRO", "") == "ATIVIDADE"].copy()
+    if eventos_conf.empty:
+        st.info("Nenhuma atividade concluida encontrada no periodo filtrado.")
+    else:
+        colunas_conf = [
+            ("DATA_EVENTO", "data"),
+            ("ID_LEAD", "id_lead"),
+            ("NOME_CLIENTE_BASE", "cliente"),
+            ("CORRETOR", "corretor"),
+            ("EQUIPE", "equipe"),
+            ("TIPO_EVENTO", "tipo_atividade"),
+            ("ETAPA_EVENTO", "card_contabilizado"),
+        ]
+        existentes = [orig for orig, _ in colunas_conf if orig in eventos_conf.columns]
+        tabela_conf = eventos_conf[existentes].copy()
+        tabela_conf.columns = [novo for orig, novo in colunas_conf if orig in existentes]
+        if "data" in tabela_conf.columns:
+            tabela_conf["data"] = pd.to_datetime(tabela_conf["data"], errors="coerce").dt.strftime("%d/%m/%Y")
+        st.dataframe(tabela_conf.sort_values(["data", "corretor", "cliente"]), use_container_width=True, hide_index=True)
+
 section("Vendas", "Somente leads marcados como ganho no PipeRun")
 metric_grid(
     [
