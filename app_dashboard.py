@@ -22,7 +22,7 @@ if not st.session_state.logado:
 try:
     from streamlit_autorefresh import st_autorefresh
 
-    st_autorefresh(interval=30 * 1000, key="auto_refresh_dashboard")
+    st_autorefresh(interval=30 * 60 * 1000, key="auto_refresh_dashboard")
     if "auto_refresh_dashboard" in st.session_state:
         st.session_state["refresh_planilha"] = True
 except Exception:
@@ -48,7 +48,7 @@ if perfil == "corretor":
     st.sidebar.warning("Demais paginas sao restritas")
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=30 * 60, show_spinner=False)
 def carregar_dados(max_pages: int, per_page: int, data_ini: date, data_fim: date, _refresh_key=None):
     return carregar_base_comercial(
         fonte="piperun",
@@ -141,7 +141,7 @@ resumo = calcular_resumo_comercial(df_filtrado, df, filtro_vendas)
 section("Resumo do Credito", "Leads unicos com atividade registrada no periodo")
 metric_grid(
     [
-        ("Nova analise", resumo["nova_analise"]),
+        ("Analises", resumo["nova_analise"]),
         ("Conferencia Pasteiro", resumo["conferencia_pasteiro"]),
         ("Recusa Pasteiro", resumo["recusa_pasteiro"]),
         ("Analise de credito", resumo["analise_credito"]),
