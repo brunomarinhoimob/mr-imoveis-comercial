@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unicodedata
+import re
 from datetime import date
 from pathlib import Path
 from typing import Iterable
@@ -118,7 +119,9 @@ def is_primeira_analise_text(value) -> bool:
     text = normalize_text(value)
     if "ANALISE" not in text:
         return False
-    return any(marker in text for marker in ["1", "1A", "1O", "PRIMEIRA", "PRIMEIRO"])
+    if "PRIMEIRA ANALISE" in text or "PRIMEIRO ANALISE" in text:
+        return True
+    return bool(re.search(r"\b1\s*(A|O)?\s*ANALISE\b", text))
 
 
 def credit_stage_from_text(value) -> str:
@@ -181,7 +184,7 @@ def actions_primeira_analise(actions_raw: pd.DataFrame) -> dict[str, date]:
     text_cols = [
         col
         for col in cols
-        if any(key in str(col).lower() for key in ["title", "description", "comment", "text", "note", "content", "message", "type", "activity"])
+        if any(key in str(col).lower() for key in ["title", "description", "comment", "text", "note", "content", "message", "type.name", "activity_type.name"])
     ]
     if not text_cols:
         return {}
@@ -216,7 +219,7 @@ def actions_credito_por_lead(actions_raw: pd.DataFrame, refs: dict[str, dict[str
     text_cols = [
         col
         for col in cols
-        if any(key in str(col).lower() for key in ["title", "description", "comment", "text", "note", "content", "message", "type", "activity", "assunto", "tipo"])
+        if any(key in str(col).lower() for key in ["title", "description", "comment", "text", "note", "content", "message", "type.name", "activity_type.name", "assunto", "tipo"])
     ]
     if not text_cols:
         return pd.DataFrame(columns=["ID_LEAD", "DATA_EVENTO", "ETAPA_EVENTO"])
