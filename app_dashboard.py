@@ -134,35 +134,40 @@ hero(
     periodo_str,
 )
 
-filtro_vendas = st.radio(
-    "Tipo de vendas consideradas nos indicadores",
-    ["GERADAS + INFORMADAS", "Somente GERADAS"],
-    index=0,
-    horizontal=True,
-)
+filtro_vendas = "Somente GERADAS"
 
 resumo = calcular_resumo_comercial(df_filtrado, df, filtro_vendas)
 
-section("Resumo de Analises & Vendas", "Principais indicadores comerciais do periodo")
+section("Resumo do Credito", "Leads unicos com atividade registrada no periodo")
 metric_grid(
     [
-        ("Em analise", resumo["em_analise"]),
-        ("Reanalise", resumo["reanalise"]),
-        ("Aprovacoes", resumo["aprovacoes"]),
-        ("Aprovado Bacen", resumo["aprovado_bacen"]),
-        ("Aprov. Restricao", resumo["aprovado_restricao"]),
-        ("Reprovacoes", resumo["reprovacoes"]),
+        ("Nova analise", resumo["nova_analise"]),
+        ("Conferencia Pasteiro", resumo["conferencia_pasteiro"]),
+        ("Recusa Pasteiro", resumo["recusa_pasteiro"]),
+        ("Analise de credito", resumo["analise_credito"]),
+        ("Doc pendente", resumo["doc_pendente"]),
     ],
-    columns=6,
+    columns=5,
 )
 
 metric_grid(
     [
+        ("Condicionado", resumo["condicionado"]),
+        ("Restricao", resumo["restricao"]),
+        ("Reprovado", resumo["reprovado"]),
+        ("Aprovado c/ pendencia", resumo["aprovado_pendencia"]),
+        ("Aprovado", resumo["aprovado"]),
+    ],
+    columns=5,
+)
+
+section("Vendas", "Somente leads marcados como ganho no PipeRun")
+metric_grid(
+    [
         ("Vendas geradas", resumo["venda_gerada"]),
-        ("Vendas informadas", resumo["venda_informada"]),
         ("Total vendas", resumo["vendas_total"]),
     ],
-    columns=3,
+    columns=2,
 )
 
 section("Taxas de Conversao", "Leitura rapida da eficiencia comercial")

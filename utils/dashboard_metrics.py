@@ -52,20 +52,43 @@ def calcular_vendas(df_filtrado: pd.DataFrame, df_completo: pd.DataFrame, filtro
 
 
 def calcular_resumo_comercial(df_filtrado: pd.DataFrame, df_completo: pd.DataFrame, filtro_vendas: str) -> dict:
-    status = df_filtrado["STATUS_BASE"].fillna("") if "STATUS_BASE" in df_filtrado.columns else pd.Series(dtype="object")
-
-    if "TEM_1_ANALISE" in df_filtrado.columns:
-        analises_df = df_filtrado[df_filtrado["TEM_1_ANALISE"] == True].copy()
-        analises_total = int(analises_df["CHAVE_CLIENTE"].nunique()) if "CHAVE_CLIENTE" in analises_df.columns else len(analises_df)
-        em_analise = analises_total
+    if "ORIGEM_REGISTRO" in df_filtrado.columns:
+        eventos = df_filtrado[df_filtrado["ORIGEM_REGISTRO"] == "ATIVIDADE"].copy()
     else:
-        em_analise = int((status == "EM ANALISE").sum())
-        analises_total = em_analise + int((status == "REANALISE").sum())
-    reanalise = int((status == "REANALISE").sum())
-    aprovacoes = int((status == "APROVADO").sum())
-    aprovado_bacen = int((status == "APROVADO BACEN").sum())
-    aprovado_restricao = int((status == "APROVADO COM RESTRICAO").sum())
-    reprovacoes = int((status == "REPROVADO").sum())
+        eventos = pd.DataFrame()
+
+    ref_credito = eventos if not eventos.empty else df_filtrado.copy()
+    etapa_evento = (
+        ref_credito["ETAPA_EVENTO"].fillna("")
+        if "ETAPA_EVENTO" in ref_credito.columns
+        else ref_credito["ETAPA"].fillna("")
+        if "ETAPA" in ref_credito.columns
+        else pd.Series(dtype="object")
+    )
+
+    def contar_etapa(nome: str) -> int:
+        linhas = ref_credito[etapa_evento == nome]
+        if linhas.empty:
+            return 0
+        if "ID_LEAD" in linhas.columns:
+            return int(linhas["ID_LEAD"].nunique())
+        if "CHAVE_CLIENTE" in linhas.columns:
+            return int(linhas["CHAVE_CLIENTE"].nunique())
+        return int(len(linhas))
+
+    nova_analise = contar_etapa("NOVA ANALISE")
+    conferencia_pasteiro = contar_etapa("CONFERENCIA DO PASTEIRO")
+    recusa_pasteiro = contar_etapa("RECUSA PASTEIRO")
+    analise_credito = contar_etapa("ANALISE DE CREDITO")
+    doc_pendente = contar_etapa("DOC PENDENTE")
+    condicionado = contar_etapa("CONDICIONADO")
+    restricao = contar_etapa("RESTRICAO")
+    reprovado = contar_etapa("REPROVADO")
+    aprovado_pendencia = contar_etapa("APROVADO C/ PENDENCIA")
+    aprovado = contar_etapa("APROVADO")
+
+    analises_total = nova_analise
+    aprovacoes = aprovado + aprovado_pendencia
     vendas = calcular_vendas(df_filtrado, df_completo, filtro_vendas)
     vendas_total = vendas["vendas_total"]
 
@@ -74,13 +97,23 @@ def calcular_resumo_comercial(df_filtrado: pd.DataFrame, df_completo: pd.DataFra
     taxa_venda_aprov = (vendas_total / aprovacoes * 100) if aprovacoes else 0.0
 
     return {
-        "em_analise": em_analise,
-        "reanalise": reanalise,
+        "nova_analise": nova_analise,
+        "conferencia_pasteiro": conferencia_pasteiro,
+        "recusa_pasteiro": recusa_pasteiro,
+        "analise_credito": analise_credito,
+        "doc_pendente": doc_pendente,
+        "condicionado": condicionado,
+        "restricao": restricao,
+        "reprovado": reprovado,
+        "aprovado_pendencia": aprovado_pendencia,
+        "aprovado": aprovado,
+        "em_analise": nova_analise,
+        "reanalise": 0,
         "analises_total": analises_total,
         "aprovacoes": aprovacoes,
-        "aprovado_bacen": aprovado_bacen,
-        "aprovado_restricao": aprovado_restricao,
-        "reprovacoes": reprovacoes,
+        "aprovado_bacen": 0,
+        "aprovado_restricao": restricao + condicionado,
+        "reprovacoes": reprovado,
         "taxa_aprov_analise": taxa_aprov_analise,
         "taxa_venda_analise": taxa_venda_analise,
         "taxa_venda_aprov": taxa_venda_aprov,
