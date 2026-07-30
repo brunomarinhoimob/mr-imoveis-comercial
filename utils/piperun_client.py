@@ -64,6 +64,7 @@ class PiperunFetchResult:
     data: pd.DataFrame
     ok: bool
     status_code: Optional[int] = None
+    next_cursor: str = ""
     error: str = ""
 
 
@@ -114,6 +115,37 @@ class PiperunClient:
                     return nested
 
         return [payload] if payload else []
+
+    def _extract_next_cursor(self, payload: Any) -> str:
+        if not isinstance(payload, dict):
+            return ""
+
+        candidates = [
+            payload.get("next_cursor"),
+            payload.get("nextCursor"),
+            payload.get("cursor"),
+            payload.get("next"),
+        ]
+
+        meta = payload.get("meta")
+        if isinstance(meta, dict):
+            candidates.extend(
+                [
+                    meta.get("next_cursor"),
+                    meta.get("nextCursor"),
+                    meta.get("cursor"),
+                    meta.get("next"),
+                ]
+            )
+
+        links = payload.get("links")
+        if isinstance(links, dict):
+            candidates.extend([links.get("next_cursor"), links.get("nextCursor"), links.get("next")])
+
+        for value in candidates:
+            if value:
+                return str(value)
+        return ""
 
     def _request_once(
         self,
@@ -198,6 +230,7 @@ class PiperunClient:
         query = dict(params or {})
         query.setdefault("page", page)
         query.setdefault("pagina", page)
+        query.setdefault("show", per_page)
         query.setdefault("per_page", per_page)
         query.setdefault("limit", per_page)
         query.setdefault("size", per_page)
@@ -229,11 +262,13 @@ class PiperunClient:
                 continue
 
             records = self._extract_records(payload)
+            next_cursor = self._extract_next_cursor(payload)
             return PiperunFetchResult(
                 endpoint=endpoint,
                 data=pd.json_normalize(records) if records else pd.DataFrame(),
                 ok=True,
                 status_code=response.status_code,
+                next_cursor=next_cursor,
             )
 
         return PiperunFetchResult(
@@ -257,9 +292,13 @@ class PiperunClient:
             frames = []
             endpoint_ok = False
             last_result = None
+            cursor = ""
 
             for page in range(1, max_pages + 1):
-                result = self.get_page(endpoint, params=params, page=page, per_page=per_page)
+                page_params = dict(params or {})
+                if cursor:
+                    page_params["cursor"] = cursor
+                result = self.get_page(endpoint, params=page_params, page=page, per_page=per_page)
                 last_result = result
 
                 if not result.ok:
@@ -279,6 +318,10 @@ class PiperunClient:
                         break
 
                 if result.data.empty:
+                    break
+
+                cursor = result.next_cursor or ""
+                if not cursor and len(result.data) < per_page:
                     break
 
             if endpoint_ok:

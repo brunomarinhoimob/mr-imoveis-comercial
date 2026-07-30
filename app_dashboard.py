@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from login import tela_login
-from utils.commercial_repository import aplicar_perfil_corretor, baixar_export_atividades_piperun, carregar_base_comercial
+from utils.commercial_repository import aplicar_perfil_corretor, carregar_base_comercial
 from utils.crm_theme import apply_crm_theme, configure_page, format_currency, hero, metric_grid, section
 from utils.dashboard_metrics import calcular_resumo_comercial, percentual
 
@@ -64,8 +64,8 @@ def serie_data(valor):
     return datas.apply(lambda item: item.date() if pd.notna(item) else None)
 
 
-per_page = 100
-max_pages = 5
+per_page = 200
+max_pages = 50
 
 st.sidebar.title("Filtros")
 hoje = date.today()
@@ -74,19 +74,6 @@ data_fim = st.sidebar.date_input("Data final", value=hoje, format="DD/MM/YYYY")
 if data_ini > data_fim:
     st.error("A data inicial nao pode ser maior que a data final.")
     st.stop()
-
-st.sidebar.markdown("### Exportacao")
-if st.sidebar.button("Atualizar atividades do PipeRun"):
-    with st.spinner("Baixando exportacao de atividades do PipeRun..."):
-        ok, mensagem = baixar_export_atividades_piperun(data_ini, data_fim)
-    if ok:
-        carregar_dados.clear()
-        st.session_state["refresh_planilha"] = str(pd.Timestamp.now())
-        st.sidebar.success("Exportacao atualizada.")
-        st.rerun()
-    else:
-        st.sidebar.warning(mensagem)
-        st.sidebar.link_button("Abrir exportacao no PipeRun", "https://app.pipe.run/v2/settings/exports/activities")
 
 with st.spinner("Carregando base comercial..."):
     df = carregar_dados(
@@ -99,7 +86,7 @@ with st.spinner("Carregando base comercial..."):
 
 df = aplicar_perfil_corretor(df, perfil, nome_usuario)
 if df.empty:
-    st.error("Nenhuma informacao carregada. Coloque a exportacao do PipeRun na pasta data com nome iniciando por atividades.")
+    st.error("Nenhuma informacao carregada pela API do PipeRun para o periodo selecionado.")
     st.stop()
 
 dias_validos = df["DIA"].dropna()

@@ -7,11 +7,11 @@ from typing import Iterable
 
 import pandas as pd
 
-from utils.piperun_client import PiperunClient, date_params, get_piperun_activities_export_url
+from utils.piperun_client import PiperunClient, date_params
 
 
 DEAL_ENDPOINTS = ["deals", "opportunities", "cards", "leads"]
-ACTION_ENDPOINTS = ["activities", "notes", "histories", "history", "timeline", "timelines", "actions"]
+ACTION_ENDPOINTS = ["activities"]
 USER_ENDPOINTS = ["users", "account/users", "user"]
 STAGE_ENDPOINTS = ["stages", "pipeline-stages", "pipeline_stages", "pipelines/stages"]
 PIPELINE_ENDPOINTS = ["pipelines", "pipeline", "funnels"]
@@ -292,6 +292,19 @@ def actions_credito_por_lead(actions_raw: pd.DataFrame, refs: dict[str, dict[str
     return eventos[evento_cols + ["ETAPA_EVENTO"]].drop_duplicates()
 
 
+def activity_date_params(data_ini: date | None, data_fim: date | None) -> dict:
+    if not data_ini or not data_fim:
+        return {}
+    start = f"{data_ini.isoformat()} 00:00:00"
+    end = f"{data_fim.isoformat()} 23:59:59"
+    return {
+        "status": 2,
+        "with": "deal,owner,requester,activityType,persons,companies,pipeline,stage",
+        "start_at_start": start,
+        "start_at_end": end,
+    }
+
+
 def carregar_atividades_piperun(client: PiperunClient, max_pages: int, per_page: int, params: dict | None = None) -> pd.DataFrame:
     frames = []
     for endpoint in ACTION_ENDPOINTS:
@@ -383,24 +396,6 @@ def carregar_export_atividades(path: str | Path | None = None) -> pd.DataFrame:
     eventos["DATA_1_ANALISE"] = eventos["DATA_EVENTO"].where(eventos["TEM_1_ANALISE"])
     eventos["ORIGEM_REGISTRO"] = "EXPORT_ATIVIDADES"
     return eventos.drop_duplicates()
-
-
-def baixar_export_atividades_piperun(data_ini: date, data_fim: date) -> tuple[bool, str]:
-    export_url = get_piperun_activities_export_url()
-    if not export_url:
-        return False, "Configure PIPERUN_ACTIVITIES_EXPORT_URL nos secrets para baixar automaticamente."
-
-    client = PiperunClient(timeout=90)
-    params = date_params(data_ini, data_fim)
-    params.update(
-        {
-            "type": "xlsx",
-            "format": "xlsx",
-            "activity_type": "1° analise",
-            "tipo_atividade": "1° analise",
-        }
-    )
-    return client.download_file(export_url, str(EXPORT_ATIVIDADES_DESTINO), params=params)
 
 
 def fetch_piperun_reference_maps(client: PiperunClient, per_page: int) -> dict[str, dict[str, str]]:
@@ -516,17 +511,21 @@ def piperun_deals_to_commercial_df(
 
 
 def carregar_piperun(max_pages: int = 5, per_page: int = 100, data_ini: date | None = None, data_fim: date | None = None) -> pd.DataFrame:
-    export_df = carregar_export_atividades()
-    if not export_df.empty:
-        return export_df
-
     client = PiperunClient()
-    params = date_params(data_ini, data_fim) if data_ini and data_fim else {}
     refs = fetch_piperun_reference_maps(client, per_page=per_page)
-    actions = carregar_atividades_piperun(client, max_pages=max_pages, per_page=per_page, params=params)
+    activity_params = activity_date_params(data_ini, data_fim)
+    actions = carregar_atividades_piperun(client, max_pages=max_pages, per_page=per_page, params=activity_params)
     primeira_analise_datas = actions_primeira_analise(actions)
     eventos_credito = actions_credito_por_lead(actions, refs=refs)
 
+    params = {"with": "persons,companies,users,pipeline,stage"}
+    if data_ini and data_fim:
+        params.update(
+            {
+                "stage_movement_at_start": f"{data_ini.isoformat()} 00:00:00",
+                "stage_movement_at_end": f"{data_fim.isoformat()} 23:59:59",
+            }
+        )
     result = client.fetch_first_available(DEAL_ENDPOINTS, params=params, max_pages=max_pages, per_page=per_page)
     base = piperun_deals_to_commercial_df(result.data if result.ok else pd.DataFrame(), refs, primeira_analise_datas=primeira_analise_datas)
     if eventos_credito.empty:
