@@ -54,6 +54,38 @@ def client_count_key(nome, lead_id) -> str:
     return lead_norm
 
 
+def is_truthy(value) -> bool:
+    if pd.isna(value):
+        return False
+    text = normalize_text(value)
+    return text in {"1", "TRUE", "SIM", "YES", "Y", "DELETED", "EXCLUIDO", "EXCLUIDA", "REMOVIDO", "REMOVIDA"}
+
+
+def valid_activity_rows(actions_raw: pd.DataFrame) -> pd.Series:
+    mask = pd.Series(True, index=actions_raw.index)
+    cols = actions_raw.columns
+
+    deleted_col = first_existing(cols, ["deleted", "is_deleted", "removed", "is_removed", "trashed"])
+    if deleted_col:
+        mask &= ~actions_raw[deleted_col].apply(is_truthy)
+
+    deleted_at_col = first_existing(cols, ["deleted_at", "deletedAt", "removed_at", "removedAt", "trashed_at"])
+    if deleted_at_col:
+        deleted_at = actions_raw[deleted_at_col].fillna("").astype(str).str.strip()
+        mask &= deleted_at.isin(["", "None", "none", "nan", "NaN", "null", "NULL"])
+
+    active_col = first_existing(cols, ["active", "is_active"])
+    if active_col:
+        mask &= ~actions_raw[active_col].apply(lambda value: normalize_text(value) in {"0", "FALSE", "NAO", "NO", "N"})
+
+    status_col = first_existing(cols, ["status.name", "status_label", "status_text", "status"])
+    if status_col:
+        status = actions_raw[status_col].apply(normalize_text)
+        mask &= ~status.str.contains("EXCLUID|DELET|REMOVID|CANCEL|CANCELAD|LIXEIRA|TRASH", regex=True, na=False)
+
+    return mask
+
+
 def first_existing(columns: Iterable[str], candidates: Iterable[str]) -> str:
     available = {str(col).lower(): col for col in columns}
     normalized = {normalize_text(col).replace(" ", "_").lower(): col for col in columns}
@@ -211,6 +243,9 @@ def action_date_column(actions_raw: pd.DataFrame) -> str:
 def actions_primeira_analise(actions_raw: pd.DataFrame) -> dict[str, date]:
     if actions_raw is None or actions_raw.empty:
         return {}
+    actions_raw = actions_raw.loc[valid_activity_rows(actions_raw)].copy()
+    if actions_raw.empty:
+        return {}
 
     cols = actions_raw.columns
     deal_id_col = first_existing(cols, ["deal_id", "deal.id", "card_id", "lead_id", "opportunity_id"])
@@ -244,6 +279,9 @@ def actions_primeira_analise(actions_raw: pd.DataFrame) -> dict[str, date]:
 
 def actions_credito_por_lead(actions_raw: pd.DataFrame, refs: dict[str, dict[str, str]] | None = None) -> pd.DataFrame:
     if actions_raw is None or actions_raw.empty:
+        return pd.DataFrame(columns=["ID_LEAD", "DATA_EVENTO", "ETAPA_EVENTO"])
+    actions_raw = actions_raw.loc[valid_activity_rows(actions_raw)].copy()
+    if actions_raw.empty:
         return pd.DataFrame(columns=["ID_LEAD", "DATA_EVENTO", "ETAPA_EVENTO"])
     refs = refs or {}
 
