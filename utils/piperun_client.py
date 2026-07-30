@@ -44,6 +44,20 @@ def get_piperun_base_url() -> str:
     return (base_url or DEFAULT_BASE_URL).rstrip("/")
 
 
+def get_piperun_activities_export_url() -> str:
+    try:
+        import streamlit as st
+
+        export_url = str(st.secrets.get("PIPERUN_ACTIVITIES_EXPORT_URL", "") or "").strip()
+    except Exception:
+        export_url = ""
+
+    if not export_url:
+        export_url = str(os.getenv("PIPERUN_ACTIVITIES_EXPORT_URL", "") or "").strip()
+
+    return export_url
+
+
 @dataclass
 class PiperunFetchResult:
     endpoint: str
@@ -125,6 +139,51 @@ class PiperunClient:
             return response, ""
         except requests.RequestException as exc:
             return None, str(exc)
+
+    def download_file(
+        self,
+        url: str,
+        destination: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, str]:
+        if not self.configured:
+            return False, "PIPERUN_TOKEN nao configurado."
+        if not url:
+            return False, "PIPERUN_ACTIVITIES_EXPORT_URL nao configurada."
+
+        final_url = url if url.startswith("http") else f"{self.base_url}/{url.strip('/')}"
+        query = dict(params or {})
+        last_error = ""
+
+        for auth_mode in ("bearer", "query"):
+            headers = self._headers()
+            request_params = dict(query)
+            if auth_mode == "query":
+                headers.pop("Authorization", None)
+                request_params.setdefault("token", self.token)
+
+            try:
+                response = requests.get(final_url, headers=headers, params=request_params, timeout=max(self.timeout, 90))
+            except requests.RequestException as exc:
+                last_error = str(exc)
+                continue
+
+            if response.status_code >= 400:
+                last_error = f"HTTP {response.status_code}: {response.text[:300]}"
+                continue
+
+            content = response.content or b""
+            if len(content) < 100:
+                last_error = "Resposta vazia ou pequena demais para ser uma planilha."
+                continue
+
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            with open(destination, "wb") as file:
+                file.write(content)
+            return True, destination
+
+        return False, last_error or "Nao foi possivel baixar a exportacao."
+
 
     def get_page(
         self,

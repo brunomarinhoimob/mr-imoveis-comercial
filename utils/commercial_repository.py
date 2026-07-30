@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import unicodedata
 from datetime import date
+from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
 
-from utils.piperun_client import PiperunClient, date_params
+from utils.piperun_client import PiperunClient, date_params, get_piperun_activities_export_url
 
 
 DEAL_ENDPOINTS = ["deals", "opportunities", "cards", "leads"]
@@ -14,6 +15,11 @@ ACTION_ENDPOINTS = ["activities", "notes", "histories", "history", "timeline", "
 USER_ENDPOINTS = ["users", "account/users", "user"]
 STAGE_ENDPOINTS = ["stages", "pipeline-stages", "pipeline_stages", "pipelines/stages"]
 PIPELINE_ENDPOINTS = ["pipelines", "pipeline", "funnels"]
+EXPORT_ATIVIDADES_PATHS = [
+    Path("data") / "atividades_piperun.xlsx",
+    Path("data") / "atividades_piperun.csv",
+]
+EXPORT_ATIVIDADES_DESTINO = Path("data") / "atividades_piperun.xlsx"
 
 
 def normalize_text(value) -> str:
@@ -299,6 +305,104 @@ def month_label(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, errors="coerce").dt.strftime("%m/%Y").fillna("")
 
 
+def carregar_export_atividades(path: str | Path | None = None) -> pd.DataFrame:
+    if path:
+        paths = [Path(path)]
+    else:
+        paths = list(EXPORT_ATIVIDADES_PATHS)
+        paths.extend(sorted(Path("data").glob("atividades*.xlsx"), key=lambda item: item.stat().st_mtime, reverse=True))
+        paths.extend(sorted(Path("data").glob("atividades*.csv"), key=lambda item: item.stat().st_mtime, reverse=True))
+
+    arquivo = next((candidate for candidate in paths if candidate.exists()), None)
+    if arquivo is None:
+        return pd.DataFrame()
+
+    if arquivo.suffix.lower() == ".csv":
+        raw = pd.read_csv(arquivo)
+    else:
+        raw = pd.read_excel(arquivo)
+    if raw.empty:
+        return pd.DataFrame()
+
+    required = ["Tipo", "Responsável", "Início", "Concluído em", "Funil (Oportunidade)", "Etapa (Oportunidade)"]
+    missing = [col for col in required if col not in raw.columns]
+    if missing:
+        raise RuntimeError(f"Exportacao PipeRun sem colunas esperadas: {', '.join(missing)}")
+
+    def col_text(name: str, default: str = "") -> pd.Series:
+        if name in raw.columns:
+            return raw[name].fillna("").astype(str)
+        return pd.Series(default, index=raw.index)
+
+    base = pd.DataFrame(index=raw.index)
+    base["ID_LEAD"] = col_text("ID (Oportunidade)").apply(normalize_id)
+    base.loc[base["ID_LEAD"] == "", "ID_LEAD"] = col_text("ID").apply(normalize_id)
+    base["CORRETOR"] = col_text("Responsável").apply(normalize_text).replace("", "SEM RESPONSAVEL")
+    base["EQUIPE"] = "SEM EQUIPE"
+    base["FUNIL"] = col_text("Funil (Oportunidade)").apply(normalize_text).replace("", "CREDITO")
+    base["ETAPA_ORIGINAL"] = col_text("Etapa (Oportunidade)").apply(normalize_text)
+    base["NOME_CLIENTE_BASE"] = col_text("Nome completo (Pessoa)").str.upper().str.strip()
+    oportunidade = col_text("Titulo (Oportunidade)").str.upper().str.strip()
+    base["NOME_CLIENTE_BASE"] = base["NOME_CLIENTE_BASE"].where(base["NOME_CLIENTE_BASE"] != "", oportunidade)
+    base["NOME_CLIENTE_BASE"] = base["NOME_CLIENTE_BASE"].replace("", "NAO INFORMADO")
+    base["CPF_CLIENTE_BASE"] = col_text("CPF (Pessoa)").str.replace(r"\D", "", regex=True)
+    base["INICIO"] = pd.to_datetime(raw["Início"], errors="coerce").dt.date
+    base["CONCLUIDO_EM"] = pd.to_datetime(raw["Concluído em"], errors="coerce").dt.date
+    base["TIPO_ATIVIDADE"] = col_text("Tipo").apply(normalize_text)
+    base["STATUS_ATIVIDADE"] = col_text("Status").apply(normalize_text)
+    base["STATUS_OPORTUNIDADE"] = col_text("Status (Oportunidade)").apply(normalize_text)
+    base["GANHO"] = base["STATUS_OPORTUNIDADE"].isin(["GANHA", "GANHO", "WON"])
+    base["VGV"] = 0.0
+    base["CHAVE_CLIENTE"] = base["ID_LEAD"]
+
+    analises = base[base["TIPO_ATIVIDADE"].apply(is_primeira_analise_text)].copy()
+    if analises.empty:
+        return pd.DataFrame()
+
+    common_cols = ["ID_LEAD", "CORRETOR", "EQUIPE", "FUNIL", "NOME_CLIENTE_BASE", "CPF_CLIENTE_BASE", "CHAVE_CLIENTE", "GANHO", "VGV"]
+    eventos_analise = analises[common_cols].copy()
+    eventos_analise["DIA"] = analises["INICIO"]
+    eventos_analise["DATA_EVENTO"] = analises["INICIO"]
+    eventos_analise["ETAPA_EVENTO"] = "NOVA ANALISE"
+    eventos_analise["ETAPA"] = "NOVA ANALISE"
+    eventos_analise["STATUS_BASE"] = "EM ANALISE"
+
+    eventos_resultado = analises[common_cols].copy()
+    eventos_resultado["DIA"] = analises["CONCLUIDO_EM"].where(analises["CONCLUIDO_EM"].notna(), analises["INICIO"])
+    eventos_resultado["DATA_EVENTO"] = eventos_resultado["DIA"]
+    eventos_resultado["ETAPA_EVENTO"] = analises["ETAPA_ORIGINAL"].apply(credit_stage_from_text)
+    eventos_resultado = eventos_resultado[eventos_resultado["ETAPA_EVENTO"] != ""]
+    eventos_resultado = eventos_resultado[eventos_resultado["ETAPA_EVENTO"] != "NOVA ANALISE"]
+    eventos_resultado["ETAPA"] = eventos_resultado["ETAPA_EVENTO"]
+    eventos_resultado["STATUS_BASE"] = eventos_resultado["ETAPA_EVENTO"]
+
+    eventos = pd.concat([eventos_analise, eventos_resultado], ignore_index=True)
+    eventos["DATA_BASE"] = pd.to_datetime(eventos["DIA"], errors="coerce").dt.to_period("M").dt.to_timestamp().dt.date
+    eventos["DATA_BASE_LABEL"] = month_label(eventos["DIA"])
+    eventos["TEM_1_ANALISE"] = eventos["ETAPA_EVENTO"].eq("NOVA ANALISE")
+    eventos["DATA_1_ANALISE"] = eventos["DATA_EVENTO"].where(eventos["TEM_1_ANALISE"])
+    eventos["ORIGEM_REGISTRO"] = "EXPORT_ATIVIDADES"
+    return eventos.drop_duplicates()
+
+
+def baixar_export_atividades_piperun(data_ini: date, data_fim: date) -> tuple[bool, str]:
+    export_url = get_piperun_activities_export_url()
+    if not export_url:
+        return False, "Configure PIPERUN_ACTIVITIES_EXPORT_URL nos secrets para baixar automaticamente."
+
+    client = PiperunClient(timeout=90)
+    params = date_params(data_ini, data_fim)
+    params.update(
+        {
+            "type": "xlsx",
+            "format": "xlsx",
+            "activity_type": "1° analise",
+            "tipo_atividade": "1° analise",
+        }
+    )
+    return client.download_file(export_url, str(EXPORT_ATIVIDADES_DESTINO), params=params)
+
+
 def fetch_piperun_reference_maps(client: PiperunClient, per_page: int) -> dict[str, dict[str, str]]:
     users = client.fetch_first_available(USER_ENDPOINTS, params={}, max_pages=5, per_page=per_page)
     stages = client.fetch_first_available(STAGE_ENDPOINTS, params={}, max_pages=10, per_page=per_page)
@@ -412,6 +516,10 @@ def piperun_deals_to_commercial_df(
 
 
 def carregar_piperun(max_pages: int = 5, per_page: int = 100, data_ini: date | None = None, data_fim: date | None = None) -> pd.DataFrame:
+    export_df = carregar_export_atividades()
+    if not export_df.empty:
+        return export_df
+
     client = PiperunClient()
     params = date_params(data_ini, data_fim) if data_ini and data_fim else {}
     refs = fetch_piperun_reference_maps(client, per_page=per_page)
