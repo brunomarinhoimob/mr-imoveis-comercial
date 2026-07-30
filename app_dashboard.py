@@ -59,6 +59,11 @@ def carregar_dados(max_pages: int, per_page: int, data_ini: date, data_fim: date
     )
 
 
+def serie_data(valor):
+    datas = pd.to_datetime(valor, errors="coerce")
+    return datas.apply(lambda item: item.date() if pd.notna(item) else None)
+
+
 st.sidebar.title("PipeRun")
 limite_registros = st.sidebar.slider(
     "Quantidade de leads para carregar",
@@ -105,10 +110,10 @@ base_cor = df if equipe_sel == "Todas" else df[df["EQUIPE"] == equipe_sel]
 lista_corretor = sorted(base_cor["CORRETOR"].dropna().unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
-dia_ref = pd.to_datetime(df["DIA"], errors="coerce").dt.date
+dia_ref = serie_data(df["DIA"])
 mask_dia = dia_ref.notna() & (dia_ref >= data_ini) & (dia_ref <= data_fim)
 if "DATA_1_ANALISE" in df.columns:
-    data_analise = pd.to_datetime(df["DATA_1_ANALISE"], errors="coerce").dt.date
+    data_analise = serie_data(df["DATA_1_ANALISE"])
     mask_analise = data_analise.notna() & (data_analise >= data_ini) & (data_analise <= data_fim)
 else:
     mask_analise = pd.Series(False, index=df.index)
