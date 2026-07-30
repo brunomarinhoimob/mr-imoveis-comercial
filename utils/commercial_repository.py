@@ -131,14 +131,14 @@ def credit_stage_from_text(value) -> str:
 
     if is_primeira_analise_text(text) or "NOVA ANALISE" in text:
         return "NOVA ANALISE"
+    if text == "DOC PENDENTE" or ("DOC" in text and ("PENDENTE" in text or "PENDENCIA" in text)):
+        return "DOC PENDENTE"
     if "CONFERENCIA" in text and "PASTEIRO" in text:
         return "CONFERENCIA DO PASTEIRO"
     if "RECUSA" in text and "PASTEIRO" in text:
         return "RECUSA PASTEIRO"
     if "ANALISE DE CREDITO" in text:
         return "ANALISE DE CREDITO"
-    if "DOC" in text and ("PENDENTE" in text or "PENDENCIA" in text):
-        return "DOC PENDENTE"
     if "CONDICIONADO" in text:
         return "CONDICIONADO"
     if "RESTRICAO" in text:
@@ -225,6 +225,18 @@ def actions_credito_por_lead(actions_raw: pd.DataFrame, refs: dict[str, dict[str
         return pd.DataFrame(columns=["ID_LEAD", "DATA_EVENTO", "ETAPA_EVENTO"])
 
     data_col = action_date_column(actions_raw)
+    type_col = first_existing(
+        cols,
+        [
+            "activity_type.name",
+            "activityType.name",
+            "type.name",
+            "tipo",
+            "type",
+            "activity_type",
+            "activityType",
+        ],
+    )
     stage_col = first_existing(
         cols,
         [
@@ -261,9 +273,11 @@ def actions_credito_por_lead(actions_raw: pd.DataFrame, refs: dict[str, dict[str
     base = pd.DataFrame(index=actions_raw.index)
     base["ID_LEAD"] = actions_raw[deal_id_col].apply(normalize_id)
     base["TEXTO_EVENTO"] = actions_raw[text_cols].fillna("").astype(str).agg(" ".join, axis=1)
+    base["TIPO_EVENTO"] = actions_raw[type_col].apply(normalize_text) if type_col else ""
     base["DATA_EVENTO"] = pd.to_datetime(actions_raw[data_col], errors="coerce").dt.date if data_col else pd.NaT
     base["ETAPA_ORIGINAL"] = actions_raw[stage_col].apply(normalize_text) if stage_col else ""
     base["ETAPA_RESULTADO"] = base["ETAPA_ORIGINAL"].apply(credit_stage_from_text)
+    base["ETAPA_TIPO"] = base["TIPO_EVENTO"].apply(credit_stage_from_text)
     base["CORRETOR"] = actions_raw[owner_col].apply(normalize_text) if owner_col else ""
     if owner_id_col:
         mapped_owner = actions_raw[owner_id_col].apply(normalize_id).map(refs.get("user_name", {}))
@@ -278,20 +292,19 @@ def actions_credito_por_lead(actions_raw: pd.DataFrame, refs: dict[str, dict[str
     base["NOME_CLIENTE_BASE"] = base["NOME_CLIENTE_BASE"].replace("", "NAO INFORMADO")
     base["FUNIL"] = actions_raw[pipeline_col].apply(normalize_text) if pipeline_col else "CREDITO"
 
-    analises = base[base["TEXTO_EVENTO"].apply(is_primeira_analise_text) & (base["ID_LEAD"] != "")].copy()
-    if analises.empty:
+    eventos_base = base[base["ID_LEAD"] != ""].copy()
+    eventos_base["ETAPA_EVENTO"] = eventos_base["ETAPA_TIPO"]
+    eventos_base.loc[
+        eventos_base["TIPO_EVENTO"].apply(is_primeira_analise_text) | eventos_base["TEXTO_EVENTO"].apply(is_primeira_analise_text),
+        "ETAPA_EVENTO",
+    ] = "NOVA ANALISE"
+    eventos_base = eventos_base[eventos_base["ETAPA_EVENTO"] != ""]
+
+    if eventos_base.empty:
         return pd.DataFrame(columns=["ID_LEAD", "DATA_EVENTO", "ETAPA_EVENTO"])
 
     evento_cols = ["ID_LEAD", "DATA_EVENTO", "CORRETOR", "EQUIPE", "NOME_CLIENTE_BASE", "FUNIL"]
-    eventos_analise = analises[evento_cols].copy()
-    eventos_analise["ETAPA_EVENTO"] = "NOVA ANALISE"
-
-    eventos_resultado = analises[evento_cols + ["ETAPA_RESULTADO"]].copy()
-    eventos_resultado = eventos_resultado[eventos_resultado["ETAPA_RESULTADO"] != ""]
-    eventos_resultado = eventos_resultado.rename(columns={"ETAPA_RESULTADO": "ETAPA_EVENTO"})
-    eventos_resultado = eventos_resultado[eventos_resultado["ETAPA_EVENTO"] != "NOVA ANALISE"]
-
-    eventos = pd.concat([eventos_analise, eventos_resultado], ignore_index=True)
+    eventos = eventos_base[evento_cols + ["ETAPA_EVENTO"]].copy()
     return eventos[evento_cols + ["ETAPA_EVENTO"]].drop_duplicates()
 
 
